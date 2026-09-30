@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.20)
+project(xxwidgets_package_test LANGUAGES C)
+find_package(xxwidgets 0.1 CONFIG REQUIRED)
+add_executable(xxwidgets_package_test main.c)
+target_link_libraries(xxwidgets_package_test PRIVATE xxwidgets::xxwidgets)

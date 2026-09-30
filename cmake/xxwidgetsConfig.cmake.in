@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+if(@XXWIDGETS_BUILD_SETTINGS@ AND UNIX)
+    find_dependency(Threads)
+endif()
+if("@_xxwidgets_native@" STREQUAL "gtk3")
+    find_dependency(PkgConfig)
+    pkg_check_modules(XXWIDGETS_GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0>=3.16)
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/xxwidgetsTargets.cmake")
+check_required_components(xxwidgets)
