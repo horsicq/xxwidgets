@@ -64,6 +64,13 @@ struct xxwidgets_widget {
     uint64_t browser_revision;
     struct xxwidgets_combo_state *combo;
     uint64_t combo_revision;
+    xxwidgets_scan_result *scan_results;
+    char **scan_cells; /* Escaped cells, row * 4 + column. */
+    size_t scan_column_width[4];
+    uint64_t scan_revision;
+    struct xxwidgets_tree_state *tree;
+    uint64_t tree_revision;
+    uint64_t tree_content_revision;
     struct xxwidgets_shortcut_binding *shortcuts;
     size_t shortcut_count;
     int value;
@@ -102,11 +109,13 @@ void xxwidgets_combobox_dispose(xxwidgets_widget *widget);
 const char *xxwidgets_combobox_caption(xxwidgets_widget *widget);
 int xxwidgets_checkcombobox_checked(const xxwidgets_widget *widget, size_t index);
 xxwidgets_status xxwidgets_checkcombobox_user_toggle(xxwidgets_widget *widget, size_t index);
+xxwidgets_status xxwidgets_checkcombobox_set_mask(xxwidgets_widget *widget, unsigned int mask, size_t count);
 
 static inline int xxwidgets_formatted_rows(const xxwidgets_widget *widget)
 {
     return widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW ||
-        widget->kind == XXWIDGETS_ARCHIVEBROWSER;
+        widget->kind == XXWIDGETS_ARCHIVEBROWSER || widget->kind == XXWIDGETS_SCANRESULTS ||
+        widget->kind == XXWIDGETS_TREEVIEW;
 }
 static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 {
@@ -114,9 +123,26 @@ static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 }
 static inline uint64_t xxwidgets_row_revision(const xxwidgets_widget *widget)
 {
-    return widget->kind == XXWIDGETS_ARCHIVEBROWSER ? widget->browser_revision :
+    return widget->kind == XXWIDGETS_TREEVIEW ? widget->tree_revision :
+        widget->kind == XXWIDGETS_SCANRESULTS ? widget->scan_revision :
+        widget->kind == XXWIDGETS_ARCHIVEBROWSER ? widget->browser_revision :
         widget->kind == XXWIDGETS_ARCHIVEVIEW ? widget->archive_revision : widget->hex_revision;
 }
+
+void xxwidgets_scanresults_dispose(xxwidgets_widget *widget);
+void xxwidgets_treeview_dispose(xxwidgets_widget *widget);
+size_t xxwidgets_treeview_node_at_row(const xxwidgets_widget *widget, size_t row);
+size_t xxwidgets_treeview_row_of_node(const xxwidgets_widget *widget, size_t index);
+size_t xxwidgets_treeview_depth(const xxwidgets_widget *widget, size_t index);
+int xxwidgets_treeview_has_children(const xxwidgets_widget *widget, size_t index);
+const char *xxwidgets_treeview_display_text(const xxwidgets_widget *widget, size_t index);
+xxwidgets_status xxwidgets_treeview_select(xxwidgets_widget *widget, int index);
+xxwidgets_status xxwidgets_treeview_user_expand(xxwidgets_widget *widget, size_t index, int expanded);
+/* Cache native expansion without syncing/emitting. Caller follows the cached
+ * selection when collapse hides it, suppressing native selection signals. */
+xxwidgets_status xxwidgets_treeview_expansion_input(xxwidgets_widget *widget, size_t index, int expanded);
+const char *xxwidgets_scanresults_cell(const xxwidgets_widget *widget, size_t row, size_t column);
+size_t xxwidgets_scanresults_column_width(const xxwidgets_widget *widget, size_t column);
 
 void xxwidgets_archivebrowser_dispose(xxwidgets_widget *widget);
 const char *xxwidgets_archivebrowser_name(const xxwidgets_widget *widget, size_t row);

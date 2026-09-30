@@ -53,7 +53,9 @@ typedef enum xxwidgets_kind {
     XXWIDGETS_ARCHIVEVIEW,
     XXWIDGETS_ARCHIVEBROWSER,
     XXWIDGETS_COMBOBOX,
-    XXWIDGETS_CHECKCOMBOBOX
+    XXWIDGETS_CHECKCOMBOBOX,
+    XXWIDGETS_SCANRESULTS,
+    XXWIDGETS_TREEVIEW
 } xxwidgets_kind;
 
 typedef enum xxwidgets_event_type {
@@ -142,12 +144,73 @@ XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *wi
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_focus(xxwidgets_widget *widget);
 /* CHECKBOX: 0/1; PROGRESS: 0..100; list controls: -1 or visible row;
  * comboboxes: -1 or record index (checkbox cursor is separate from checks).
+ * TREEVIEW: -1 or original node index; selecting a hidden node opens ancestors.
  * Programmatic changes do not emit user-input events. */
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_value(xxwidgets_widget *widget, int value);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_value(xxwidgets_widget *widget, int *value);
 XXWIDGETS_API xxwidgets_status xxwidgets_listbox_add(xxwidgets_widget *widget, const char *text);
 XXWIDGETS_API xxwidgets_status xxwidgets_listbox_clear(xxwidgets_widget *widget);
 XXWIDGETS_API size_t xxwidgets_listbox_count(const xxwidgets_widget *widget);
+
+/* Generic hierarchy, preserving sibling input order. parent is SIZE_MAX for a
+ * root, otherwise an earlier node index. Text is copied valid UTF-8; expanded
+ * must be 0 or 1. Display escapes control characters, metadata retains them. */
+typedef struct xxwidgets_tree_node {
+    size_t parent;
+    const char *text;
+    int expanded;
+} xxwidgets_tree_node;
+
+/* Transactional replacement selects the first root, or -1 when empty. All
+ * setters emit no input events. NULL/count 0 clears. Returned strings remain
+ * borrowed until replacement/clear/destruction. Expansion retains selection;
+ * collapsing its ancestor selects that ancestor. Values and SELECT, CHANGE,
+ * ACTIVATE event values refer to original input indexes, never visible rows.
+ * User expansion emits CHANGE; Enter activates the selected node. */
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_nodes(xxwidgets_widget *widget,
+    const xxwidgets_tree_node *nodes, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_clear(xxwidgets_widget *widget);
+XXWIDGETS_API size_t xxwidgets_treeview_count(const xxwidgets_widget *widget);
+XXWIDGETS_API size_t xxwidgets_treeview_visible_count(const xxwidgets_widget *widget);
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_node(const xxwidgets_widget *widget,
+    size_t index, xxwidgets_tree_node *node);
+/* No selection: SIZE_MAX and a zeroed node. Both outputs required. */
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_selection(xxwidgets_widget *widget,
+    size_t *index, xxwidgets_tree_node *node);
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_expanded(xxwidgets_widget *widget,
+    size_t index, int expanded);
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_expanded(const xxwidgets_widget *widget,
+    size_t index, int *expanded);
+
+/* Read-only scan results in input order, with Type/Name/Version/Info columns.
+ * No scan engine dependency is required. NULL fields mean empty strings. */
+typedef struct xxwidgets_scan_result {
+    const char *type;
+    const char *name;
+    const char *version;
+    const char *info;
+} xxwidgets_scan_result;
+
+/* Copies valid UTF-8 strings. Replacement is transactional, selects the first
+ * result (or -1 when empty), and emits no events. NULL/count 0 clears.
+ * Display escapes control characters; returned metadata retains original text. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scanresults_set_results(xxwidgets_widget *widget,
+    const xxwidgets_scan_result *results, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_scanresults_clear(xxwidgets_widget *widget);
+XXWIDGETS_API size_t xxwidgets_scanresults_count(const xxwidgets_widget *widget);
+/* Returned strings are borrowed until replacement/clear/destruction.
+ * SELECT event.value and widget set/get_value use the original result index. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scanresults_get_result(const xxwidgets_widget *widget,
+    size_t index, xxwidgets_scan_result *result);
+/* Both outputs required. No selection: SIZE_MAX and a zeroed result. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scanresults_get_selection(xxwidgets_widget *widget,
+    size_t *index, xxwidgets_scan_result *result);
+/* Tab-separated report with a header; controls are escaped. required includes
+ * NUL. NULL/capacity 0 queries size; short output remains valid UTF-8. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scanresults_get_report(const xxwidgets_widget *widget,
+    char *buffer, size_t capacity, size_t *required);
+/* Copies the complete report to the native clipboard. TUI returns UNAVAILABLE. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scanresults_copy(xxwidgets_widget *widget);
 
 /* Include xxwidgets/xxwidgets_combobox.h for the complete xxfclib types.
  * Both combo kinds accept an array of label/value records. Label length is in

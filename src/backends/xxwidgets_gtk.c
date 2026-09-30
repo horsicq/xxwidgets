@@ -23,6 +23,10 @@ typedef struct gtk_widget_state {
     GtkWidget *combo_box, *combo_scroll;
     uint64_t combo_revision;
     int combo_initialized;
+    GtkTreeIter *tree_iters;
+    size_t tree_count;
+    uint64_t tree_content_revision;
+    int tree_collapsing, tree_before_collapse;
 } gtk_widget_state;
 
 static int rect_equal(xxwidgets_rect a, xxwidgets_rect b)
@@ -120,6 +124,250 @@ static void list_selected(GtkListBox *native, GtkListBoxRow *row, gpointer data)
     if (widget->app->syncing) return;
     widget->value = row ? gtk_list_box_row_get_index(row) : -1;
     xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
+}
+
+static void scanresults_selection_read(xxwidgets_widget *widget)
+{
+    GtkTreeSelection *selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget->native));
+    GtkTreeModel *model;
+    GtkTreeIter iter;
+    widget->value = -1;
+    if (gtk_tree_selection_get_selected(selection, &model, &iter)) {
+        GtkTreePath *path = gtk_tree_model_get_path(model, &iter);
+        if (path) {
+            widget->value = gtk_tree_path_get_indices(path)[0];
+            gtk_tree_path_free(path);
+        }
+    }
+}
+
+static void scanresults_selected(GtkTreeSelection *selection, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    (void)selection;
+    if (widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    scanresults_selection_read(widget);
+    xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
+}
+
+static void scanresults_sync(xxwidgets_widget *widget)
+{
+    gtk_widget_state *state = widget->platform;
+    GtkTreeView *tree = GTK_TREE_VIEW(widget->native);
+    GtkTreeSelection *selection = gtk_tree_view_get_selection(tree);
+    GtkListStore *store = GTK_LIST_STORE(gtk_tree_view_get_model(tree));
+    int refreshed = state->rendered_hex_revision != xxwidgets_row_revision(widget);
+    int previous = widget->value;
+    if (refreshed) {
+        size_t row;
+        gtk_list_store_clear(store);
+        for (row = 0; row < widget->item_count; ++row) {
+            GtkTreeIter iter;
+            gtk_list_store_append(store, &iter);
+            gtk_list_store_set(store, &iter,
+                0, xxwidgets_scanresults_cell(widget, row, 0),
+                1, xxwidgets_scanresults_cell(widget, row, 1),
+                2, xxwidgets_scanresults_cell(widget, row, 2),
+                3, xxwidgets_scanresults_cell(widget, row, 3), -1);
+        }
+        state->rendered_items = widget->item_count;
+        state->rendered_hex_revision = xxwidgets_row_revision(widget);
+    }
+    scanresults_selection_read(widget);
+    if (refreshed || widget->value != previous) {
+        gtk_tree_selection_unselect_all(selection);
+        if (previous >= 0) {
+            GtkTreePath *path = gtk_tree_path_new_from_indices(previous, -1);
+            gtk_tree_selection_select_path(selection, path);
+            gtk_tree_view_set_cursor(tree, path, NULL, FALSE);
+            gtk_tree_view_scroll_to_cell(tree, path, NULL, FALSE, 0, 0);
+            gtk_tree_path_free(path);
+        }
+    }
+    widget->value = previous;
+    atk_object_set_name(gtk_widget_get_accessible(GTK_WIDGET(tree)), widget->text);
+}
+
+static void treeview_selection_read(xxwidgets_widget *widget)
+{
+    GtkTreeModel *model;
+    GtkTreeIter iter;
+    widget->value = -1;
+    if (gtk_tree_selection_get_selected(
+        gtk_tree_view_get_selection(GTK_TREE_VIEW(widget->native)), &model, &iter))
+        gtk_tree_model_get(model, &iter, 1, &widget->value, -1);
+}
+
+static void treeview_selection_apply(xxwidgets_widget *widget)
+{
+    gtk_widget_state *state = widget->platform;
+    GtkTreeView *tree = GTK_TREE_VIEW(widget->native);
+    GtkTreeSelection *selection = gtk_tree_view_get_selection(tree);
+    int previous = widget->value;
+    treeview_selection_read(widget);
+    if (widget->value != previous) {
+        ++widget->app->syncing;
+        gtk_tree_selection_unselect_all(selection);
+        if (previous >= 0 && (size_t)previous < state->tree_count) {
+            GtkTreeModel *model = gtk_tree_view_get_model(tree);
+            GtkTreePath *path = gtk_tree_model_get_path(model, &state->tree_iters[previous]);
+            if (path) {
+                gtk_tree_selection_select_path(selection, path);
+                gtk_tree_view_set_cursor(tree, path, NULL, FALSE);
+                gtk_tree_view_scroll_to_cell(tree, path, NULL, FALSE, 0, 0);
+                gtk_tree_path_free(path);
+            }
+        }
+        --widget->app->syncing;
+    }
+    widget->value = previous;
+}
+
+static void treeview_selected(GtkTreeSelection *selection, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    (void)selection;
+    if (widget->app->syncing || !xxwidgets_focusable(widget) ||
+        ((gtk_widget_state *)widget->platform)->tree_collapsing) return;
+    treeview_selection_read(widget);
+    xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
+}
+
+static gboolean treeview_before_collapse(GtkTreeView *native, GtkTreeIter *iter,
+    GtkTreePath *path, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    gtk_widget_state *state = widget->platform;
+    (void)native; (void)iter; (void)path;
+    if (!widget->app->syncing) {
+        state->tree_collapsing = 1;
+        state->tree_before_collapse = widget->value;
+    }
+    return FALSE;
+}
+
+static void treeview_expand_visible(xxwidgets_widget *widget)
+{
+    gtk_widget_state *state = widget->platform;
+    GtkTreeView *tree = GTK_TREE_VIEW(widget->native);
+    GtkTreeModel *model = gtk_tree_view_get_model(tree);
+    size_t node;
+    ++widget->app->syncing;
+    for (node = 0; node < state->tree_count; ++node) {
+        int expanded;
+        if (xxwidgets_treeview_row_of_node(widget, node) != SIZE_MAX &&
+            xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK && expanded) {
+            GtkTreePath *path = gtk_tree_model_get_path(model, &state->tree_iters[node]);
+            if (path) { gtk_tree_view_expand_row(tree, path, FALSE); gtk_tree_path_free(path); }
+        }
+    }
+    --widget->app->syncing;
+}
+
+static void treeview_expansion(GtkTreeView *native, GtkTreeIter *iter,
+    GtkTreePath *path, xxwidgets_widget *widget, int expanded)
+{
+    gtk_widget_state *state = widget->platform;
+    int node = -1;
+    if (widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    gtk_tree_model_get(gtk_tree_view_get_model(native), iter, 1, &node, -1);
+    if (node < 0) return;
+    if (!expanded && state->tree_collapsing) widget->value = state->tree_before_collapse;
+    state->tree_collapsing = 0;
+    if (xxwidgets_treeview_expansion_input(widget, (size_t)node, expanded) != XXWIDGETS_OK) {
+        ++widget->app->syncing;
+        if (expanded) gtk_tree_view_collapse_row(native, path);
+        else gtk_tree_view_expand_row(native, path, FALSE);
+        --widget->app->syncing;
+        if (!expanded) treeview_expand_visible(widget);
+        treeview_selection_apply(widget);
+        return;
+    }
+    if (expanded) treeview_expand_visible(widget);
+    state->rendered_hex_revision = widget->tree_revision;
+    treeview_selection_apply(widget);
+    xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, node);
+}
+
+static void treeview_expanded(GtkTreeView *native, GtkTreeIter *iter, GtkTreePath *path, gpointer data)
+{
+    treeview_expansion(native, iter, path, data, 1);
+}
+
+static void treeview_collapsed(GtkTreeView *native, GtkTreeIter *iter, GtkTreePath *path, gpointer data)
+{
+    treeview_expansion(native, iter, path, data, 0);
+}
+
+static gboolean treeview_key(GtkWidget *native, GdkEventKey *key, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    int expanded;
+    (void)native;
+    if (widget->app->syncing || !xxwidgets_focusable(widget) || widget->value < 0) return FALSE;
+    if (key->keyval == GDK_KEY_Return || key->keyval == GDK_KEY_KP_Enter) {
+        xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
+        return TRUE;
+    }
+    if (key->keyval == GDK_KEY_space) {
+        if (xxwidgets_treeview_has_children(widget, (size_t)widget->value) &&
+            xxwidgets_treeview_get_expanded(widget, (size_t)widget->value, &expanded) == XXWIDGETS_OK)
+            xxwidgets_treeview_user_expand(widget, (size_t)widget->value, !expanded);
+        else xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void treeview_activated(GtkTreeView *native, GtkTreePath *path,
+    GtkTreeViewColumn *column, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    GtkTreeIter iter;
+    int node, expanded;
+    (void)column;
+    if (widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    if (!gtk_tree_model_get_iter(gtk_tree_view_get_model(native), &iter, path)) return;
+    gtk_tree_model_get(gtk_tree_view_get_model(native), &iter, 1, &node, -1);
+    if (node < 0) return;
+    if (xxwidgets_treeview_has_children(widget, (size_t)node) &&
+        xxwidgets_treeview_get_expanded(widget, (size_t)node, &expanded) == XXWIDGETS_OK)
+        xxwidgets_treeview_user_expand(widget, (size_t)node, !expanded);
+    else xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, node);
+}
+
+static xxwidgets_status treeview_sync(xxwidgets_widget *widget)
+{
+    gtk_widget_state *state = widget->platform;
+    GtkTreeView *tree = GTK_TREE_VIEW(widget->native);
+    GtkTreeStore *store = GTK_TREE_STORE(gtk_tree_view_get_model(tree));
+    int refreshed = state->tree_content_revision != widget->tree_content_revision;
+    size_t count = xxwidgets_treeview_count(widget), node;
+    if (refreshed) {
+        if (count > SIZE_MAX / sizeof(GtkTreeIter)) return XXWIDGETS_OUT_OF_MEMORY;
+        GtkTreeIter *iters = count ? malloc(count * sizeof(*iters)) : NULL;
+        if (count && !iters) return XXWIDGETS_OUT_OF_MEMORY;
+        gtk_tree_store_clear(store);
+        for (node = 0; node < count; ++node) {
+            xxwidgets_tree_node entry;
+            xxwidgets_treeview_get_node(widget, node, &entry);
+            gtk_tree_store_append(store, &iters[node], entry.parent == SIZE_MAX ? NULL : &iters[entry.parent]);
+            gtk_tree_store_set(store, &iters[node], 0, xxwidgets_treeview_display_text(widget, node),
+                1, (int)node, -1);
+        }
+        free(state->tree_iters);
+        state->tree_iters = iters;
+        state->tree_count = count;
+        state->tree_content_revision = widget->tree_content_revision;
+    }
+    if (refreshed || state->rendered_hex_revision != widget->tree_revision) {
+        gtk_tree_view_collapse_all(tree);
+        treeview_expand_visible(widget);
+        state->rendered_hex_revision = widget->tree_revision;
+    }
+    treeview_selection_apply(widget);
+    atk_object_set_name(gtk_widget_get_accessible(GTK_WIDGET(tree)), widget->text);
+    return XXWIDGETS_OK;
 }
 
 static void browser_selection_read(xxwidgets_widget *widget)
@@ -533,6 +781,61 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
     case XXWIDGETS_PROGRESS:
         native = gtk_progress_bar_new();
         break;
+    case XXWIDGETS_TREEVIEW: {
+        GtkTreeStore *store = gtk_tree_store_new(2, G_TYPE_STRING, G_TYPE_INT);
+        GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+        GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes("", renderer, "text", 0, NULL);
+        native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+        g_object_unref(store);
+        gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(native), FALSE);
+        gtk_tree_view_append_column(GTK_TREE_VIEW(native), column);
+        g_object_set(renderer, "single-paragraph-mode", TRUE, NULL);
+        gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_SINGLE);
+        state->root = gtk_scrolled_window_new(NULL, NULL);
+        g_object_ref_sink(state->root);
+        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+        gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
+        gtk_container_add(GTK_CONTAINER(state->root), native);
+        g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed", G_CALLBACK(treeview_selected), widget);
+        g_signal_connect(native, "row-expanded", G_CALLBACK(treeview_expanded), widget);
+        g_signal_connect(native, "row-collapsed", G_CALLBACK(treeview_collapsed), widget);
+        g_signal_connect(native, "test-collapse-row", G_CALLBACK(treeview_before_collapse), widget);
+        g_signal_connect(native, "key-press-event", G_CALLBACK(treeview_key), widget);
+        g_signal_connect(native, "row-activated", G_CALLBACK(treeview_activated), widget);
+        gtk_widget_show(native);
+        break;
+    }
+    case XXWIDGETS_SCANRESULTS: {
+        static const char *titles[] = {"Type", "Name", "Version", "Info"};
+        static const int widths[] = {100, 220, 100, 260};
+        GtkListStore *store = gtk_list_store_new(4, G_TYPE_STRING, G_TYPE_STRING,
+            G_TYPE_STRING, G_TYPE_STRING);
+        int column;
+        native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+        g_object_unref(store);
+        gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_SINGLE);
+        state->root = gtk_scrolled_window_new(NULL, NULL);
+        g_object_ref_sink(state->root);
+        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root),
+            GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+        gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
+        gtk_container_add(GTK_CONTAINER(state->root), native);
+        for (column = 0; column < 4; ++column) {
+            GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+            GtkTreeViewColumn *view_column = gtk_tree_view_column_new_with_attributes(
+                titles[column], renderer, "text", column, NULL);
+            gtk_tree_view_column_set_resizable(view_column, TRUE);
+            gtk_tree_view_column_set_sizing(view_column, GTK_TREE_VIEW_COLUMN_FIXED);
+            gtk_tree_view_column_set_fixed_width(view_column, widths[column]);
+            gtk_tree_view_column_set_min_width(view_column, 60);
+            g_object_set(renderer, "single-paragraph-mode", TRUE, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+            gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
+        }
+        g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed",
+            G_CALLBACK(scanresults_selected), widget);
+        gtk_widget_show(native);
+        break;
+    }
     case XXWIDGETS_ARCHIVEBROWSER: {
         static const char *titles[] = {"Name", "Size", "Packed Size", "Modified", "Attributes"};
         GtkListStore *store = gtk_list_store_new(6, G_TYPE_STRING, G_TYPE_STRING,
@@ -607,6 +910,8 @@ static void gtk_destroy_backend(xxwidgets_widget *widget)
     gtk_widget_state *state = widget->platform;
     if (!state) return;
     if (native) g_signal_handlers_disconnect_by_data(native, widget);
+    if ((widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGETS_TREEVIEW) && native)
+        g_signal_handlers_disconnect_by_data(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), widget);
     if (widget->kind == XXWIDGETS_ARCHIVEBROWSER && native) {
         g_signal_handlers_disconnect_by_data(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), widget);
         g_signal_handlers_disconnect_by_data(state->browser_up, widget);
@@ -616,6 +921,7 @@ static void gtk_destroy_backend(xxwidgets_widget *widget)
         if (state->root != native) g_object_unref(state->root);
     }
     if (native) g_object_unref(native);
+    free(state->tree_iters);
     free(state);
     widget->platform = NULL;
     widget->native = NULL;
@@ -756,6 +1062,14 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
     case XXWIDGETS_ARCHIVEBROWSER:
         browser_sync(widget);
         break;
+    case XXWIDGETS_SCANRESULTS:
+        scanresults_sync(widget);
+        break;
+    case XXWIDGETS_TREEVIEW: {
+        xxwidgets_status status = treeview_sync(widget);
+        if (status != XXWIDGETS_OK) return status;
+        break;
+    }
     }
     gtk_widget_set_sensitive(state->root, widget->enabled != 0);
     if (widget->kind == XXWIDGETS_WINDOW && (!widget->enabled || !widget->visible)) {
@@ -793,6 +1107,10 @@ static xxwidgets_status gtk_read_value_backend(xxwidgets_widget *widget)
         widget->value = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(native)) ? 1 : 0;
     else if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
         browser_selection_read(widget);
+    } else if (widget->kind == XXWIDGETS_SCANRESULTS) {
+        scanresults_selection_read(widget);
+    } else if (widget->kind == XXWIDGETS_TREEVIEW) {
+        treeview_selection_read(widget);
     } else if (xxwidgets_list_kind(widget)) {
         GtkListBoxRow *row = gtk_list_box_get_selected_row(GTK_LIST_BOX(native));
         widget->value = row ? gtk_list_box_row_get_index(row) : -1;

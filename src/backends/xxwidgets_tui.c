@@ -244,10 +244,12 @@ static size_t tui_hexview_horizontal_max(tui_state *state, xxwidgets_widget *wid
     long long x = (long long)widget->parent->rect.x + 1 + widget->rect.x;
     int width = widget->rect.width;
     size_t length = (widget->kind == XXWIDGETS_ARCHIVEVIEW ||
-        widget->kind == XXWIDGETS_ARCHIVEBROWSER) ? widget->archive_columns :
+        widget->kind == XXWIDGETS_ARCHIVEBROWSER ||
+        widget->kind == XXWIDGETS_SCANRESULTS ||
+        widget->kind == XXWIDGETS_TREEVIEW) ? widget->archive_columns :
         widget->item_count ? strlen(widget->items[0]) : 0;
     size_t visible;
-    /* Archive paths vary in width; horizontal offsets count Unicode scalars. */
+    /* Formatted rows vary in width; horizontal offsets count Unicode scalars. */
     if (width > widget->parent->rect.width - widget->rect.x)
         width = widget->parent->rect.width - widget->rect.x;
     if ((long long)width > state->columns - x) width = (int)(state->columns - x);
@@ -317,9 +319,15 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
     case XXWIDGETS_LISTBOX:
     case XXWIDGETS_ARCHIVEVIEW:
     case XXWIDGETS_ARCHIVEBROWSER:
+    case XXWIDGETS_SCANRESULTS:
+    case XXWIDGETS_TREEVIEW:
     case XXWIDGETS_HEXVIEW: {
         size_t first = 0;
-        int header_rows = widget->kind == XXWIDGETS_ARCHIVEBROWSER ? 2 : 0;
+        size_t selected_row = widget->kind == XXWIDGETS_TREEVIEW ?
+            xxwidgets_treeview_row_of_node(widget, (size_t)widget->value) :
+            widget->value < 0 ? SIZE_MAX : (size_t)widget->value;
+        int header_rows = widget->kind == XXWIDGETS_ARCHIVEBROWSER ? 2 :
+            widget->kind == XXWIDGETS_SCANRESULTS ? 1 : 0;
         int row_height = widget->rect.height - header_rows;
         tui_hexview *hexview = xxwidgets_formatted_rows(widget) ?
             (tui_hexview *)widget->platform : NULL;
@@ -327,7 +335,7 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
             size_t maximum = tui_hexview_horizontal_max(state, widget);
             if (hexview->horizontal > maximum) hexview->horizontal = maximum;
         }
-        if (header_rows) {
+        if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
             const char *archive = xxwidgets_archivebrowser_archive(widget);
             const char *directory = xxwidgets_archivebrowser_directory(widget);
             size_t address_length = strlen(archive) + strlen(directory) + 8;
@@ -352,10 +360,22 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                 "Modified", TUI_TITLE, 0);
             tui_text(state, header_clip, header_x + 4 + name_width + 67, y + 1,
                 "Attributes", TUI_TITLE, 0);
+        } else if (widget->kind == XXWIDGETS_SCANRESULTS) {
+            static const char *titles[] = {"Type", "Name", "Version", "Info"};
+            long long header_x = x + 1 - (long long)(hexview ? hexview->horizontal : 0);
+            size_t column;
+            tui_clip header_clip = clip;
+            header_clip.top = y; header_clip.bottom = y + 1;
+            header_clip = tui_intersect(clip, header_clip);
+            tui_fill(state, header_clip, TUI_TITLE);
+            for (column = 0; column < 4; ++column) {
+                tui_text(state, header_clip, header_x, y, titles[column], TUI_TITLE, 0);
+                header_x += (long long)xxwidgets_scanresults_column_width(widget, column) + 2;
+            }
         }
         if (row_height <= 0) break;
-        if (widget->value >= row_height)
-            first = (size_t)widget->value - (size_t)row_height + 1;
+        if (selected_row != SIZE_MAX && selected_row >= (size_t)row_height)
+            first = selected_row - (size_t)row_height + 1;
         for (row = clip.top; row < clip.bottom; ++row) {
             size_t item;
             size_t offset = 0, remaining = hexview ? hexview->horizontal : 0;
@@ -367,13 +387,13 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                 offset = tui_next(widget->items[item], offset);
                 --remaining;
             }
-            if (((int)item == widget->value ||
+            if ((item == selected_row ||
                  (widget->kind == XXWIDGETS_ARCHIVEBROWSER && xxwidgets_archivebrowser_row_selected(widget, item))) &&
                 widget->enabled && widget->parent->enabled)
                 item_style = TUI_FOCUS;
             bounds.top = row; bounds.bottom = row + 1;
             tui_fill(state, tui_intersect(clip, bounds), item_style);
-            tui_put(state, clip, x, row, (int)item == widget->value ? '>' :
+            tui_put(state, clip, x, row, item == selected_row ? '>' :
                 widget->kind == XXWIDGETS_ARCHIVEBROWSER && xxwidgets_archivebrowser_row_selected(widget, item) ? '*' : ' ', item_style);
             tui_text(state, clip, x + 1, row, widget->items[item] + offset, item_style, 0);
         }
@@ -716,10 +736,64 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             break;
         }
         state->dirty = 1;
+    } else if (widget->kind == XXWIDGETS_TREEVIEW) {
+        tui_hexview *tree = (tui_hexview *)widget->platform;
+        size_t row, next, node;
+        xxwidgets_tree_node entry;
+        int expanded, page_rows = widget->rect.height > 0 ? widget->rect.height : 1;
+        if ((modifiers & XXWIDGETS_MOD_SHIFT) &&
+            (key == TUI_KEY_LEFT || key == TUI_KEY_RIGHT)) {
+            size_t maximum = tui_hexview_horizontal_max(state, widget);
+            if (tree->horizontal > maximum) tree->horizontal = maximum;
+            if (key == TUI_KEY_LEFT && tree->horizontal) --tree->horizontal;
+            if (key == TUI_KEY_RIGHT && tree->horizontal < maximum) ++tree->horizontal;
+            state->dirty = 1;
+            return XXWIDGETS_OK;
+        }
+        if (!widget->item_count) return XXWIDGETS_OK;
+        row = xxwidgets_treeview_row_of_node(widget, (size_t)widget->value);
+        if (row == SIZE_MAX) row = 0;
+        next = row;
+        node = xxwidgets_treeview_node_at_row(widget, row);
+        if (key == TUI_KEY_UP) next = row ? row - 1 : 0;
+        else if (key == TUI_KEY_DOWN) next = row + 1 < widget->item_count ? row + 1 : row;
+        else if (key == TUI_KEY_HOME) next = 0;
+        else if (key == TUI_KEY_END) next = widget->item_count - 1;
+        else if (key == TUI_KEY_PAGEUP) next = row > (size_t)page_rows ? row - (size_t)page_rows : 0;
+        else if (key == TUI_KEY_PAGEDOWN) next = widget->item_count - row > (size_t)page_rows ?
+            row + (size_t)page_rows : widget->item_count - 1;
+        else if (key == TUI_KEY_LEFT) {
+            if (xxwidgets_treeview_has_children(widget, node) &&
+                xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK && expanded)
+                return xxwidgets_treeview_user_expand(widget, node, 0);
+            if (xxwidgets_treeview_get_node(widget, node, &entry) == XXWIDGETS_OK && entry.parent != SIZE_MAX)
+                next = xxwidgets_treeview_row_of_node(widget, entry.parent);
+        } else if (key == TUI_KEY_RIGHT) {
+            if (xxwidgets_treeview_has_children(widget, node)) {
+                if (xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK && !expanded)
+                    return xxwidgets_treeview_user_expand(widget, node, 1);
+                if (row + 1 < widget->item_count) next = row + 1;
+            }
+        } else if (key == TUI_KEY_ENTER) {
+            xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, (int)node);
+            return XXWIDGETS_OK;
+        } else if (key == ' ') {
+            if (xxwidgets_treeview_has_children(widget, node) &&
+                xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK)
+                return xxwidgets_treeview_user_expand(widget, node, !expanded);
+            xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, (int)node);
+            return XXWIDGETS_OK;
+        } else return XXWIDGETS_OK;
+        if (next != SIZE_MAX && (int)(node = xxwidgets_treeview_node_at_row(widget, next)) != widget->value) {
+            widget->value = (int)node;
+            state->dirty = 1;
+            xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
+        }
     } else if (xxwidgets_list_kind(widget)) {
         int selection = widget->value;
         int page_rows = widget->rect.height -
-            (widget->kind == XXWIDGETS_ARCHIVEBROWSER ? 2 : 0);
+            (widget->kind == XXWIDGETS_ARCHIVEBROWSER ? 2 :
+             widget->kind == XXWIDGETS_SCANRESULTS ? 1 : 0);
         if (page_rows < 1) page_rows = 1;
         if (widget->kind == XXWIDGETS_ARCHIVEBROWSER && key == 1) {
             xxwidgets_status status = xxwidgets_archivebrowser_select_all(widget);

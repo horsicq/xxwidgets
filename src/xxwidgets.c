@@ -211,7 +211,7 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     xxwidgets_status status;
     if (!out_widget) return XXWIDGETS_INVALID_ARGUMENT;
     *out_widget = NULL;
-    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_CHECKCOMBOBOX || !valid_rect(rect) ||
+    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_TREEVIEW || !valid_rect(rect) ||
         !valid_utf8(text ? text : "") ||
         (kind == XXWIDGETS_WINDOW ? parent != NULL :
             (!parent || parent->app != app || parent->kind != XXWIDGETS_WINDOW)))
@@ -229,6 +229,10 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     widget->enabled = 1;
     widget->value = (xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget)) ? -1 : 0;
     widget->hex_columns = 16;
+    widget->scan_column_width[0] = 12;
+    widget->scan_column_width[1] = 24;
+    widget->scan_column_width[2] = 12;
+    widget->scan_column_width[3] = 4;
     tail = &app->widgets;
     while (*tail) tail = &(*tail)->next;
     *tail = widget;
@@ -275,6 +279,8 @@ xxwidgets_status xxwidgets_widget_destroy(xxwidgets_widget *widget)
     free(widget->archive_entries);
     xxwidgets_archivebrowser_dispose(widget);
     xxwidgets_combobox_dispose(widget);
+    xxwidgets_scanresults_dispose(widget);
+    xxwidgets_treeview_dispose(widget);
     free(widget->shortcuts);
     free(widget->hex_data);
     free(widget->text);
@@ -363,6 +369,8 @@ xxwidgets_status xxwidgets_widget_focus(xxwidgets_widget *widget)
 
 xxwidgets_status xxwidgets_widget_set_value(xxwidgets_widget *widget, int value)
 {
+    if (widget && widget->kind == XXWIDGETS_TREEVIEW)
+        return xxwidgets_treeview_select(widget, value);
     if (widget && widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
         size_t row = (size_t)value;
         if (value < -1) return XXWIDGETS_INVALID_ARGUMENT;

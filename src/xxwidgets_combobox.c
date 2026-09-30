@@ -211,6 +211,32 @@ xxwidgets_status xxwidgets_checkcombobox_set_checked(xxwidgets_widget *widget, s
     return status;
 }
 
+xxwidgets_status xxwidgets_checkcombobox_set_mask(xxwidgets_widget *widget,
+    unsigned int mask, size_t count)
+{
+    unsigned char previous[31];
+    size_t i;
+    int changed = 0;
+    xxwidgets_status status;
+    if (!widget || widget->kind != XXWIDGETS_CHECKCOMBOBOX || count > 31 ||
+        widget->item_count != count || (count && !widget->combo) ||
+        (mask & ~((1u << count) - 1u))) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!count) return XXWIDGETS_OK;
+    memcpy(previous, widget->combo->checked, count);
+    for (i = 0; i < count; ++i) {
+        unsigned char checked = (unsigned char)((mask & (1u << i)) != 0);
+        changed |= widget->combo->checked[i] != checked;
+        widget->combo->checked[i] = checked;
+    }
+    if (!changed) return XXWIDGETS_OK;
+    status = sync_combo(widget);
+    if (status != XXWIDGETS_OK) {
+        memcpy(widget->combo->checked, previous, count);
+        sync_combo(widget);
+    }
+    return status;
+}
+
 xxwidgets_status xxwidgets_checkcombobox_user_toggle(xxwidgets_widget *widget, size_t index)
 {
     xxwidgets_status status;

@@ -26,16 +26,20 @@ appearance, keyboard behavior, accessibility, and input methods.
 - Read-only HexView with addresses, hexadecimal bytes, ASCII, and row selection
 - Read-only ArchiveView with UTF-8 paths, directory markers, byte sizes, and entry selection
 - ArchiveBrowser with an address bar, folder navigation, icons, and sortable metadata columns
+- ScanResults with copied Type/Name/Version/Info metadata, row selection, and report export
+- TreeView with copied hierarchy nodes, expansion, and stable node selection
+- A complete ScanPanel with a result tree, Flags/Databases checkbox combos, and Scan/Report buttons
 - UTF-8 text, visibility, enablement, focus, application/widget user data
 - Click, change, list selection, close, resize, activation, and context-menu request events
 - A shared demo that runs with either native controls or TUI
 - A HexView demo with sample bytes or file loading
 - An ArchiveView demo with copied archive-entry metadata
 - An ArchiveBrowser demo with explicit and inferred folders and file activation
+- ScanResults and complete ScanPanel demos with copied records and report handling
 - Dedicated demos for every basic control and for Options, About and persistent settings
 
 This is an initial common control set. Menus as a public API, nested containers,
-automatic layout, multiline/rich text, tree/table models, drawing surfaces,
+automatic layout, multiline/rich text, editable table models, drawing surfaces,
 file dialogs, and mobile backends are outside the current API.
 
 `xxwidgets_options_dialog(owner, title, options, count, &accepted)` presents
@@ -44,6 +48,53 @@ and applies values only on OK. Cancel, Escape, or closing the dialog leaves the
 supplied values unchanged. Invoke it on the UI thread after returning from an
 event callback, for example through a pending menu action in the main loop.
 The same form works with the native and terminal backends.
+
+Create `XXWIDGETS_SCANRESULTS` to show application scan records. Supply an array
+of `xxwidgets_scan_result` to `xxwidgets_scanresults_set_results`; every UTF-8
+field is copied, and NULL fields become empty strings. Replacement selects the
+first row and emits no input events. `xxwidgets_scanresults_get_result` and
+`xxwidgets_scanresults_get_selection` return borrowed metadata until the next
+replacement, clear, or destruction. Native backends display resizable
+Type/Name/Version/Info columns; TUI displays aligned selectable rows with long
+fields shortened for readability. The complete values remain in the model.
+
+`xxwidgets_scanresults_get_report` exports a tab-separated report with a header
+and complete field values. Control characters are escaped in both the display
+and report, while returned metadata retains its original text. A NULL buffer
+and zero capacity query the required size including NUL.
+`xxwidgets_scanresults_copy` copies the report to the native clipboard and
+returns `XXWIDGETS_UNAVAILABLE` on TUI. The widget has no scan-engine dependency.
+`xxwidgets_scanresults_demo --native` or `--tui` demonstrates the control.
+
+Create `XXWIDGETS_TREEVIEW` for a general tree. `xxwidgets_treeview_set_nodes`
+copies an array of `xxwidgets_tree_node` records: `parent` is `SIZE_MAX` for
+a root or the index of an earlier node, `text` is UTF-8, and `expanded` is 0/1.
+Selection values and events always identify the original node index. Selecting
+a hidden node expands its ancestors; collapsing an ancestor selects it when
+the current selection would become hidden. Programmatic changes emit no input
+events. Native controls provide tree branches and keyboard expansion. TUI uses
+Up/Down to select visible nodes and Left/Right to collapse/expand or move to a
+parent/child; Shift+Left/Right pans long text horizontally.
+
+Include `<xxwidgets/xxwidgets_scan_panel.h>` for the complete reusable scan UI.
+`xxwidgets_scan_panel_create(owner, bounds, &panel)` creates labeled Flags and
+Databases checkbox combo boxes, Scan and Report push buttons, and a TreeView.
+The main database is always used; optional databases and the six scan flags
+are exposed as bitmasks. Setters synchronize the controls without input events.
+`xxwidgets_scan_panel_set_results` copies results into a File -> detection ->
+Type/Name/Version/Info hierarchy and retains a copied full engine report.
+NULL fields are empty; replacing invalid input preserves the previous results.
+The application handles the panel's Scan button event and supplies results from
+its engine. Handle Report after returning from polling with
+`xxwidgets_scan_panel_show_report`; the text dialog supports Copy all.
+
+`xxwidgets_scan_panel_control` returns borrowed child controls for event
+comparison or custom placement. Logical bounds require at least 44 x 8 cells.
+Destroy the panel before its owner/app; do not destroy its children separately.
+`xxwidgets_scan_panel_demo --native` or `--tui` demonstrates the complete UI.
+Push buttons are also available independently as `XXWIDGETS_BUTTON`, with
+caption, visibility, enablement, focus, and `XXWIDGETS_EVENT_CLICK` support on
+every backend; `xxwidgets_button_demo` demonstrates them.
 
 `xxwidgets_text_dialog(owner, title, text)` shows a scrollable, selectable text
 report with **Close** and **Copy all** on native desktops. Copy places the entire

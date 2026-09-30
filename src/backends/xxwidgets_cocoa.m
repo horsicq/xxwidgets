@@ -33,6 +33,9 @@ typedef struct cocoa_widget_state {
     NSView *combo_checks;
     uint64_t combo_revision;
     int combo_initialized;
+    NSArray *tree_items; /* Stable identities for NSOutlineView's source nodes. */
+    uint64_t tree_content_revision;
+    int tree_collapsing, tree_before_collapse;
 } cocoa_widget_state;
 
 static xxwidgets_app *active_app;
@@ -57,7 +60,7 @@ static NSString *edit_text(NSTextField *field)
 @end
 
 @interface XXWidgetsDelegate : NSObject <NSWindowDelegate, NSTextFieldDelegate,
-                                           NSTableViewDataSource, NSTableViewDelegate> {
+    NSTableViewDataSource, NSTableViewDelegate, NSOutlineViewDataSource, NSOutlineViewDelegate> {
 @public
     xxwidgets_widget *widget;
 }
@@ -67,7 +70,97 @@ static NSString *edit_text(NSTextField *field)
 - (void)comboChecked:(id)sender;
 - (void)browserUp:(id)sender;
 - (void)browserActivated:(id)sender;
+- (void)treeActivated:(id)sender;
 @end
+
+@interface XXWidgetsTree : NSOutlineView {
+@public
+    xxwidgets_widget *tree_widget;
+}
+@end
+
+@implementation XXWidgetsTree
+- (void)keyDown:(NSEvent *)event
+{
+    if (tree_widget && !tree_widget->app->syncing &&
+        xxwidgets_focusable(tree_widget) && tree_widget->value >= 0) {
+        unsigned short code = [event keyCode];
+        if (code == 36 || code == 76) {
+            xxwidgets_emit(tree_widget, XXWIDGETS_EVENT_ACTIVATE, tree_widget->value);
+            return;
+        }
+        if (code == 49) {
+            int expanded;
+            if (xxwidgets_treeview_has_children(tree_widget, (size_t)tree_widget->value) &&
+                xxwidgets_treeview_get_expanded(tree_widget, (size_t)tree_widget->value, &expanded) == XXWIDGETS_OK)
+                xxwidgets_treeview_user_expand(tree_widget, (size_t)tree_widget->value, !expanded);
+            else xxwidgets_emit(tree_widget, XXWIDGETS_EVENT_SELECT, tree_widget->value);
+            return;
+        }
+    }
+    [super keyDown:event];
+}
+@end
+
+static void cocoa_tree_selection_apply(xxwidgets_widget *widget)
+{
+    cocoa_widget_state *state = widget->platform;
+    NSOutlineView *tree = widget->native;
+    NSInteger row = widget->value < 0 || (NSUInteger)widget->value >= [state->tree_items count] ? -1 :
+        [tree rowForItem:[state->tree_items objectAtIndex:(NSUInteger)widget->value]];
+    if ([tree selectedRow] != row) {
+        ++widget->app->syncing;
+        if (row < 0) [tree deselectAll:nil];
+        else {
+            [tree selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)row] byExtendingSelection:NO];
+            [tree scrollRowToVisible:row];
+        }
+        --widget->app->syncing;
+    }
+}
+
+static void cocoa_tree_expand_visible(xxwidgets_widget *widget)
+{
+    cocoa_widget_state *state = widget->platform;
+    NSOutlineView *tree = widget->native;
+    ++widget->app->syncing;
+    for (size_t node = 0; node < [state->tree_items count]; ++node) {
+        int expanded;
+        if (xxwidgets_treeview_row_of_node(widget, node) != SIZE_MAX &&
+            xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK && expanded)
+            [tree expandItem:[state->tree_items objectAtIndex:(NSUInteger)node] expandChildren:NO];
+    }
+    --widget->app->syncing;
+}
+
+static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notification, int expanded)
+{
+    cocoa_widget_state *state;
+    NSOutlineView *tree;
+    id item;
+    size_t node;
+    if (!widget || widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    state = widget->platform;
+    tree = widget->native;
+    item = [[notification userInfo] objectForKey:@"NSObject"];
+    if (!item) return;
+    node = (size_t)[item unsignedLongLongValue];
+    if (!expanded && state->tree_collapsing) widget->value = state->tree_before_collapse;
+    state->tree_collapsing = 0;
+    if (xxwidgets_treeview_expansion_input(widget, node, expanded) != XXWIDGETS_OK) {
+        ++widget->app->syncing;
+        if (expanded) [tree collapseItem:item];
+        else [tree expandItem:item];
+        --widget->app->syncing;
+        if (!expanded) cocoa_tree_expand_visible(widget);
+        cocoa_tree_selection_apply(widget);
+        return;
+    }
+    if (expanded) cocoa_tree_expand_visible(widget);
+    state->rendered_hex_revision = widget->tree_revision;
+    cocoa_tree_selection_apply(widget);
+    xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, (int)node);
+}
 
 @interface XXWidgetsArchiveTable : NSTableView {
 @public
@@ -230,6 +323,111 @@ static NSString *edit_text(NSTextField *field)
     if (row >= 0) xxwidgets_archivebrowser_user_activate(widget, (size_t)row);
 }
 
+- (void)treeActivated:(id)sender
+{
+    if (!widget || widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    NSOutlineView *tree = sender;
+    NSInteger row = [tree clickedRow];
+    if (row < 0) return;
+    id item = [tree itemAtRow:row];
+    if (item) {
+        size_t node = (size_t)[item unsignedLongLongValue];
+        int expanded;
+        if (xxwidgets_treeview_has_children(widget, node) &&
+            xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK)
+            xxwidgets_treeview_user_expand(widget, node, !expanded);
+        else xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, (int)node);
+    }
+}
+
+- (NSInteger)outlineView:(NSOutlineView *)outline numberOfChildrenOfItem:(id)item
+{
+    (void)outline;
+    if (!widget) return 0;
+    size_t parent = item ? (size_t)[item unsignedLongLongValue] : SIZE_MAX, count = 0;
+    for (size_t node = 0; node < xxwidgets_treeview_count(widget); ++node) {
+        xxwidgets_tree_node entry;
+        xxwidgets_treeview_get_node(widget, node, &entry);
+        if (entry.parent == parent) ++count;
+    }
+    return (NSInteger)count;
+}
+
+- (id)outlineView:(NSOutlineView *)outline child:(NSInteger)index ofItem:(id)item
+{
+    (void)outline;
+    if (!widget || index < 0) return nil;
+    cocoa_widget_state *state = widget->platform;
+    size_t parent = item ? (size_t)[item unsignedLongLongValue] : SIZE_MAX;
+    for (size_t node = 0; node < xxwidgets_treeview_count(widget); ++node) {
+        xxwidgets_tree_node entry;
+        xxwidgets_treeview_get_node(widget, node, &entry);
+        if (entry.parent == parent && index-- == 0)
+            return node < [state->tree_items count] ? [state->tree_items objectAtIndex:(NSUInteger)node] : nil;
+    }
+    return nil;
+}
+
+- (BOOL)outlineView:(NSOutlineView *)outline isItemExpandable:(id)item
+{
+    (void)outline;
+    return widget && item && xxwidgets_treeview_has_children(widget, (size_t)[item unsignedLongLongValue]);
+}
+
+- (id)outlineView:(NSOutlineView *)outline objectValueForTableColumn:(NSTableColumn *)column byItem:(id)item
+{
+    (void)outline; (void)column;
+    if (!widget || !item) return @"";
+    const char *value = xxwidgets_treeview_display_text(widget, (size_t)[item unsignedLongLongValue]);
+    NSString *result = [NSString stringWithUTF8String:value ? value : ""];
+    return result ? result : @"";
+}
+
+- (BOOL)outlineView:(NSOutlineView *)outline shouldSelectItem:(id)item
+{
+    (void)outline; (void)item;
+    return widget && (widget->app->syncing || xxwidgets_focusable(widget));
+}
+
+- (BOOL)outlineView:(NSOutlineView *)outline shouldExpandItem:(id)item
+{
+    (void)outline; (void)item;
+    return widget && (widget->app->syncing || xxwidgets_focusable(widget));
+}
+
+- (BOOL)outlineView:(NSOutlineView *)outline shouldCollapseItem:(id)item
+{
+    (void)outline; (void)item;
+    if (!widget || (!widget->app->syncing && !xxwidgets_focusable(widget))) return NO;
+    if (!widget->app->syncing) {
+        cocoa_widget_state *state = widget->platform;
+        state->tree_collapsing = 1;
+        state->tree_before_collapse = widget->value;
+    }
+    return YES;
+}
+
+- (void)outlineViewSelectionDidChange:(NSNotification *)notification
+{
+    if (!widget || widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    if (((cocoa_widget_state *)widget->platform)->tree_collapsing) return;
+    NSOutlineView *tree = [notification object];
+    NSInteger row = [tree selectedRow];
+    id item = row < 0 ? nil : [tree itemAtRow:row];
+    widget->value = item ? (int)[item unsignedLongLongValue] : -1;
+    xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
+}
+
+- (void)outlineViewItemDidExpand:(NSNotification *)notification
+{
+    cocoa_tree_expansion(widget, notification, 1);
+}
+
+- (void)outlineViewItemDidCollapse:(NSNotification *)notification
+{
+    cocoa_tree_expansion(widget, notification, 0);
+}
+
 - (void)tableView:(NSTableView *)table didClickTableColumn:(NSTableColumn *)column
 {
     (void)table;
@@ -253,6 +451,12 @@ static NSString *edit_text(NSTextField *field)
     if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
         const char *value = xxwidgets_archivebrowser_cell(widget, (size_t)row,
             (xxwidgets_archive_column)[[column identifier] intValue]);
+        NSString *result = [NSString stringWithUTF8String:value];
+        return result ? result : @"";
+    }
+    if (widget->kind == XXWIDGETS_SCANRESULTS) {
+        const char *value = xxwidgets_scanresults_cell(widget, (size_t)row,
+            (size_t)[[column identifier] intValue]);
         NSString *result = [NSString stringWithUTF8String:value];
         return result ? result : @"";
     }
@@ -497,7 +701,7 @@ static void cocoa_size_table(xxwidgets_widget *widget)
     CGFloat rows_height = widget->item_count *
         ([table rowHeight] + [table intercellSpacing].height);
     frame.size.height = MAX(content.height, rows_height);
-    if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
+    if (widget->kind == XXWIDGETS_ARCHIVEBROWSER || widget->kind == XXWIDGETS_SCANRESULTS) {
         CGFloat column_width = 0;
         for (NSTableColumn *column in [table tableColumns]) column_width += [column width];
         frame.size.width = MAX(content.width, column_width);
@@ -510,6 +714,46 @@ static void cocoa_size_table(xxwidgets_widget *widget)
     if (xxwidgets_formatted_rows(widget))
         [[[table tableColumns] objectAtIndex:0] setWidth:MAX(1, state->hex_row_width)];
     else [table sizeLastColumnToFit];
+}
+
+static xxwidgets_status cocoa_tree_sync(xxwidgets_widget *widget)
+{
+    cocoa_widget_state *state = widget->platform;
+    NSOutlineView *tree = widget->native;
+    size_t count = xxwidgets_treeview_count(widget);
+    BOOL refreshed = state->tree_content_revision != widget->tree_content_revision;
+    if (refreshed) {
+        NSMutableArray *items = [[NSMutableArray alloc] initWithCapacity:count];
+        if (!items) return XXWIDGETS_OUT_OF_MEMORY;
+        for (size_t node = 0; node < count; ++node) {
+            NSNumber *item = [[NSNumber alloc] initWithUnsignedLongLong:(unsigned long long)node];
+            if (!item) { [items release]; return XXWIDGETS_OUT_OF_MEMORY; }
+            [items addObject:item]; [item release];
+        }
+        NSArray *previous = state->tree_items;
+        state->tree_items = items;
+        [tree reloadData];
+        [previous release];
+        state->tree_content_revision = widget->tree_content_revision;
+    }
+    if (refreshed || state->rendered_hex_revision != widget->tree_revision) {
+        [tree collapseItem:nil collapseChildren:YES];
+        cocoa_tree_expand_visible(widget);
+        state->rendered_hex_revision = widget->tree_revision;
+        NSFont *font = [[[[tree tableColumns] objectAtIndex:0] dataCell] font];
+        NSDictionary *attributes = [NSDictionary dictionaryWithObject:font forKey:NSFontAttributeName];
+        state->hex_row_width = 0;
+        for (size_t row = 0; row < widget->item_count; ++row) {
+            size_t node = xxwidgets_treeview_node_at_row(widget, row);
+            NSString *text = [NSString stringWithUTF8String:xxwidgets_treeview_display_text(widget, node)];
+            CGFloat width = ceil([text sizeWithAttributes:attributes].width) +
+                (xxwidgets_treeview_depth(widget, node) + 1) * [tree indentationPerLevel] + 24;
+            if (width > state->hex_row_width) state->hex_row_width = width;
+        }
+    }
+    cocoa_tree_selection_apply(widget);
+    cocoa_size_table(widget);
+    return XXWIDGETS_OK;
 }
 
 static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget);
@@ -640,6 +884,69 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
             native = progress;
             break;
         }
+        case XXWIDGETS_TREEVIEW: {
+            XXWidgetsTree *tree = [[XXWidgetsTree alloc] initWithFrame:NSZeroRect];
+            NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:@"item"];
+            if (!tree || !column) {
+                [tree release]; [column release]; cocoa_destroy_backend(widget); return XXWIDGETS_OUT_OF_MEMORY;
+            }
+            tree->tree_widget = widget;
+            [[column dataCell] setFont:font];
+            [[column dataCell] setEditable:NO];
+            [[column dataCell] setWraps:NO];
+            [[column dataCell] setLineBreakMode:NSLineBreakByClipping];
+            [column setMinWidth:1]; [column setMaxWidth:CGFLOAT_MAX];
+            [column setResizingMask:NSTableColumnNoResizing];
+            [tree addTableColumn:column]; [tree setOutlineTableColumn:column]; [column release];
+            [tree setHeaderView:nil]; [tree setAllowsMultipleSelection:NO];
+            [tree setAllowsEmptySelection:YES]; [tree setAllowsColumnReordering:NO];
+            [tree setColumnAutoresizingStyle:NSTableViewNoColumnAutoresizing];
+            [tree setRowHeight:((cocoa_app_state *)widget->app->platform)->cell_height];
+            [tree setDataSource:state->delegate]; [tree setDelegate:state->delegate];
+            [tree setTarget:state->delegate]; [tree setDoubleAction:@selector(treeActivated:)];
+            NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+            if (!scroll) { [tree release]; cocoa_destroy_backend(widget); return XXWIDGETS_OUT_OF_MEMORY; }
+            [scroll setBorderType:NSBezelBorder];
+            [scroll setHasVerticalScroller:YES]; [scroll setHasHorizontalScroller:YES];
+            [scroll setAutohidesScrollers:YES]; [scroll setDocumentView:tree];
+            state->root = scroll; native = tree;
+            break;
+        }
+        case XXWIDGETS_SCANRESULTS: {
+            NSArray *titles = @[@"Type", @"Name", @"Version", @"Info"];
+            const CGFloat widths[] = {100, 220, 100, 260};
+            NSTableView *table = [[NSTableView alloc] initWithFrame:NSZeroRect];
+            for (NSUInteger index = 0; index < [titles count]; ++index) {
+                NSTableColumn *column = [[NSTableColumn alloc]
+                    initWithIdentifier:[NSString stringWithFormat:@"%lu", (unsigned long)index]];
+                [[column headerCell] setStringValue:[titles objectAtIndex:index]];
+                [[column dataCell] setFont:font];
+                [[column dataCell] setEditable:NO];
+                [[column dataCell] setWraps:NO];
+                [[column dataCell] setLineBreakMode:NSLineBreakByTruncatingTail];
+                [column setWidth:widths[index]];
+                [column setMinWidth:60];
+                [column setResizingMask:NSTableColumnUserResizingMask];
+                [table addTableColumn:column];
+                [column release];
+            }
+            [table setAllowsMultipleSelection:NO];
+            [table setAllowsEmptySelection:YES];
+            [table setAllowsColumnReordering:NO];
+            [table setColumnAutoresizingStyle:NSTableViewNoColumnAutoresizing];
+            [table setRowHeight:((cocoa_app_state *)widget->app->platform)->cell_height];
+            [table setDataSource:state->delegate];
+            [table setDelegate:state->delegate];
+            NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+            [scroll setBorderType:NSBezelBorder];
+            [scroll setHasVerticalScroller:YES];
+            [scroll setHasHorizontalScroller:YES];
+            [scroll setAutohidesScrollers:YES];
+            [scroll setDocumentView:table];
+            state->root = scroll;
+            native = table;
+            break;
+        }
         case XXWIDGETS_ARCHIVEBROWSER: {
             NSArray *titles = @[@"Name", @"Size", @"Packed Size", @"Modified", @"Attributes"];
             XXWidgetsArchiveTable *table = [[XXWidgetsArchiveTable alloc] initWithFrame:NSZeroRect];
@@ -737,12 +1044,17 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
                 [(NSTableView *)native setTarget:nil];
                 [state->browser_up setTarget:nil];
             }
+            if (widget->kind == XXWIDGETS_TREEVIEW && native) {
+                ((XXWidgetsTree *)native)->tree_widget = NULL;
+                [(NSOutlineView *)native setTarget:nil];
+            }
             if (widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_combo_kind(widget))
                 [(NSButton *)native setTarget:nil];
             [state->root removeFromSuperview];
             if (state->root != native) [state->root release];
         }
         [state->combo_popover close]; [state->combo_popover release];
+        [state->tree_items release];
         [native release];
         [state->delegate release];
         free(state);
@@ -782,6 +1094,12 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         case XXWIDGETS_WINDOW:
             [(NSWindow *)native setTitle:text];
             break;
+        case XXWIDGETS_TREEVIEW: {
+            xxwidgets_status status = cocoa_tree_sync(widget);
+            if (status != XXWIDGETS_OK) return status;
+            [(NSOutlineView *)native setAccessibilityLabel:text];
+            break;
+        }
         case XXWIDGETS_COMBOBOX: {
             NSPopUpButton *button = native;
             if (!state->combo_initialized || state->combo_revision != widget->combo_revision) {
@@ -850,6 +1168,7 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         case XXWIDGETS_LISTBOX:
         case XXWIDGETS_ARCHIVEVIEW:
         case XXWIDGETS_ARCHIVEBROWSER:
+        case XXWIDGETS_SCANRESULTS:
         case XXWIDGETS_HEXVIEW: {
             NSTableView *table = native;
             if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
@@ -885,7 +1204,8 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
                 (xxwidgets_formatted_rows(widget) &&
                  state->rendered_hex_revision != xxwidgets_row_revision(widget));
             if (refreshed) {
-                if (xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_ARCHIVEBROWSER) {
+                if (xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_ARCHIVEBROWSER &&
+                    widget->kind != XXWIDGETS_SCANRESULTS) {
                     NSFont *row_font = [[[[table tableColumns] objectAtIndex:0] dataCell] font];
                     NSDictionary *attributes = [NSDictionary dictionaryWithObject:row_font
                         forKey:NSFontAttributeName];
@@ -902,7 +1222,8 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
                 state->rendered_items = widget->item_count;
                 state->rendered_hex_revision = xxwidgets_row_revision(widget);
             }
-            if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) cocoa_size_table(widget);
+            if (widget->kind == XXWIDGETS_ARCHIVEBROWSER || widget->kind == XXWIDGETS_SCANRESULTS)
+                cocoa_size_table(widget);
             BOOL selection_changed = [table selectedRow] != widget->value;
             if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
                 NSMutableIndexSet *indexes = [NSMutableIndexSet indexSet];
@@ -969,6 +1290,12 @@ static xxwidgets_status cocoa_read_value_backend(xxwidgets_widget *widget)
             widget->value = (int)[(NSPopUpButton *)widget->native indexOfSelectedItem];
         else if (widget->kind == XXWIDGETS_CHECKBOX)
             widget->value = [(NSButton *)widget->native state] == NSControlStateValueOn ? 1 : 0;
+        else if (widget->kind == XXWIDGETS_TREEVIEW) {
+            NSOutlineView *tree = widget->native;
+            NSInteger row = [tree selectedRow];
+            id item = row < 0 ? nil : [tree itemAtRow:row];
+            widget->value = item ? (int)[item unsignedLongLongValue] : -1;
+        }
         else if (xxwidgets_list_kind(widget))
             widget->value = (int)[(NSTableView *)widget->native selectedRow];
         else if (widget->kind == XXWIDGETS_PROGRESS)

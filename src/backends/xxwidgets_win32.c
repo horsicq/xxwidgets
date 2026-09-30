@@ -45,6 +45,11 @@ typedef struct xxwidgets_win32_widget {
     HWND combo_popup, combo_list;
     uint64_t combo_revision;
     int combo_initialized;
+    uint64_t scan_revision;
+    HTREEITEM *tree_items;
+    size_t tree_count;
+    uint64_t tree_content_revision;
+    int tree_initialized;
 } xxwidgets_win32_widget;
 
 static xxwidgets_status win32_sync(xxwidgets_widget *widget);
@@ -52,6 +57,11 @@ static xxwidgets_status win32_read_text(xxwidgets_widget *widget);
 static xxwidgets_status win32_read_value(xxwidgets_widget *widget);
 static xxwidgets_status win32_checkcombo_open(xxwidgets_widget *widget);
 static xxwidgets_status win32_sync_combo(xxwidgets_widget *widget);
+static xxwidgets_status win32_scanresults_columns(xxwidgets_widget *widget);
+static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp,
+    UINT_PTR id, DWORD_PTR data);
+static void win32_tree_expansion_input(xxwidgets_widget *widget, size_t index,
+    HTREEITEM item, int expanded);
 static LRESULT CALLBACK win32_browser_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp);
 
 #define XXWIDGETS_BROWSER_UP_ID 1
@@ -467,6 +477,43 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
             }
         }
         break;
+    case WM_NOTIFY:
+        if (lp && !widget->app->syncing) {
+            NMHDR *notification = (NMHDR *)lp;
+            xxwidgets_widget *control = win32_find_widget(widget->app, notification->hwndFrom);
+            if (control && control->parent == widget && control->kind == XXWIDGETS_SCANRESULTS &&
+                control->enabled && notification->code == LVN_ITEMCHANGED) {
+                const NMLISTVIEW *change = (const NMLISTVIEW *)lp;
+                if ((change->uChanged & LVIF_STATE) &&
+                    ((change->uOldState ^ change->uNewState) & LVIS_SELECTED) &&
+                    win32_read_value(control) == XXWIDGETS_OK)
+                    xxwidgets_emit(control, XXWIDGETS_EVENT_SELECT, control->value);
+            }
+            if (control && control->parent == widget && control->kind == XXWIDGETS_TREEVIEW &&
+                control->enabled && control->platform &&
+                ((xxwidgets_win32_widget *)control->platform)->tree_initialized &&
+                ((xxwidgets_win32_widget *)control->platform)->tree_content_revision == control->tree_content_revision) {
+                if (notification->code == TVN_SELCHANGEDW || notification->code == TVN_SELCHANGEDA) {
+                    if (win32_read_value(control) == XXWIDGETS_OK)
+                        xxwidgets_emit(control, XXWIDGETS_EVENT_SELECT, control->value);
+                } else if (notification->code == TVN_ITEMEXPANDEDW || notification->code == TVN_ITEMEXPANDEDA) {
+                    const NMTREEVIEWW *change = (const NMTREEVIEWW *)lp;
+                    size_t index = (size_t)change->itemNew.lParam;
+                    TVITEMW item;
+                    int expanded;
+                    memset(&item, 0, sizeof(item)); item.hItem = change->itemNew.hItem;
+                    item.mask = TVIF_STATE; item.stateMask = TVIS_EXPANDED;
+                    if (!SendMessageW((HWND)control->native, TVM_GETITEMW, 0, (LPARAM)&item)) break;
+                    expanded = !!(item.state & TVIS_EXPANDED);
+                    win32_tree_expansion_input(control, index, change->itemNew.hItem, expanded);
+                } else if (notification->code == NM_DBLCLK) {
+                    if (win32_read_value(control) == XXWIDGETS_OK && control->value >= 0 &&
+                        !xxwidgets_treeview_has_children(control, (size_t)control->value))
+                        xxwidgets_emit(control, XXWIDGETS_EVENT_ACTIVATE, control->value);
+                }
+            }
+        }
+        break;
     case WM_MOVE:
         if (!widget->app->syncing && widget->platform) {
             xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
@@ -518,7 +565,7 @@ static xxwidgets_status win32_init(xxwidgets_app *app)
     state->cell_width = 8;
     state->cell_height = 20;
     controls.dwSize = sizeof(controls);
-    controls.dwICC = ICC_PROGRESS_CLASS | ICC_LISTVIEW_CLASSES;
+    controls.dwICC = ICC_PROGRESS_CLASS | ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES;
     if (!InitCommonControlsEx(&controls)) { free(state); return XXWIDGETS_PLATFORM_ERROR; }
     memset(&metrics, 0, sizeof(metrics));
     metrics.cbSize = sizeof(metrics);
@@ -742,6 +789,16 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         style |= WS_TABSTOP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
         extended = WS_EX_CONTROLPARENT;
         break;
+    case XXWIDGETS_SCANRESULTS:
+        class_name = WC_LISTVIEWW;
+        style |= WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SINGLESEL;
+        extended = WS_EX_CLIENTEDGE;
+        break;
+    case XXWIDGETS_TREEVIEW:
+        class_name = WC_TREEVIEWW;
+        style |= WS_TABSTOP | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS;
+        extended = WS_EX_CLIENTEDGE;
+        break;
     default: return XXWIDGETS_INVALID_ARGUMENT;
     }
     status = win32_geometry(widget, style, extended, &x, &y, &width, &height);
@@ -768,17 +825,27 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
     if (widget->kind != XXWIDGETS_WINDOW)
         SetWindowLongPtrW(handle, GWLP_USERDATA, (LONG_PTR)widget);
     SendMessageW(handle, WM_SETFONT,
-                 (WPARAM)(xxwidgets_formatted_rows(widget) ? state->monospace_font : state->font), FALSE);
+                 (WPARAM)(xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_SCANRESULTS &&
+                    widget->kind != XXWIDGETS_TREEVIEW ?
+                    state->monospace_font : state->font), FALSE);
     if (widget->kind == XXWIDGETS_PROGRESS)
         SendMessageW(handle, PBM_SETRANGE32, 0, 100);
     if (widget->kind == XXWIDGETS_EDIT)
         SendMessageW(handle, EM_SETLIMITTEXT, (WPARAM)INT_MAX - 1, 0);
+    if (widget->kind == XXWIDGETS_TREEVIEW)
+        SendMessageW(handle, CCM_SETUNICODEFORMAT, TRUE, 0);
     status = widget->kind == XXWIDGETS_ARCHIVEBROWSER ? win32_browser_create_children(widget) : XXWIDGETS_OK;
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_SCANRESULTS)
+        status = win32_scanresults_columns(widget);
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_TREEVIEW &&
+        !SetWindowSubclass(handle, win32_tree_proc, 1, (DWORD_PTR)widget))
+        status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK) status = win32_sync(widget);
     if (status != XXWIDGETS_OK) {
         DestroyWindow(handle);
         widget->native = NULL;
         if (native->browser_images) ImageList_Destroy(native->browser_images);
+        free(native->tree_items);
         free(native);
         widget->platform = NULL;
     }
@@ -794,8 +861,74 @@ static void win32_destroy(xxwidgets_widget *widget)
     widget->native = NULL;
     if (native && native->browser_images) ImageList_Destroy(native->browser_images);
     if (native && native->about_bitmap) DeleteObject(native->about_bitmap);
+    if (native) free(native->tree_items);
     free(widget->platform);
     widget->platform = NULL;
+}
+
+static void win32_tree_expansion_input(xxwidgets_widget *widget, size_t index,
+    HTREEITEM item, int expanded)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    int previous;
+    xxwidgets_status result;
+    if (!native || !native->tree_initialized || native->tree_content_revision != widget->tree_content_revision ||
+        widget->app->syncing ||
+        xxwidgets_treeview_get_expanded(widget, index, &previous) != XXWIDGETS_OK || previous == expanded) return;
+    result = xxwidgets_treeview_expansion_input(widget, index, expanded);
+    ++widget->app->syncing;
+    if (result == XXWIDGETS_OK)
+        SendMessageW((HWND)widget->native, TVM_SELECTITEM, TVGN_CARET,
+            widget->value < 0 ? 0 : (LPARAM)native->tree_items[widget->value]);
+    else SendMessageW((HWND)widget->native, TVM_EXPAND,
+        previous ? TVE_EXPAND : TVE_COLLAPSE, (LPARAM)item);
+    --widget->app->syncing;
+    if (result == XXWIDGETS_OK) xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, (int)index);
+}
+
+static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp,
+    UINT_PTR id, DWORD_PTR data)
+{
+    xxwidgets_widget *widget = (xxwidgets_widget *)data;
+    (void)id;
+    if (message == TVM_EXPAND && !widget->app->syncing && widget->platform &&
+        ((xxwidgets_win32_widget *)widget->platform)->tree_initialized) {
+        TVITEMW item;
+        uint64_t revision = widget->tree_content_revision;
+        LRESULT result;
+        memset(&item, 0, sizeof(item)); item.hItem = (HTREEITEM)lp;
+        item.mask = TVIF_STATE | TVIF_PARAM; item.stateMask = TVIS_EXPANDED;
+        if (!SendMessageW(handle, TVM_GETITEMW, 0, (LPARAM)&item))
+            return DefSubclassProc(handle, message, wp, lp);
+        result = DefSubclassProc(handle, message, wp, lp);
+        /* TVIS_EXPANDEDONCE suppresses later programmatic notifications. Cache
+         * the final state even then; ordinary notifications already cached it.
+         * Callbacks may replace the complete hierarchy, invalidating the item. */
+        if (revision == widget->tree_content_revision &&
+            SendMessageW(handle, TVM_GETITEMW, 0, (LPARAM)&item))
+            win32_tree_expansion_input(widget, (size_t)item.lParam, item.hItem,
+                !!(item.state & TVIS_EXPANDED));
+        return result;
+    }
+    if (message == WM_GETDLGCODE && lp) {
+        const MSG *key = (const MSG *)lp;
+        if (key->message == WM_KEYDOWN && (key->wParam == VK_RETURN || key->wParam == VK_SPACE))
+            return DefSubclassProc(handle, message, wp, lp) | DLGC_WANTMESSAGE;
+    }
+    if (message == WM_KEYDOWN && !widget->app->syncing && xxwidgets_focusable(widget) &&
+        (wp == VK_RETURN || wp == VK_SPACE)) {
+        if (win32_read_value(widget) == XXWIDGETS_OK && widget->value >= 0) {
+            size_t index = (size_t)widget->value;
+            if (wp == VK_SPACE && xxwidgets_treeview_has_children(widget, index)) {
+                int expanded;
+                if (xxwidgets_treeview_get_expanded(widget, index, &expanded) == XXWIDGETS_OK)
+                    xxwidgets_treeview_user_expand(widget, index, !expanded);
+            } else if (wp == VK_RETURN) xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
+        }
+        return 0;
+    }
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_tree_proc, 1);
+    return DefSubclassProc(handle, message, wp, lp);
 }
 
 static LRESULT CALLBACK win32_checkcombo_popup_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp,
@@ -1252,6 +1385,146 @@ static int win32_same_rect(xxwidgets_rect a, xxwidgets_rect b)
     return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
 }
 
+static xxwidgets_status win32_scanresults_columns(xxwidgets_widget *widget)
+{
+    static const wchar_t *titles[4] = {L"Type", L"Name", L"Version", L"Info"};
+    static const int widths[4] = {14, 30, 14, 32};
+    xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
+    HWND handle = (HWND)widget->native;
+    int column;
+    SendMessageW(handle, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
+        LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
+    for (column = 0; column < 4; ++column) {
+        LVCOLUMNW heading;
+        memset(&heading, 0, sizeof(heading));
+        heading.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT | LVCF_SUBITEM;
+        heading.pszText = (wchar_t *)titles[column]; heading.iSubItem = column;
+        heading.cx = widths[column] * state->cell_width; heading.fmt = LVCFMT_LEFT;
+        if (SendMessageW(handle, LVM_INSERTCOLUMNW, (WPARAM)column, (LPARAM)&heading) == -1)
+            return XXWIDGETS_PLATFORM_ERROR;
+    }
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
+{
+    HWND handle = (HWND)widget->native;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    size_t row, column, count = widget->item_count;
+    wchar_t **cells = NULL;
+    LVITEMW item;
+    int rebuild = !native->list_initialized || native->scan_revision != widget->scan_revision;
+    int redraw_disabled = 0;
+    xxwidgets_status status = XXWIDGETS_OK;
+    if (rebuild && count) {
+        if (count > SIZE_MAX / (4 * sizeof(*cells))) return XXWIDGETS_INVALID_ARGUMENT;
+        cells = (wchar_t **)calloc(count * 4, sizeof(*cells));
+        if (!cells) return XXWIDGETS_OUT_OF_MEMORY;
+        for (row = 0; row < count; ++row)
+            for (column = 0; column < 4; ++column) {
+                status = win32_wide(xxwidgets_scanresults_cell(widget, row, column), &cells[row * 4 + column]);
+                if (status != XXWIDGETS_OK) goto finish;
+            }
+    }
+    if (rebuild) {
+        SendMessageW(handle, WM_SETREDRAW, FALSE, 0); redraw_disabled = 1;
+        /* Force rollback to rebuild even if the OS rejects part of replacement. */
+        native->list_initialized = 0;
+        if (!SendMessageW(handle, LVM_DELETEALLITEMS, 0, 0)) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+        for (row = 0; row < count; ++row) {
+            memset(&item, 0, sizeof(item));
+            item.mask = LVIF_TEXT; item.iItem = (int)row; item.pszText = cells[row * 4];
+            if (SendMessageW(handle, LVM_INSERTITEMW, 0, (LPARAM)&item) == -1) {
+                status = XXWIDGETS_PLATFORM_ERROR; goto finish;
+            }
+            for (column = 1; column < 4; ++column) {
+                item.iSubItem = (int)column; item.pszText = cells[row * 4 + column];
+                if (!SendMessageW(handle, LVM_SETITEMW, 0, (LPARAM)&item)) {
+                    status = XXWIDGETS_PLATFORM_ERROR; goto finish;
+                }
+            }
+        }
+        native->list_count = count; native->scan_revision = widget->scan_revision;
+        native->list_initialized = 1;
+    }
+    {
+        int current = (int)SendMessageW(handle, LVM_GETNEXTITEM, (WPARAM)-1, LVNI_SELECTED);
+        if (rebuild || current != widget->value) {
+            memset(&item, 0, sizeof(item)); item.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
+            SendMessageW(handle, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&item);
+            if (widget->value >= 0) {
+                item.state = LVIS_SELECTED | LVIS_FOCUSED;
+                SendMessageW(handle, LVM_SETITEMSTATE, (WPARAM)widget->value, (LPARAM)&item);
+                SendMessageW(handle, LVM_ENSUREVISIBLE, (WPARAM)widget->value, FALSE);
+            }
+        }
+    }
+finish:
+    if (redraw_disabled) {
+        SendMessageW(handle, WM_SETREDRAW, TRUE, 0);
+        InvalidateRect(handle, NULL, TRUE);
+    }
+    if (cells) for (row = 0; row < count * 4; ++row) free(cells[row]);
+    free(cells); return status;
+}
+
+static xxwidgets_status win32_sync_tree(xxwidgets_widget *widget)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    HWND handle = (HWND)widget->native;
+    size_t count = xxwidgets_treeview_count(widget), i;
+    int rebuild = !native->tree_initialized ||
+        native->tree_content_revision != widget->tree_content_revision;
+    wchar_t **texts = NULL;
+    HTREEITEM *items = NULL;
+    xxwidgets_status status = XXWIDGETS_OK;
+    if (rebuild && count) {
+        texts = (wchar_t **)calloc(count, sizeof(*texts));
+        items = (HTREEITEM *)calloc(count, sizeof(*items));
+        if (!texts || !items) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
+        for (i = 0; i < count; ++i) {
+            status = win32_wide(xxwidgets_treeview_display_text(widget, i), &texts[i]);
+            if (status != XXWIDGETS_OK) goto finish;
+        }
+    }
+    if (rebuild) {
+        native->tree_initialized = 0;
+        SendMessageW(handle, WM_SETREDRAW, FALSE, 0);
+        SendMessageW(handle, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT);
+        for (i = 0; i < count; ++i) {
+            xxwidgets_tree_node node;
+            TVINSERTSTRUCTW insertion;
+            xxwidgets_treeview_get_node(widget, i, &node);
+            memset(&insertion, 0, sizeof(insertion));
+            insertion.hParent = node.parent == SIZE_MAX ? TVI_ROOT : items[node.parent];
+            insertion.hInsertAfter = TVI_LAST;
+            insertion.item.mask = TVIF_TEXT | TVIF_PARAM;
+            insertion.item.pszText = texts[i]; insertion.item.lParam = (LPARAM)i;
+            items[i] = (HTREEITEM)SendMessageW(handle, TVM_INSERTITEMW, 0, (LPARAM)&insertion);
+            if (!items[i]) { status = XXWIDGETS_PLATFORM_ERROR; break; }
+        }
+        SendMessageW(handle, WM_SETREDRAW, TRUE, 0); InvalidateRect(handle, NULL, TRUE);
+        if (status != XXWIDGETS_OK) goto finish;
+        free(native->tree_items); native->tree_items = items; items = NULL;
+        native->tree_count = count; native->tree_content_revision = widget->tree_content_revision;
+        native->tree_initialized = 1;
+    }
+    for (i = 0; i < count; ++i) {
+        int expanded;
+        if (!xxwidgets_treeview_has_children(widget, i)) continue;
+        xxwidgets_treeview_get_expanded(widget, i, &expanded);
+        SendMessageW(handle, TVM_EXPAND, expanded ? TVE_EXPAND : TVE_COLLAPSE,
+            (LPARAM)native->tree_items[i]);
+    }
+    SendMessageW(handle, TVM_SELECTITEM, TVGN_CARET,
+        widget->value < 0 ? 0 : (LPARAM)native->tree_items[widget->value]);
+    if (widget->value >= 0)
+        SendMessageW(handle, TVM_ENSUREVISIBLE, 0, (LPARAM)native->tree_items[widget->value]);
+finish:
+    if (texts) for (i = 0; i < count; ++i) free(texts[i]);
+    free(texts); free(items); return status;
+}
+
 static xxwidgets_status win32_sync(xxwidgets_widget *widget)
 {
     HWND handle = (HWND)widget->native;
@@ -1277,6 +1550,12 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
         if (status != XXWIDGETS_OK) return status;
     } else if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
         status = win32_sync_browser(widget);
+        if (status != XXWIDGETS_OK) return status;
+    } else if (widget->kind == XXWIDGETS_SCANRESULTS) {
+        status = win32_sync_scanresults(widget);
+        if (status != XXWIDGETS_OK) return status;
+    } else if (widget->kind == XXWIDGETS_TREEVIEW) {
+        status = win32_sync_tree(widget);
         if (status != XXWIDGETS_OK) return status;
     } else if (xxwidgets_list_kind(widget)) {
         status = win32_sync_list(widget);
@@ -1358,6 +1637,23 @@ static xxwidgets_status win32_read_value(xxwidgets_widget *widget)
         break;
     case XXWIDGETS_PROGRESS:
         widget->value = (int)SendMessageW(handle, PBM_GETPOS, 0, 0);
+        break;
+    case XXWIDGETS_SCANRESULTS:
+        widget->value = (int)SendMessageW(handle, LVM_GETNEXTITEM, (WPARAM)-1, LVNI_SELECTED);
+        break;
+    case XXWIDGETS_TREEVIEW:
+        {
+            xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+            TVITEMW item;
+            if (!native || !native->tree_initialized || native->tree_content_revision != widget->tree_content_revision ||
+                native->tree_count != xxwidgets_treeview_count(widget)) return XXWIDGETS_PLATFORM_ERROR;
+            memset(&item, 0, sizeof(item)); item.mask = TVIF_PARAM;
+            item.hItem = (HTREEITEM)SendMessageW(handle, TVM_GETNEXTITEM, TVGN_CARET, 0);
+            if (!item.hItem) widget->value = -1;
+            else if (!SendMessageW(handle, TVM_GETITEMW, 0, (LPARAM)&item) ||
+                (size_t)item.lParam >= xxwidgets_treeview_count(widget)) return XXWIDGETS_PLATFORM_ERROR;
+            else widget->value = (int)item.lParam;
+        }
         break;
     case XXWIDGETS_ARCHIVEBROWSER:
         {
