@@ -1168,7 +1168,16 @@ static xxwidgets_status tui_focus(xxwidgets_widget *widget)
     return tui_render(widget->app);
 }
 
+static xxwidgets_status tui_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options)
+{
+    /* The common layer stores the accepted settings. A terminal's font belongs
+     * to its host, so font options do not alter cells or escape sequences. */
+    (void)app; (void)options;
+    return XXWIDGETS_OK;
+}
+
 const xxwidgets_backend_ops xxwidgets_tui_ops = {
     "tui", tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,
-    tui_sync, tui_read, tui_read, tui_focus, NULL, NULL, NULL
+    tui_sync, tui_read, tui_read, tui_focus, NULL, NULL, NULL,
+    tui_apply_fonts, NULL, NULL
 };

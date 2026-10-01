@@ -16,20 +16,22 @@ struct xxwidgets_scan_panel {
 
 static int panel_rect(xxwidgets_rect bounds)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 44 && bounds.height >= 8 &&
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 44 && bounds.height >= 11 &&
         bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
 }
 
 static void control_rects(xxwidgets_rect bounds, xxwidgets_rect *rects)
 {
     int first = (bounds.width - 19) / 2, second = bounds.width - 19 - first;
-    rects[XXWIDGETS_SCAN_PANEL_FLAGS_LABEL] = (xxwidgets_rect){bounds.x, bounds.y, first, 1};
-    rects[XXWIDGETS_SCAN_PANEL_DATABASES_LABEL] = (xxwidgets_rect){bounds.x + first + 1, bounds.y, second, 1};
-    rects[XXWIDGETS_SCAN_PANEL_FLAGS] = (xxwidgets_rect){bounds.x, bounds.y + 1, first, 2};
-    rects[XXWIDGETS_SCAN_PANEL_DATABASES] = (xxwidgets_rect){bounds.x + first + 1, bounds.y + 1, second, 2};
-    rects[XXWIDGETS_SCAN_PANEL_SCAN] = (xxwidgets_rect){bounds.x + bounds.width - 17, bounds.y + 1, 8, 2};
-    rects[XXWIDGETS_SCAN_PANEL_REPORT] = (xxwidgets_rect){bounds.x + bounds.width - 8, bounds.y + 1, 8, 2};
-    rects[XXWIDGETS_SCAN_PANEL_RESULTS] = (xxwidgets_rect){bounds.x, bounds.y + 4, bounds.width, bounds.height - 4};
+    rects[XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL] = (xxwidgets_rect){bounds.x, bounds.y, bounds.width, 1};
+    rects[XXWIDGETS_SCAN_PANEL_FILE_TYPE] = (xxwidgets_rect){bounds.x, bounds.y + 1, bounds.width, 2};
+    rects[XXWIDGETS_SCAN_PANEL_FLAGS_LABEL] = (xxwidgets_rect){bounds.x, bounds.y + 3, first, 1};
+    rects[XXWIDGETS_SCAN_PANEL_DATABASES_LABEL] = (xxwidgets_rect){bounds.x + first + 1, bounds.y + 3, second, 1};
+    rects[XXWIDGETS_SCAN_PANEL_FLAGS] = (xxwidgets_rect){bounds.x, bounds.y + 4, first, 2};
+    rects[XXWIDGETS_SCAN_PANEL_DATABASES] = (xxwidgets_rect){bounds.x + first + 1, bounds.y + 4, second, 2};
+    rects[XXWIDGETS_SCAN_PANEL_SCAN] = (xxwidgets_rect){bounds.x + bounds.width - 17, bounds.y + 4, 8, 2};
+    rects[XXWIDGETS_SCAN_PANEL_REPORT] = (xxwidgets_rect){bounds.x + bounds.width - 8, bounds.y + 4, 8, 2};
+    rects[XXWIDGETS_SCAN_PANEL_RESULTS] = (xxwidgets_rect){bounds.x, bounds.y + 7, bounds.width, bounds.height - 7};
 }
 
 xxwidgets_widget *xxwidgets_scan_panel_control(const xxwidgets_scan_panel *panel,
@@ -119,10 +121,18 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
 {
     static const xxwidgets_kind kinds[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
         XXWIDGETS_CHECKCOMBOBOX, XXWIDGETS_CHECKCOMBOBOX, XXWIDGETS_BUTTON,
-        XXWIDGETS_BUTTON, XXWIDGETS_TREEVIEW, XXWIDGETS_LABEL, XXWIDGETS_LABEL
+        XXWIDGETS_BUTTON, XXWIDGETS_TREEVIEW, XXWIDGETS_LABEL, XXWIDGETS_LABEL,
+        XXWIDGETS_COMBOBOX, XXWIDGETS_LABEL
     };
     static const char *const names[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
-        "No flags", "Main database only", "Scan", "Report", "Scan results", "Flags", "Databases"
+        "No flags", "Main database only", "Scan", "Report", "Scan results", "Flags", "Databases",
+        "Automatic", "File type"
+    };
+    static const xxwidgets_scan_panel_control_id creation_order[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
+        XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_FILE_TYPE,
+        XXWIDGETS_SCAN_PANEL_FLAGS_LABEL, XXWIDGETS_SCAN_PANEL_FLAGS,
+        XXWIDGETS_SCAN_PANEL_DATABASES_LABEL, XXWIDGETS_SCAN_PANEL_DATABASES,
+        XXWIDGETS_SCAN_PANEL_SCAN, XXWIDGETS_SCAN_PANEL_REPORT, XXWIDGETS_SCAN_PANEL_RESULTS
     };
     static const wchar_t *const flag_names[6] = {
         L"Deep scan", L"Heuristic scan", L"Verbose results", L"Aggressive scan",
@@ -144,7 +154,22 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
     panel->owner = owner;
     control_rects(bounds, rects);
     for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], rects[i], &panel->controls[i]);
+        xxwidgets_scan_panel_control_id control = creation_order[i];
+        status = xxwidgets_widget_create(owner->app, owner, kinds[control], names[control],
+            rects[control], &panel->controls[control]);
+        if (status != XXWIDGETS_OK) goto failed;
+    }
+    {
+        xx_str_w_s label = {0};
+        xx_meta_string record = {0};
+        label.data = L"Automatic";
+        label.length = 9;
+        label.capacity = 10;
+        label.is_view = true;
+        record.meta_string = &label;
+        record.var.type = XX_VAR_TYPE_UINT64;
+        record.var.val.u64 = 0;
+        status = xxwidgets_combobox_set_records(panel->controls[XXWIDGETS_SCAN_PANEL_FILE_TYPE], &record, 1);
         if (status != XXWIDGETS_OK) goto failed;
     }
     status = fill_choices(panel->controls[XXWIDGETS_SCAN_PANEL_FLAGS], flag_names, 6);

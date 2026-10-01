@@ -70,6 +70,9 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_combobox.h
     include/xxwidgets/xxwidgets_process.h
     include/xxwidgets/xxwidgets_scan_panel.h
+    include/xxwidgets/xxwidgets_scan_options.h
+    include/xxwidgets/xxwidgets_font_options.h
+    include/xxwidgets/xxwidgets_context_options.h
     src/xxwidgets_internal.h
     src/xxwidgets.c
     src/xxwidgets_shortcuts.c
@@ -81,6 +84,9 @@ add_library(xxwidgets
     src/xxwidgets_scanresults.c
     src/xxwidgets_treeview.c
     src/xxwidgets_scan_panel.c
+    src/xxwidgets_scan_options.c
+    src/xxwidgets_font_options.c
+    src/xxwidgets_context_options.c
     src/backends/xxwidgets_tui.c
     ${_xxwidgets_backend_source}
 )
@@ -107,6 +113,7 @@ endif()
 target_link_libraries(xxwidgets PRIVATE ${_xxwidgets_backend_libs})
 if(WIN32)
     target_compile_definitions(xxwidgets PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(xxwidgets PRIVATE comdlg32 advapi32 shell32)
     # The TUI backend uses the console API; WinAPI controls require only these
     # additional libraries. Console APIs come from the default kernel32 link.
 elseif(UNIX)
@@ -171,6 +178,9 @@ if(XXWIDGETS_BUILD_EXAMPLES)
         xxwidgets_add_demo(xxwidgets_${_xxwidgets_view}_demo examples/${_xxwidgets_view}_demo.c)
     endforeach()
     xxwidgets_add_demo(xxwidgets_scan_panel_demo examples/scan_panel_demo.c)
+    xxwidgets_add_demo(xxwidgets_scan_options_demo examples/scan_options_demo.c)
+    xxwidgets_add_demo(xxwidgets_font_options_demo examples/font_options_demo.c)
+    xxwidgets_add_demo(xxwidgets_context_options_demo examples/context_options_demo.c)
     if(XXWIDGETS_BUILD_SETTINGS)
         xxwidgets_add_demo(xxwidgets_settings_demo examples/settings_demo.c)
         target_link_libraries(xxwidgets_settings_demo PRIVATE xxwidgets::settings)
@@ -183,6 +193,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         # Deterministic API/lifecycle tests don't require a display or terminal.
         add_executable(xxwidgets_core_tests tests/test_core.c src/xxwidgets.c src/xxwidgets_archivebrowser.c src/xxwidgets_dialog.c src/xxwidgets_about.c src/xxwidgets_combobox.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_process.c tests/test_process.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_font_options.c)
         target_include_directories(xxwidgets_core_tests PRIVATE include src "${XXWIDGETS_XXFCLIB_DIR}/include")
         target_compile_features(xxwidgets_core_tests PRIVATE c_std_11)
         target_compile_definitions(xxwidgets_core_tests PRIVATE XXWIDGETS_STATIC XXWIDGETS_TEST_CLOCK)
@@ -206,6 +217,15 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             target_link_libraries(xxwidgets_win32_tests PRIVATE xxwidgets::xxwidgets user32 gdi32 comctl32)
             add_test(NAME xxwidgets_win32 COMMAND xxwidgets_win32_tests)
             set_tests_properties(xxwidgets_win32 PROPERTIES TIMEOUT 30)
+        endif()
+        if(_xxwidgets_native STREQUAL "win32")
+            foreach(_xxwidgets_options IN ITEMS scan_options font_options context_options)
+                add_executable(xxwidgets_${_xxwidgets_options}_tests tests/test_${_xxwidgets_options}.c)
+                target_link_libraries(xxwidgets_${_xxwidgets_options}_tests PRIVATE xxwidgets::xxwidgets)
+                target_link_libraries(xxwidgets_${_xxwidgets_options}_tests PRIVATE user32 gdi32 comctl32 advapi32)
+                add_test(NAME xxwidgets_${_xxwidgets_options} COMMAND xxwidgets_${_xxwidgets_options}_tests)
+                set_tests_properties(xxwidgets_${_xxwidgets_options} PROPERTIES TIMEOUT 30)
+            endforeach()
         endif()
         if(WIN32)
             add_executable(xxwidgets_tui_tests tests/test_tui_win32.c)

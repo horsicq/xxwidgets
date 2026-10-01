@@ -2,6 +2,7 @@
 #define XXWIDGETS_INTERNAL_H
 
 #include "xxwidgets/xxwidgets.h"
+#include "xxwidgets/xxwidgets_font_options.h"
 
 typedef struct xxwidgets_backend_ops {
     const char *name;
@@ -18,6 +19,12 @@ typedef struct xxwidgets_backend_ops {
     xxwidgets_status (*about_content)(xxwidgets_widget *window, const xxwidgets_about_dialog *about,
         const char *body);
     xxwidgets_status (*copy_text)(xxwidgets_widget *window, const char *text);
+    xxwidgets_status (*apply_fonts)(xxwidgets_app *app, const xxwidgets_font_options *options);
+    xxwidgets_status (*choose_font)(xxwidgets_widget *owner, xxwidgets_font_role role,
+        xxwidgets_font *font, int *accepted);
+    xxwidgets_status (*preview_font)(xxwidgets_widget *widget, xxwidgets_font_role role,
+        const xxwidgets_font *font);
+    xxwidgets_status (*font_options_layout)(xxwidgets_widget *dialog, int refresh);
 } xxwidgets_backend_ops;
 
 struct xxwidgets_about_dialog {
@@ -41,6 +48,7 @@ struct xxwidgets_app {
     int polling;
     xxwidgets_widget *modal_window;
     xxwidgets_widget *modal_default;
+    xxwidgets_font_options font_options;
 };
 
 struct xxwidgets_widget {
@@ -101,6 +109,8 @@ int xxwidgets_shortcut_dispatch(xxwidgets_widget *window, unsigned int key, unsi
  * container. The event exists only for the duration of the callback. */
 void xxwidgets_emit_context(xxwidgets_widget *widget, int value, int x, int y);
 int xxwidgets_focusable(const xxwidgets_widget *widget);
+xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget);
+int xxwidgets_font_valid(const xxwidgets_font *font);
 static inline int xxwidgets_combo_kind(const xxwidgets_widget *widget)
 {
     return widget->kind == XXWIDGETS_COMBOBOX || widget->kind == XXWIDGETS_CHECKCOMBOBOX;

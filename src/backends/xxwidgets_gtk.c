@@ -9,6 +9,7 @@
 typedef struct gtk_app_state {
     int cell_width;
     int cell_height;
+    PangoFontDescription *fonts[XXWIDGETS_FONT_ROLE_COUNT];
 } gtk_app_state;
 
 typedef struct gtk_widget_state {
@@ -27,7 +28,109 @@ typedef struct gtk_widget_state {
     size_t tree_count;
     uint64_t tree_content_revision;
     int tree_collapsing, tree_before_collapse;
+    GtkWidget *about_text; /* Owned by the window's content container. */
+    PangoFontDescription *preview_font;
+    int has_preview;
 } gtk_widget_state;
+
+static PangoFontDescription *gtk_font_description(const xxwidgets_font *font)
+{
+    PangoFontDescription *description;
+    if (!font->family[0] && !font->point_size && !font->bold && !font->italic) return NULL;
+    description = pango_font_description_new();
+    if (!description) return NULL;
+    if (font->family[0]) pango_font_description_set_family(description, font->family);
+    if (font->point_size) pango_font_description_set_size(description, (int)font->point_size * PANGO_SCALE);
+    pango_font_description_set_weight(description, font->bold ? PANGO_WEIGHT_BOLD : PANGO_WEIGHT_NORMAL);
+    pango_font_description_set_style(description, font->italic ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL);
+    return description;
+}
+
+static void gtk_font_descendants(GtkWidget *native, const PangoFontDescription *description)
+{
+    gtk_widget_override_font(native, description);
+    if (GTK_IS_CONTAINER(native)) {
+        GList *children = gtk_container_get_children(GTK_CONTAINER(native));
+        for (GList *child = children; child; child = child->next)
+            gtk_font_descendants(GTK_WIDGET(child->data), description);
+        g_list_free(children);
+    }
+}
+
+static void gtk_widget_fonts(xxwidgets_widget *widget)
+{
+    gtk_app_state *app = widget->app->platform;
+    gtk_widget_state *state = widget->platform;
+    const PangoFontDescription *description;
+    if (!state || !widget->native) return;
+    if (widget->kind == XXWIDGETS_WINDOW) {
+        if (state->about_text)
+            gtk_font_descendants(state->about_text, app->fonts[XXWIDGETS_FONT_TEXT_EDITS]);
+        return;
+    }
+    description = state->has_preview ? state->preview_font :
+        app->fonts[xxwidgets_widget_font_role(widget)];
+    gtk_font_descendants(GTK_WIDGET(widget->native), description);
+    if (state->combo_box) gtk_font_descendants(state->combo_box, description);
+    if (state->browser_address)
+        gtk_font_descendants(state->browser_address, app->fonts[XXWIDGETS_FONT_TEXT_EDITS]);
+    if (state->browser_up)
+        gtk_font_descendants(state->browser_up, app->fonts[XXWIDGETS_FONT_CONTROLS]);
+    if (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW) {
+        GList *rows = gtk_container_get_children(GTK_CONTAINER(widget->native));
+        for (GList *row = rows; row; row = row->next) {
+            GtkWidget *label = gtk_bin_get_child(GTK_BIN(row->data));
+            PangoAttrList *attributes = NULL;
+            /* Preserve the formatted-view monospace default, while an explicit
+             * role family replaces that default rather than fighting it. */
+            if (!description || !pango_font_description_get_family(description)) {
+                attributes = pango_attr_list_new();
+                pango_attr_list_insert(attributes, pango_attr_family_new("monospace"));
+            }
+            gtk_label_set_attributes(GTK_LABEL(label), attributes);
+            if (attributes) pango_attr_list_unref(attributes);
+        }
+        g_list_free(rows);
+    }
+}
+
+static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options)
+{
+    gtk_app_state *state = app->platform;
+    PangoFontDescription *fonts[XXWIDGETS_FONT_ROLE_COUNT] = {0};
+    size_t role;
+    for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
+        const xxwidgets_font *font = &options->fonts[role];
+        fonts[role] = gtk_font_description(font);
+        if (!fonts[role] && (font->family[0] || font->point_size || font->bold || font->italic)) {
+            for (size_t i = 0; i < role; ++i) if (fonts[i]) pango_font_description_free(fonts[i]);
+            return XXWIDGETS_OUT_OF_MEMORY;
+        }
+    }
+    for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
+        PangoFontDescription *previous = state->fonts[role];
+        state->fonts[role] = fonts[role];
+        if (previous) pango_font_description_free(previous);
+    }
+    for (xxwidgets_widget *widget = app->widgets; widget; widget = widget->next)
+        gtk_widget_fonts(widget);
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status gtk_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role,
+    const xxwidgets_font *font)
+{
+    gtk_widget_state *state = widget->platform;
+    PangoFontDescription *description = gtk_font_description(font);
+    (void)role;
+    if (!description && (font->family[0] || font->point_size || font->bold || font->italic))
+        return XXWIDGETS_OUT_OF_MEMORY;
+    if (state->preview_font) pango_font_description_free(state->preview_font);
+    state->preview_font = description;
+    state->has_preview = 1;
+    gtk_widget_fonts(widget);
+    return XXWIDGETS_OK;
+}
 
 static int rect_equal(xxwidgets_rect a, xxwidgets_rect b)
 {
@@ -666,6 +769,9 @@ static xxwidgets_status gtk_init_backend(xxwidgets_app *app)
 
 static void gtk_shutdown_backend(xxwidgets_app *app)
 {
+    gtk_app_state *state = app->platform;
+    if (state) for (size_t role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role)
+        if (state->fonts[role]) pango_font_description_free(state->fonts[role]);
     free(app->platform);
     app->platform = NULL;
 }
@@ -921,6 +1027,7 @@ static void gtk_destroy_backend(xxwidgets_widget *widget)
         if (state->root != native) g_object_unref(state->root);
     }
     if (native) g_object_unref(native);
+    if (state->preview_font) pango_font_description_free(state->preview_font);
     free(state->tree_iters);
     free(state);
     widget->platform = NULL;
@@ -1071,6 +1178,7 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
         break;
     }
     }
+    gtk_widget_fonts(widget);
     gtk_widget_set_sensitive(state->root, widget->enabled != 0);
     if (widget->kind == XXWIDGETS_WINDOW && (!widget->enabled || !widget->visible)) {
         xxwidgets_widget *child;
@@ -1175,6 +1283,8 @@ static xxwidgets_status gtk_about_content(xxwidgets_widget *window,
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_container_add(GTK_CONTAINER(scroll), text);
     gtk_fixed_put(GTK_FIXED(state->content), scroll, text_x, app->cell_height);
+    state->about_text = text;
+    gtk_font_descendants(text, app->fonts[XXWIDGETS_FONT_TEXT_EDITS]);
     gtk_widget_show_all(scroll);
     if (about->image) {
         GdkPixbuf *pixels = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8,
@@ -1215,5 +1325,6 @@ static xxwidgets_status gtk_copy_text(xxwidgets_widget *window, const char *text
 const xxwidgets_backend_ops xxwidgets_native_ops = {
     "GTK3", gtk_init_backend, gtk_shutdown_backend, gtk_poll_backend,
     gtk_create_backend, gtk_destroy_backend, gtk_sync_backend,
-    gtk_read_text_backend, gtk_read_value_backend, gtk_focus_backend, gtk_modal_owner, gtk_about_content, gtk_copy_text
+    gtk_read_text_backend, gtk_read_value_backend, gtk_focus_backend, gtk_modal_owner, gtk_about_content, gtk_copy_text,
+    gtk_apply_fonts, NULL, gtk_preview_font
 };

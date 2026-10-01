@@ -17,6 +17,8 @@ typedef enum xxwidgets_scan_panel_control_id {
     XXWIDGETS_SCAN_PANEL_RESULTS,
     XXWIDGETS_SCAN_PANEL_FLAGS_LABEL,
     XXWIDGETS_SCAN_PANEL_DATABASES_LABEL,
+    XXWIDGETS_SCAN_PANEL_FILE_TYPE,
+    XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL,
     XXWIDGETS_SCAN_PANEL_CONTROL_COUNT
 } xxwidgets_scan_panel_control_id;
 
@@ -31,9 +33,10 @@ enum {
     XXWIDGETS_SCAN_DATABASE_CUSTOM = 1u << 1
 };
 
-/* Complete scan UI: labeled checkbox combo boxes, Scan/Report push buttons,
- * and a hierarchical result tree. The application supplies the scan engine.
- * Bounds use text cells, require width >= 44 and height >= 8. Children belong
+/* Complete scan UI: a file-type combo box, labeled checkbox combo boxes,
+ * Scan/Report push buttons, and a hierarchical result tree. The application
+ * supplies the scan engine. Bounds use text cells, require width >= 44 and
+ * height >= 11. Children belong
  * to the owner WINDOW and events use its app callback. Destroy the panel before
  * its owner/app; borrowed control handles must not be destroyed separately.
  * BUTTON clicks are handled by the application; call show_report after polling.
@@ -43,7 +46,11 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *own
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_destroy(xxwidgets_scan_panel *panel);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_rect(xxwidgets_scan_panel *panel,
     xxwidgets_rect bounds);
-/* Borrowed handles also allow an application to place controls using pixels. */
+/* Borrowed handles also allow an application to place controls using pixels.
+ * FILE_TYPE is a normal COMBOBOX initially containing selected "Automatic"
+ * with UINT64 value 0. Replace its records using xxwidgets_combobox_set_records
+ * and handle its SELECT event in the application to rescan the current file.
+ * Labels and values use the regular combo ownership and selection contract. */
 XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_panel_control(
     const xxwidgets_scan_panel *panel, xxwidgets_scan_panel_control_id control);
 

@@ -16,6 +16,8 @@ typedef struct cocoa_app_state {
     NSMenu *saved_menu;
     NSApplicationActivationPolicy saved_policy;
     XXWidgetsApplicationDelegate *delegate;
+    NSFont *fonts[XXWIDGETS_FONT_ROLE_COUNT];
+    NSFont *formatted_font;
 } cocoa_app_state;
 
 typedef struct cocoa_widget_state {
@@ -36,10 +38,146 @@ typedef struct cocoa_widget_state {
     NSArray *tree_items; /* Stable identities for NSOutlineView's source nodes. */
     uint64_t tree_content_revision;
     int tree_collapsing, tree_before_collapse;
+    NSTextView *about_text; /* Owned by the window's content view. */
+    NSFont *preview_font;
+    NSFont *applied_font;
 } cocoa_widget_state;
 
 static xxwidgets_app *active_app;
 static int finished_launching;
+
+static void cocoa_size_table(xxwidgets_widget *widget);
+
+/* Returned fonts are retained. Build every role before changing any views so
+ * a font allocation failure leaves the preceding application fonts intact. */
+static NSFont *cocoa_font_create(const xxwidgets_font *settings, int formatted)
+{
+    CGFloat size = settings->point_size ? settings->point_size : [NSFont systemFontSize];
+    NSFont *base = formatted ? [NSFont userFixedPitchFontOfSize:size] : [NSFont systemFontOfSize:size];
+    NSFontManager *manager = [NSFontManager sharedFontManager];
+    if (!base) base = [NSFont systemFontOfSize:size];
+    if (!base) return nil;
+    if (settings->family[0]) {
+        NSString *family = [NSString stringWithUTF8String:settings->family];
+        NSFont *named = [NSFont fontWithName:family size:size];
+        if (!named) named = [manager convertFont:base toFamily:family];
+        if (named) base = named;
+    }
+    NSFont *font = [manager convertFont:base toNotHaveTrait:NSBoldFontMask | NSItalicFontMask];
+    if (!font) font = base;
+    NSFontTraitMask traits = (settings->bold ? NSBoldFontMask : 0) | (settings->italic ? NSItalicFontMask : 0);
+    if (traits) {
+        NSFont *styled = [manager convertFont:font toHaveTrait:traits];
+        if (styled) font = styled;
+    }
+    return [font retain];
+}
+
+static NSFont *cocoa_role_font(xxwidgets_widget *widget, xxwidgets_font_role role)
+{
+    cocoa_app_state *app = widget->app->platform;
+    NSFont *font = app->fonts[role];
+    return font ? font : [NSFont systemFontOfSize:[NSFont systemFontSize]];
+}
+
+static void cocoa_widget_fonts(xxwidgets_widget *widget)
+{
+    cocoa_app_state *app = widget->app->platform;
+    cocoa_widget_state *state = widget->platform;
+    id native = widget->native;
+    if (!state || !native) return;
+    if (widget->kind == XXWIDGETS_WINDOW) {
+        [state->about_text setFont:cocoa_role_font(widget, XXWIDGETS_FONT_TEXT_EDITS)];
+        return;
+    }
+    NSFont *font = state->preview_font ? state->preview_font :
+        cocoa_role_font(widget, xxwidgets_widget_font_role(widget));
+    if (!state->preview_font && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW)) {
+        font = app->formatted_font ? app->formatted_font : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]];
+        if (!font) font = cocoa_role_font(widget, XXWIDGETS_FONT_TABLE_VIEWS);
+    }
+    int font_changed = state->applied_font != font;
+    if (xxwidgets_list_kind(widget)) {
+        NSTableView *table = native;
+        for (NSTableColumn *column in [table tableColumns]) {
+            [[column dataCell] setFont:font];
+            [[column headerCell] setFont:font];
+        }
+        [table setRowHeight:MAX(app->cell_height, ceil([font ascender] - [font descender] + [font leading]) + 4)];
+        if (font_changed && xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_SCANRESULTS &&
+            widget->kind != XXWIDGETS_ARCHIVEBROWSER) {
+            NSDictionary *attributes = [NSDictionary dictionaryWithObject:font forKey:NSFontAttributeName];
+            state->hex_row_width = 0;
+            for (size_t row = 0; row < widget->item_count; ++row) {
+                NSString *text;
+                CGFloat extra = 12;
+                if (widget->kind == XXWIDGETS_TREEVIEW) {
+                    size_t node = xxwidgets_treeview_node_at_row(widget, row);
+                    text = [NSString stringWithUTF8String:xxwidgets_treeview_display_text(widget, node)];
+                    extra = (xxwidgets_treeview_depth(widget, node) + 1) * [(NSOutlineView *)table indentationPerLevel] + 24;
+                } else text = [NSString stringWithUTF8String:widget->items[row]];
+                CGFloat width = ceil([text sizeWithAttributes:attributes].width) + extra;
+                if (width > state->hex_row_width) state->hex_row_width = width;
+            }
+        }
+        cocoa_size_table(widget);
+        [table setNeedsDisplay:YES];
+    } else if ([native respondsToSelector:@selector(setFont:)]) {
+        [native setFont:font];
+        if (widget->kind == XXWIDGETS_EDIT) [[(NSTextField *)native currentEditor] setFont:font];
+    }
+    if (widget->kind == XXWIDGETS_COMBOBOX) [[(NSPopUpButton *)native menu] setFont:font];
+    for (NSButton *check in [state->combo_checks subviews]) [check setFont:font];
+    [state->browser_address setFont:cocoa_role_font(widget, XXWIDGETS_FONT_TEXT_EDITS)];
+    [state->browser_up setFont:cocoa_role_font(widget, XXWIDGETS_FONT_CONTROLS)];
+    if (font_changed) {
+        [font retain]; [state->applied_font release]; state->applied_font = font;
+    }
+}
+
+static xxwidgets_status cocoa_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options)
+{
+    @autoreleasepool {
+        cocoa_app_state *state = app->platform;
+        NSFont *fonts[XXWIDGETS_FONT_ROLE_COUNT] = {nil};
+        NSFont *formatted;
+        size_t role;
+        for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
+            fonts[role] = cocoa_font_create(&options->fonts[role], 0);
+            if (!fonts[role]) {
+                for (size_t i = 0; i < role; ++i) [fonts[i] release];
+                return XXWIDGETS_OUT_OF_MEMORY;
+            }
+        }
+        formatted = cocoa_font_create(&options->fonts[XXWIDGETS_FONT_TABLE_VIEWS], 1);
+        if (!formatted) {
+            for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) [fonts[role] release];
+            return XXWIDGETS_OUT_OF_MEMORY;
+        }
+        for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
+            [state->fonts[role] release];
+            state->fonts[role] = fonts[role];
+        }
+        [state->formatted_font release]; state->formatted_font = formatted;
+        for (xxwidgets_widget *widget = app->widgets; widget; widget = widget->next)
+            cocoa_widget_fonts(widget);
+        return XXWIDGETS_OK;
+    }
+}
+
+static xxwidgets_status cocoa_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role,
+    const xxwidgets_font *settings)
+{
+    @autoreleasepool {
+        cocoa_widget_state *state = widget->platform;
+        NSFont *font = cocoa_font_create(settings, 0);
+        (void)role;
+        if (!font) return XXWIDGETS_OUT_OF_MEMORY;
+        [state->preview_font release]; state->preview_font = font;
+        cocoa_widget_fonts(widget);
+        return XXWIDGETS_OK;
+    }
+}
 
 static int rect_equal(xxwidgets_rect a, xxwidgets_rect b)
 {
@@ -607,6 +745,8 @@ static void cocoa_shutdown_backend(xxwidgets_app *app)
         [state->delegate release];
         [state->saved_delegate release];
         [state->saved_menu release];
+        for (size_t role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) [state->fonts[role] release];
+        [state->formatted_font release];
         free(state);
         app->platform = NULL;
     }
@@ -1055,6 +1195,8 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
         }
         [state->combo_popover close]; [state->combo_popover release];
         [state->tree_items release];
+        [state->preview_font release];
+        [state->applied_font release];
         [native release];
         [state->delegate release];
         free(state);
@@ -1246,6 +1388,7 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
             [(NSProgressIndicator *)native setAccessibilityLabel:text];
             break;
         }
+        cocoa_widget_fonts(widget);
         if (widget->kind == XXWIDGETS_WINDOW) {
             NSWindow *window = native;
             [window setIgnoresMouseEvents:!widget->enabled];
@@ -1356,13 +1499,14 @@ static xxwidgets_status cocoa_about_content(xxwidgets_widget *window,
         [scroll setHasVerticalScroller:YES]; [scroll setHasHorizontalScroller:NO];
         [scroll setAutohidesScrollers:YES];
         [text setEditable:NO]; [text setSelectable:YES]; [text setRichText:NO];
-        [text setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
+        [text setFont:cocoa_role_font(window, XXWIDGETS_FONT_TEXT_EDITS)];
         [text setString:[NSString stringWithUTF8String:body]];
         [text setVerticallyResizable:YES]; [text setHorizontallyResizable:NO];
         [text setAutoresizingMask:NSViewWidthSizable];
         [[text textContainer] setContainerSize:NSMakeSize(width, CGFLOAT_MAX)];
         [[text textContainer] setWidthTracksTextView:YES];
         [scroll setDocumentView:text]; [content addSubview:scroll];
+        ((cocoa_widget_state *)window->platform)->about_text = text;
         [text release]; [scroll release];
         if (about->image) {
             NSBitmapImageRep *pixels = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
@@ -1400,5 +1544,6 @@ static xxwidgets_status cocoa_copy_text(xxwidgets_widget *window, const char *te
 const xxwidgets_backend_ops xxwidgets_native_ops = {
     "AppKit", cocoa_init_backend, cocoa_shutdown_backend, cocoa_poll_backend,
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
-    cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text
+    cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
+    cocoa_apply_fonts, NULL, cocoa_preview_font
 };

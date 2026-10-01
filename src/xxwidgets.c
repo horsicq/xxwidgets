@@ -61,6 +61,14 @@ int xxwidgets_focusable(const xxwidgets_widget *widget)
          widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget));
 }
 
+xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget)
+{
+    if (widget->kind == XXWIDGETS_TREEVIEW) return XXWIDGETS_FONT_TREE_VIEWS;
+    if (widget->kind == XXWIDGETS_EDIT) return XXWIDGETS_FONT_TEXT_EDITS;
+    if (xxwidgets_list_kind(widget)) return XXWIDGETS_FONT_TABLE_VIEWS;
+    return XXWIDGETS_FONT_CONTROLS;
+}
+
 static void dispatch_event(xxwidgets_widget *widget, const xxwidgets_event *event)
 {
     xxwidgets_app *app = widget->app;

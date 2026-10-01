@@ -28,7 +28,7 @@ appearance, keyboard behavior, accessibility, and input methods.
 - ArchiveBrowser with an address bar, folder navigation, icons, and sortable metadata columns
 - ScanResults with copied Type/Name/Version/Info metadata, row selection, and report export
 - TreeView with copied hierarchy nodes, expansion, and stable node selection
-- A complete ScanPanel with a result tree, Flags/Databases checkbox combos, and Scan/Report buttons
+- A complete ScanPanel with a result tree, file-type combo, Flags/Databases checkbox combos, and Scan/Report buttons
 - UTF-8 text, visibility, enablement, focus, application/widget user data
 - Click, change, list selection, close, resize, activation, and context-menu request events
 - A shared demo that runs with either native controls or TUI
@@ -77,8 +77,9 @@ Up/Down to select visible nodes and Left/Right to collapse/expand or move to a
 parent/child; Shift+Left/Right pans long text horizontally.
 
 Include `<xxwidgets/xxwidgets_scan_panel.h>` for the complete reusable scan UI.
-`xxwidgets_scan_panel_create(owner, bounds, &panel)` creates labeled Flags and
-Databases checkbox combo boxes, Scan and Report push buttons, and a TreeView.
+`xxwidgets_scan_panel_create(owner, bounds, &panel)` creates a labeled file-type
+combo box, Flags and Databases checkbox combo boxes, Scan and Report push
+buttons, and a TreeView.
 The main database is always used; optional databases and the six scan flags
 are exposed as bitmasks. Setters synchronize the controls without input events.
 `xxwidgets_scan_panel_set_results` copies results into a File -> detection ->
@@ -88,10 +89,40 @@ The application handles the panel's Scan button event and supplies results from
 its engine. Handle Report after returning from polling with
 `xxwidgets_scan_panel_show_report`; the text dialog supports Copy all.
 
+The file-type control is a normal `XXWIDGETS_COMBOBOX`, initially containing
+selected **Automatic** with a `UINT64` value of zero. Obtain it with
+`xxwidgets_scan_panel_control(panel, XXWIDGETS_SCAN_PANEL_FILE_TYPE)` and replace
+its copied label/value records with `xxwidgets_combobox_set_records`. The host
+handles `XXWIDGETS_EVENT_SELECT` and reads `xxwidgets_combobox_get_current` to
+rescan the current file using the chosen engine type. Programmatic selection
+changes emit no input events.
+
 `xxwidgets_scan_panel_control` returns borrowed child controls for event
-comparison or custom placement. Logical bounds require at least 44 x 8 cells.
+comparison or custom placement. Logical bounds require at least 44 x 11 cells;
+the file-type row precedes Flags/Databases and the result tree.
 Destroy the panel before its owner/app; do not destroy its children separately.
 `xxwidgets_scan_panel_demo --native` or `--tui` demonstrates the complete UI.
+Include `<xxwidgets/xxwidgets_scan_options.h>` for an embedded scan-settings
+form and `xxwidgets_scan_options_dialog`. Both expose the same six scan flags
+and two optional databases as the scan panel. The modal form copies values
+back only after OK; Cancel, Escape, and closing preserve the input settings.
+
+Include `<xxwidgets/xxwidgets_font_options.h>` for font preferences for controls,
+tables, trees, and text edits. `xxwidgets_font_options_dialog` offers editable
+family, point size, styles, previews, and native Choose buttons where supported.
+Apply accepted values with `xxwidgets_app_set_font_options`; the library owns
+native font resources and applies the choices to current and future controls,
+including report text. Font changes preserve explicit control bounds. The TUI
+stores preferences while the terminal controls their appearance.
+
+Include `<xxwidgets/xxwidgets_context_options.h>` for Explorer context-menu
+preferences on Windows. The embedded form and modal dialog query the actual
+registration. OK or Apply writes the selected state; Cancel performs no writes.
+Current-user registrations use `Software\Classes\<class>\shell\<id>` under
+HKCU and quote both the executable and `%1` file argument. All-user scope is
+also available and reports access errors to the caller. Other platforms report
+`XXWIDGETS_UNAVAILABLE`. Applications must handle the file argument on startup.
+
 Push buttons are also available independently as `XXWIDGETS_BUTTON`, with
 caption, visibility, enablement, focus, and `XXWIDGETS_EVENT_CLICK` support on
 every backend; `xxwidgets_button_demo` demonstrates them.
@@ -172,6 +203,9 @@ follow the original input order.
 Native controls provide dropdown lists/popovers. In the TUI, Enter opens or
 closes a list, arrows navigate, Space toggles a checkbox, and Escape closes the
 dropdown. `xxwidgets_combobox_demo --native` or `--tui` demonstrates both.
+On Windows, both kinds use a native ComboBox field and dropdown arrow. The
+checkbox variant displays a selection summary and opens a checklist; its
+checks and record cursor remain independent of the displayed summary.
 Builds use the sibling xxfclib headers (override `XXWIDGETS_XXFCLIB_DIR` when
 needed), and installation includes the small public header subset needed for
 these types. The base library does not link the format engine.

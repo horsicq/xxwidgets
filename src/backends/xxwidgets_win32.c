@@ -4,6 +4,7 @@
 #endif
 #include <windows.h>
 #include <commctrl.h>
+#include <commdlg.h>
 
 #include <limits.h>
 #include <stdint.h>
@@ -19,6 +20,8 @@ typedef struct xxwidgets_win32_app {
     HFONT monospace_font;
     int owns_font;
     int owns_monospace_font;
+    HFONT role_fonts[XXWIDGETS_FONT_ROLE_COUNT];
+    int owns_role_font[XXWIDGETS_FONT_ROLE_COUNT];
     int cell_width;
     int cell_height;
     ATOM window_class;
@@ -26,6 +29,14 @@ typedef struct xxwidgets_win32_app {
     ATOM browser_class;
     wchar_t browser_class_name[80];
 } xxwidgets_win32_app;
+
+typedef struct win32_font_layout {
+    struct { HWND handle; RECT rect; } children[40];
+    HWND last_focus;
+    size_t count;
+    int width, height, x, y, client_width, client_height, step_x, step_y;
+    int updating;
+} win32_font_layout;
 
 typedef struct xxwidgets_win32_widget {
     xxwidgets_rect applied_rect;
@@ -42,9 +53,13 @@ typedef struct xxwidgets_win32_widget {
     int browser_viewport_width;
     int browser_context_key;
     HBITMAP about_bitmap;
+    HWND about_edit;
+    HFONT preview_font;
+    win32_font_layout *font_layout;
     HWND combo_popup, combo_list;
     uint64_t combo_revision;
     int combo_initialized;
+    int combo_skip_mouse_open;
     uint64_t scan_revision;
     HTREEITEM *tree_items;
     size_t tree_count;
@@ -56,12 +71,19 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget);
 static xxwidgets_status win32_read_text(xxwidgets_widget *widget);
 static xxwidgets_status win32_read_value(xxwidgets_widget *widget);
 static xxwidgets_status win32_checkcombo_open(xxwidgets_widget *widget);
+static LRESULT CALLBACK win32_checkcombo_control_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp,
+    UINT_PTR id, DWORD_PTR data);
 static xxwidgets_status win32_sync_combo(xxwidgets_widget *widget);
 static xxwidgets_status win32_scanresults_columns(xxwidgets_widget *widget);
 static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp,
     UINT_PTR id, DWORD_PTR data);
 static void win32_tree_expansion_input(xxwidgets_widget *widget, size_t index,
     HTREEITEM item, int expanded);
+static xxwidgets_status win32_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options);
+static xxwidgets_status win32_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role,
+    xxwidgets_font *font, int *accepted);
+static xxwidgets_status win32_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role,
+    const xxwidgets_font *font);
 static LRESULT CALLBACK win32_browser_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp);
 
 #define XXWIDGETS_BROWSER_UP_ID 1
@@ -378,6 +400,374 @@ static xxwidgets_status win32_wide(const char *text, wchar_t **result)
     return XXWIDGETS_OK;
 }
 
+static HFONT win32_default_role_font(xxwidgets_win32_app *app, xxwidgets_font_role role)
+{
+    return role == XXWIDGETS_FONT_TABLE_VIEWS ? app->monospace_font : app->font;
+}
+
+static xxwidgets_status win32_font_logfont(xxwidgets_win32_app *app, xxwidgets_font_role role,
+    const xxwidgets_font *font, LOGFONTW *logfont)
+{
+    HDC dc;
+    int dpi;
+    if (!GetObjectW(win32_default_role_font(app, role), sizeof(*logfont), logfont))
+        return XXWIDGETS_PLATFORM_ERROR;
+    if (font->family[0]) {
+        wchar_t *family;
+        xxwidgets_status status = win32_wide(font->family, &family);
+        if (status != XXWIDGETS_OK) return status;
+        if (wcslen(family) >= LF_FACESIZE) { free(family); return XXWIDGETS_INVALID_ARGUMENT; }
+        memset(logfont->lfFaceName, 0, sizeof(logfont->lfFaceName));
+        memcpy(logfont->lfFaceName, family, (wcslen(family) + 1) * sizeof(*family));
+        free(family);
+    }
+    dc = GetDC(NULL); if (!dc) return XXWIDGETS_PLATFORM_ERROR;
+    dpi = GetDeviceCaps(dc, LOGPIXELSY); ReleaseDC(NULL, dc);
+    if (font->point_size) logfont->lfHeight = -MulDiv((int)font->point_size, dpi, 72);
+    logfont->lfWeight = font->bold ? FW_BOLD : FW_NORMAL;
+    logfont->lfItalic = (BYTE)font->italic; logfont->lfCharSet = DEFAULT_CHARSET;
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status win32_make_font(xxwidgets_win32_app *app, xxwidgets_font_role role,
+    const xxwidgets_font *font, HFONT *handle, int *owned)
+{
+    LOGFONTW logfont;
+    xxwidgets_status status;
+    *owned = 0;
+    if (!font->family[0] && !font->point_size && !font->bold && !font->italic) {
+        *handle = win32_default_role_font(app, role); return XXWIDGETS_OK;
+    }
+    status = win32_font_logfont(app, role, font, &logfont);
+    if (status != XXWIDGETS_OK) return status;
+    *handle = CreateFontIndirectW(&logfont);
+    if (!*handle) return XXWIDGETS_PLATFORM_ERROR;
+    *owned = 1; return XXWIDGETS_OK;
+}
+
+static void win32_apply_widget_font(xxwidgets_widget *widget)
+{
+    xxwidgets_win32_app *app = (xxwidgets_win32_app *)widget->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    HFONT font = native && native->preview_font ? native->preview_font :
+        app->role_fonts[xxwidgets_widget_font_role(widget)];
+    if (widget->native) SendMessageW((HWND)widget->native, WM_SETFONT, (WPARAM)font, TRUE);
+    if (!native) return;
+    if (native->browser_up) SendMessageW(native->browser_up, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_CONTROLS], TRUE);
+    if (native->browser_address) SendMessageW(native->browser_address, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_CONTROLS], TRUE);
+    if (native->browser_list) SendMessageW(native->browser_list, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS], TRUE);
+    if (native->combo_list) SendMessageW(native->combo_list, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_CONTROLS], TRUE);
+    if (native->about_edit) SendMessageW(native->about_edit, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_TEXT_EDITS], TRUE);
+    if (widget->kind == XXWIDGETS_SCANRESULTS || native->browser_list) {
+        HWND list = native->browser_list ? native->browser_list : (HWND)widget->native;
+        HWND header = (HWND)SendMessageW(list, LVM_GETHEADER, 0, 0);
+        if (header) SendMessageW(header, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS], TRUE);
+    }
+}
+
+static xxwidgets_status win32_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options)
+{
+    xxwidgets_win32_app *native = (xxwidgets_win32_app *)app->platform;
+    HFONT fonts[XXWIDGETS_FONT_ROLE_COUNT] = {0}, previous[XXWIDGETS_FONT_ROLE_COUNT];
+    int owned[XXWIDGETS_FONT_ROLE_COUNT] = {0}, previous_owned[XXWIDGETS_FONT_ROLE_COUNT];
+    xxwidgets_widget *widget;
+    size_t role;
+    xxwidgets_status status;
+    for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
+        status = win32_make_font(native, (xxwidgets_font_role)role, &options->fonts[role], &fonts[role], &owned[role]);
+        if (status != XXWIDGETS_OK) {
+            size_t i;
+            for (i = 0; i < role; ++i) if (owned[i]) DeleteObject(fonts[i]);
+            return status;
+        }
+    }
+    memcpy(previous, native->role_fonts, sizeof(previous));
+    memcpy(previous_owned, native->owns_role_font, sizeof(previous_owned));
+    memcpy(native->role_fonts, fonts, sizeof(fonts));
+    memcpy(native->owns_role_font, owned, sizeof(owned));
+    for (widget = app->widgets; widget; widget = widget->next) win32_apply_widget_font(widget);
+    for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role)
+        if (previous_owned[role]) DeleteObject(previous[role]);
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status win32_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role,
+    const xxwidgets_font *font)
+{
+    xxwidgets_win32_app *app = (xxwidgets_win32_app *)widget->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    HFONT handle, previous;
+    int owned;
+    xxwidgets_status status = win32_make_font(app, role, font, &handle, &owned);
+    if (status != XXWIDGETS_OK) return status;
+    /* Even defaults need a local copy: application font replacement must not
+     * invalidate a preview while its options dialog is open. */
+    if (!owned) {
+        LOGFONTW logfont;
+        if (!GetObjectW(handle, sizeof(logfont), &logfont)) return XXWIDGETS_PLATFORM_ERROR;
+        handle = CreateFontIndirectW(&logfont);
+        if (!handle) return XXWIDGETS_PLATFORM_ERROR;
+    }
+    previous = native->preview_font; native->preview_font = handle;
+    SendMessageW((HWND)widget->native, WM_SETFONT, (WPARAM)handle, TRUE);
+    if (previous) DeleteObject(previous);
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status win32_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role,
+    xxwidgets_font *font, int *accepted)
+{
+    xxwidgets_win32_app *app = (xxwidgets_win32_app *)owner->app->platform;
+    LOGFONTW logfont;
+    CHOOSEFONTW dialog;
+    xxwidgets_font copied = {0};
+    xxwidgets_status status = win32_font_logfont(app, role, font, &logfont);
+    if (status != XXWIDGETS_OK) return status;
+    memset(&dialog, 0, sizeof(dialog)); dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = (HWND)owner->native; dialog.lpLogFont = &logfont;
+    dialog.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT | CF_LIMITSIZE | CF_NOVERTFONTS;
+    dialog.nSizeMin = 4; dialog.nSizeMax = 96;
+    if (!ChooseFontW(&dialog)) return CommDlgExtendedError() ? XXWIDGETS_PLATFORM_ERROR : XXWIDGETS_OK;
+    if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, logfont.lfFaceName, -1,
+        copied.family, sizeof(copied.family), NULL, NULL)) return XXWIDGETS_PLATFORM_ERROR;
+    copied.point_size = (unsigned int)((dialog.iPointSize + 5) / 10);
+    copied.bold = logfont.lfWeight >= FW_BOLD; copied.italic = !!logfont.lfItalic;
+    *font = copied; *accepted = 1; return XXWIDGETS_OK;
+}
+
+static int win32_font_metrics(HWND window, HFONT font, TEXTMETRICW *metrics)
+{
+    HDC dc = GetDC(window);
+    HGDIOBJ previous;
+    int result;
+    if (!dc) return 0;
+    previous = SelectObject(dc, font);
+    result = previous && previous != HGDI_ERROR && GetTextMetricsW(dc, metrics);
+    if (previous && previous != HGDI_ERROR) SelectObject(dc, previous);
+    ReleaseDC(window, dc);
+    return result;
+}
+
+static xxwidgets_status win32_font_layout_viewport(xxwidgets_widget *widget, int force)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    win32_font_layout *layout = native->font_layout;
+    HWND window = (HWND)widget->native;
+    RECT client;
+    int pass, old_x = layout->x, old_y = layout->y, changed;
+    size_t i;
+    xxwidgets_status status = XXWIDGETS_OK;
+    if (layout->updating) return XXWIDGETS_OK;
+    if (!GetClientRect(window, &client)) return XXWIDGETS_PLATFORM_ERROR;
+    changed = force || client.right != layout->client_width || client.bottom != layout->client_height;
+    if (!changed) return XXWIDGETS_OK;
+    layout->updating = 1; ++widget->app->syncing;
+    /* One scrollbar can reduce the other dimension. Recheck the viewport after
+     * each change before clamping offsets and positioning the cached children. */
+    for (pass = 0; pass < 3; ++pass) {
+        SCROLLINFO info = {sizeof(info)};
+        RECT next;
+        int max_x = layout->width > client.right ? layout->width - client.right : 0;
+        int max_y = layout->height > client.bottom ? layout->height - client.bottom : 0;
+        if (layout->x < 0) layout->x = 0;
+        if (layout->x > max_x) layout->x = max_x;
+        if (layout->y < 0) layout->y = 0;
+        if (layout->y > max_y) layout->y = max_y;
+        info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+        info.nMax = layout->width - 1; info.nPage = (UINT)client.right; info.nPos = layout->x;
+        SetScrollInfo(window, SB_HORZ, &info, TRUE);
+        info.nMax = layout->height - 1; info.nPage = (UINT)client.bottom; info.nPos = layout->y;
+        SetScrollInfo(window, SB_VERT, &info, TRUE);
+        if (!GetClientRect(window, &next)) { status = XXWIDGETS_PLATFORM_ERROR; break; }
+        if (next.right == client.right && next.bottom == client.bottom) break;
+        client = next;
+    }
+    changed |= old_x != layout->x || old_y != layout->y;
+    if (status == XXWIDGETS_OK && changed) {
+        for (i = 0; i < layout->count; ++i) {
+            RECT *rect = &layout->children[i].rect;
+            if (!SetWindowPos(layout->children[i].handle, NULL, rect->left - layout->x, rect->top - layout->y,
+                rect->right - rect->left, rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE)) {
+                status = XXWIDGETS_PLATFORM_ERROR; break;
+            }
+        }
+        InvalidateRect(window, NULL, TRUE);
+    }
+    layout->client_width = client.right; layout->client_height = client.bottom;
+    --widget->app->syncing; layout->updating = 0;
+    return status;
+}
+
+static LRESULT CALLBACK win32_font_options_proc(HWND window, UINT message, WPARAM wp, LPARAM lp,
+    UINT_PTR id, DWORD_PTR data)
+{
+    xxwidgets_widget *widget = (xxwidgets_widget *)data;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    win32_font_layout *layout = native ? native->font_layout : NULL;
+    if (layout && !layout->updating) {
+        if (message == WM_HSCROLL || message == WM_VSCROLL) {
+            int horizontal = message == WM_HSCROLL, action = LOWORD(wp);
+            int *offset = horizontal ? &layout->x : &layout->y;
+            int page = horizontal ? layout->client_width : layout->client_height;
+            int step = horizontal ? layout->step_x : layout->step_y;
+            SCROLLINFO info = {sizeof(info)};
+            info.fMask = SIF_TRACKPOS;
+            switch (action) {
+            case SB_LINEUP: *offset -= step; break;
+            case SB_LINEDOWN: *offset += step; break;
+            case SB_PAGEUP: *offset -= page; break;
+            case SB_PAGEDOWN: *offset += page; break;
+            case SB_TOP: *offset = 0; break;
+            case SB_BOTTOM: *offset = horizontal ? layout->width : layout->height; break;
+            case SB_THUMBTRACK:
+            case SB_THUMBPOSITION:
+                if (GetScrollInfo(window, horizontal ? SB_HORZ : SB_VERT, &info)) *offset = info.nTrackPos;
+                break;
+            default: return 0;
+            }
+            win32_font_layout_viewport(widget, 1); return 0;
+        }
+        if (message == WM_MOUSEWHEEL) {
+            layout->y -= ((int)(short)HIWORD(wp) / WHEEL_DELTA) * 3 * layout->step_y;
+            win32_font_layout_viewport(widget, 1); return 0;
+        }
+        if (message == WM_SIZE && wp != SIZE_MINIMIZED) win32_font_layout_viewport(widget, 0);
+    }
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(window, win32_font_options_proc, id);
+    return DefSubclassProc(window, message, wp, lp);
+}
+
+static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int refresh)
+{
+    xxwidgets_win32_app *app = (xxwidgets_win32_app *)dialog->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
+    win32_font_layout *layout = native->font_layout;
+    HWND window = (HWND)dialog->native, focus;
+    xxwidgets_widget *child;
+    size_t i;
+    int first = !layout;
+    xxwidgets_status status;
+    if (first) {
+        layout = (win32_font_layout *)calloc(1, sizeof(*layout));
+        if (!layout) return XXWIDGETS_OUT_OF_MEMORY;
+        native->font_layout = layout;
+        if (!SetWindowSubclass(window, win32_font_options_proc, 1, (DWORD_PTR)dialog))
+            return XXWIDGETS_PLATFORM_ERROR;
+    }
+    if (first || refresh) {
+        TEXTMETRICW controls, edits;
+        int row_y[4], preview_y[4], preview_height[4], role, y;
+        int cw = app->cell_width, height = app->cell_height, gap = app->cell_height / 2;
+        int preview_width = 0, right_column, footer_y;
+        HDC dc;
+        if (!win32_font_metrics(window, app->role_fonts[XXWIDGETS_FONT_CONTROLS], &controls) ||
+            !win32_font_metrics(window, app->role_fonts[XXWIDGETS_FONT_TEXT_EDITS], &edits))
+            return XXWIDGETS_PLATFORM_ERROR;
+        if (cw < controls.tmAveCharWidth) cw = controls.tmAveCharWidth;
+        if (cw < edits.tmAveCharWidth) cw = edits.tmAveCharWidth;
+        if (height < controls.tmHeight + controls.tmExternalLeading + 8)
+            height = controls.tmHeight + controls.tmExternalLeading + 8;
+        if (height < edits.tmHeight + edits.tmExternalLeading + 8)
+            height = edits.tmHeight + edits.tmExternalLeading + 8;
+        if (gap < 4) gap = 4;
+        for (role = 0; role < 4; ++role) preview_height[role] = height;
+        dc = GetDC(window);
+        if (!dc) return XXWIDGETS_PLATFORM_ERROR;
+        for (child = dialog->app->widgets; child; child = child->next) {
+            if (child->parent == dialog && child->kind == XXWIDGETS_LABEL && child->rect.y >= 3 &&
+                child->rect.y <= 15 && (child->rect.y - 3) % 4 == 0) {
+                wchar_t text[192]; TEXTMETRICW metrics; SIZE size;
+                HFONT font = (HFONT)SendMessageW((HWND)child->native, WM_GETFONT, 0, 0);
+                HGDIOBJ previous = SelectObject(dc, font);
+                if (!previous || previous == HGDI_ERROR) { ReleaseDC(window, dc); return XXWIDGETS_PLATFORM_ERROR; }
+                role = (child->rect.y - 3) / 4;
+                GetWindowTextW((HWND)child->native, text, sizeof(text) / sizeof(text[0]));
+                if (GetTextMetricsW(dc, &metrics) && preview_height[role] < metrics.tmHeight + metrics.tmExternalLeading + 4)
+                    preview_height[role] = metrics.tmHeight + metrics.tmExternalLeading + 4;
+                if (GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size) && preview_width < size.cx)
+                    preview_width = size.cx;
+                SelectObject(dc, previous);
+            }
+        }
+        ReleaseDC(window, dc);
+        right_column = 88 * cw;
+        if (right_column < 22 * cw + preview_width + gap) right_column = 22 * cw + preview_width + gap;
+        y = gap;
+        for (role = 0; role < 4; ++role) {
+            row_y[role] = y; preview_y[role] = y + height + gap;
+            y = preview_y[role] + preview_height[role] + 2 * gap;
+        }
+        footer_y = y + height + gap;
+        layout->count = 0; layout->width = right_column + 12 * cw;
+        layout->height = footer_y + height + gap; layout->step_x = cw; layout->step_y = height;
+        for (child = dialog->app->widgets; child; child = child->next) {
+            RECT rect;
+            if (child->parent != dialog) continue;
+            if (layout->count == sizeof(layout->children) / sizeof(layout->children[0])) return XXWIDGETS_PLATFORM_ERROR;
+            rect.left = child->rect.x * cw; rect.right = rect.left + child->rect.width * cw;
+            if (child->rect.y >= 1 && child->rect.y <= 13 && (child->rect.y - 1) % 4 == 0) {
+                role = (child->rect.y - 1) / 4; rect.top = row_y[role]; rect.bottom = rect.top + height;
+                if (child->rect.x == 88) { rect.left = right_column; rect.right = rect.left + 10 * cw; }
+            } else if (child->rect.y >= 3 && child->rect.y <= 15 && (child->rect.y - 3) % 4 == 0) {
+                role = (child->rect.y - 3) / 4; rect.top = preview_y[role]; rect.bottom = rect.top + preview_height[role];
+                if (child->rect.x == 88) { rect.left = right_column; rect.right = rect.left + 10 * cw; }
+                else rect.right = right_column - gap;
+            } else if (child->rect.y == 18) {
+                rect.top = y; rect.bottom = y + height; rect.right = layout->width - 2 * cw;
+            } else {
+                rect.top = footer_y; rect.bottom = footer_y + height;
+                if (child->rect.x == 84) { rect.right = layout->width - 2 * cw; rect.left = rect.right - 14 * cw; }
+                else if (child->rect.x == 72) { rect.right = layout->width - 18 * cw; rect.left = rect.right - 10 * cw; }
+            }
+            layout->children[layout->count].handle = (HWND)child->native;
+            layout->children[layout->count++].rect = rect;
+        }
+        if (first) {
+            MONITORINFO monitor = {sizeof(monitor)};
+            RECT frame = {0, 0, layout->width, layout->height}, position;
+            LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE) | WS_HSCROLL | WS_VSCROLL;
+            int width, height_px, x, top;
+            if (!GetWindowRect(window, &position) ||
+                !GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor) ||
+                !AdjustWindowRectEx(&frame, (DWORD)style, FALSE, (DWORD)GetWindowLongPtrW(window, GWL_EXSTYLE)))
+                return XXWIDGETS_PLATFORM_ERROR;
+            width = frame.right - frame.left; height_px = frame.bottom - frame.top;
+            if (width > monitor.rcWork.right - monitor.rcWork.left) width = monitor.rcWork.right - monitor.rcWork.left;
+            if (height_px > monitor.rcWork.bottom - monitor.rcWork.top) height_px = monitor.rcWork.bottom - monitor.rcWork.top;
+            x = position.left; top = position.top;
+            if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
+            if (x < monitor.rcWork.left) x = monitor.rcWork.left;
+            if (top + height_px > monitor.rcWork.bottom) top = monitor.rcWork.bottom - height_px;
+            if (top < monitor.rcWork.top) top = monitor.rcWork.top;
+            layout->updating = 1; ++dialog->app->syncing;
+            SetWindowLongPtrW(window, GWL_STYLE, style);
+            status = SetWindowPos(window, NULL, x, top, width, height_px,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED) ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
+            --dialog->app->syncing; layout->updating = 0;
+            if (status != XXWIDGETS_OK) return status;
+        }
+    }
+    status = win32_font_layout_viewport(dialog, first || refresh);
+    if (status != XXWIDGETS_OK) return status;
+    focus = GetFocus();
+    /* Preserve manual scrolling until focus or the measured layout changes. */
+    if (!first && !refresh && focus == layout->last_focus) return XXWIDGETS_OK;
+    layout->last_focus = focus;
+    for (i = 0; i < layout->count; ++i) if (layout->children[i].handle == focus) {
+        RECT *rect = &layout->children[i].rect;
+        int x = layout->x, y = layout->y;
+        if (rect->left < x || rect->right - rect->left > layout->client_width) x = rect->left;
+        else if (rect->right > x + layout->client_width) x = rect->right - layout->client_width;
+        if (rect->top < y || rect->bottom - rect->top > layout->client_height) y = rect->top;
+        else if (rect->bottom > y + layout->client_height) y = rect->bottom - layout->client_height;
+        if (x != layout->x || y != layout->y) {
+            layout->x = x; layout->y = y; return win32_font_layout_viewport(dialog, 1);
+        }
+        break;
+    }
+    return XXWIDGETS_OK;
+}
+
 static xxwidgets_status win32_window_text(HWND handle, wchar_t **result)
 {
     int length;
@@ -452,7 +842,6 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                     xxwidgets_emit(control, XXWIDGETS_EVENT_SELECT, control->value);
                 break;
             case XXWIDGETS_CHECKCOMBOBOX:
-                if (HIWORD(wp) == BN_CLICKED) win32_checkcombo_open(control);
                 break;
             case XXWIDGETS_BUTTON:
                 if (HIWORD(wp) == BN_CLICKED)
@@ -626,6 +1015,11 @@ static xxwidgets_status win32_init(xxwidgets_app *app)
         free(state);
         return XXWIDGETS_PLATFORM_ERROR;
     }
+    {
+        size_t role;
+        for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role)
+            state->role_fonts[role] = win32_default_role_font(state, (xxwidgets_font_role)role);
+    }
     app->platform = state;
     return XXWIDGETS_OK;
 }
@@ -633,9 +1027,12 @@ static xxwidgets_status win32_init(xxwidgets_app *app)
 static void win32_shutdown(xxwidgets_app *app)
 {
     xxwidgets_win32_app *state = (xxwidgets_win32_app *)app->platform;
+    size_t role;
     if (!state) return;
     UnregisterClassW(state->browser_class_name, state->instance);
     UnregisterClassW(state->class_name, state->instance);
+    for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role)
+        if (state->owns_role_font[role]) DeleteObject(state->role_fonts[role]);
     if (state->owns_font) DeleteObject(state->font);
     if (state->owns_monospace_font) DeleteObject(state->monospace_font);
     free(state);
@@ -720,10 +1117,10 @@ static xxwidgets_status win32_browser_create_children(xxwidgets_widget *widget)
                                            state->instance, NULL);
     if (!native->browser_up || !native->browser_address || !native->browser_list)
         return XXWIDGETS_PLATFORM_ERROR;
-    SendMessageW(native->browser_up, WM_SETFONT, (WPARAM)state->font, FALSE);
-    SendMessageW(native->browser_address, WM_SETFONT, (WPARAM)state->font, FALSE);
+    SendMessageW(native->browser_up, WM_SETFONT, (WPARAM)state->role_fonts[XXWIDGETS_FONT_CONTROLS], FALSE);
+    SendMessageW(native->browser_address, WM_SETFONT, (WPARAM)state->role_fonts[XXWIDGETS_FONT_CONTROLS], FALSE);
     SendMessageW(native->browser_address, EM_SETLIMITTEXT, (WPARAM)INT_MAX - 1, 0);
-    SendMessageW(native->browser_list, WM_SETFONT, (WPARAM)state->font, FALSE);
+    SendMessageW(native->browser_list, WM_SETFONT, (WPARAM)state->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS], FALSE);
     SendMessageW(native->browser_list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
                  LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
     native->browser_images = win32_browser_images();
@@ -774,7 +1171,7 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
     case XXWIDGETS_COMBOBOX:
         class_name = L"COMBOBOX"; style |= WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST | CBS_HASSTRINGS; break;
     case XXWIDGETS_CHECKCOMBOBOX:
-        class_name = L"BUTTON"; style |= WS_TABSTOP | BS_PUSHBUTTON; break;
+        class_name = L"COMBOBOX"; style |= WS_TABSTOP | CBS_DROPDOWNLIST | CBS_HASSTRINGS; break;
     case XXWIDGETS_LISTBOX:
     case XXWIDGETS_ARCHIVEVIEW:
     case XXWIDGETS_HEXVIEW:
@@ -824,10 +1221,7 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
     widget->native = handle;
     if (widget->kind != XXWIDGETS_WINDOW)
         SetWindowLongPtrW(handle, GWLP_USERDATA, (LONG_PTR)widget);
-    SendMessageW(handle, WM_SETFONT,
-                 (WPARAM)(xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_SCANRESULTS &&
-                    widget->kind != XXWIDGETS_TREEVIEW ?
-                    state->monospace_font : state->font), FALSE);
+    SendMessageW(handle, WM_SETFONT, (WPARAM)state->role_fonts[xxwidgets_widget_font_role(widget)], FALSE);
     if (widget->kind == XXWIDGETS_PROGRESS)
         SendMessageW(handle, PBM_SETRANGE32, 0, 100);
     if (widget->kind == XXWIDGETS_EDIT)
@@ -839,6 +1233,9 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         status = win32_scanresults_columns(widget);
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_TREEVIEW &&
         !SetWindowSubclass(handle, win32_tree_proc, 1, (DWORD_PTR)widget))
+        status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_CHECKCOMBOBOX &&
+        !SetWindowSubclass(handle, win32_checkcombo_control_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK) status = win32_sync(widget);
     if (status != XXWIDGETS_OK) {
@@ -861,6 +1258,8 @@ static void win32_destroy(xxwidgets_widget *widget)
     widget->native = NULL;
     if (native && native->browser_images) ImageList_Destroy(native->browser_images);
     if (native && native->about_bitmap) DeleteObject(native->about_bitmap);
+    if (native && native->preview_font) DeleteObject(native->preview_font);
+    if (native) free(native->font_layout);
     if (native) free(native->tree_items);
     free(widget->platform);
     widget->platform = NULL;
@@ -936,11 +1335,17 @@ static LRESULT CALLBACK win32_checkcombo_popup_proc(HWND handle, UINT message, W
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)data;
     xxwidgets_win32_widget *state = widget->platform;
-    if (message == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE) ShowWindow(handle, SW_HIDE);
+    if (message == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE) {
+        POINT cursor;
+        RECT control;
+        state->combo_skip_mouse_open = GetAsyncKeyState(VK_LBUTTON) < 0 && GetCursorPos(&cursor) &&
+            GetWindowRect((HWND)widget->native, &control) && PtInRect(&control, cursor);
+        ShowWindow(handle, SW_HIDE);
+    }
     if (message == WM_NOTIFY && lp && ((NMHDR *)lp)->hwndFrom == state->combo_list &&
         ((NMHDR *)lp)->code == LVN_ITEMCHANGED && !widget->app->syncing && xxwidgets_focusable(widget)) {
         NMLISTVIEW *change = (NMLISTVIEW *)lp;
-        if (change->iItem >= 0 && (change->uChanged & LVIF_STATE) &&
+        if (change->iItem >= 0 && (size_t)change->iItem < widget->item_count && (change->uChanged & LVIF_STATE) &&
             ((change->uOldState ^ change->uNewState) & LVIS_STATEIMAGEMASK)) {
             int checked = ((change->uNewState & LVIS_STATEIMAGEMASK) >> 12) == 2;
             widget->value = change->iItem;
@@ -953,12 +1358,56 @@ static LRESULT CALLBACK win32_checkcombo_popup_proc(HWND handle, UINT message, W
     return DefSubclassProc(handle, message, wp, lp);
 }
 
+static LRESULT CALLBACK win32_checkcombo_control_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp,
+    UINT_PTR id, DWORD_PTR data)
+{
+    xxwidgets_widget *widget = (xxwidgets_widget *)data;
+    xxwidgets_win32_widget *state = (xxwidgets_win32_widget *)widget->platform;
+    int opening_key = (message == WM_KEYDOWN &&
+        (wp == VK_RETURN || wp == VK_SPACE || wp == VK_F4 || wp == VK_DOWN || wp == VK_UP)) ||
+        (message == WM_SYSKEYDOWN && (wp == VK_DOWN || wp == VK_F4));
+    if (message == WM_GETDLGCODE && lp) {
+        const MSG *key = (const MSG *)lp;
+        if ((key->message == WM_KEYDOWN &&
+            (key->wParam == VK_RETURN || key->wParam == VK_SPACE || key->wParam == VK_F4)) ||
+            (key->message == WM_SYSKEYDOWN && (key->wParam == VK_DOWN || key->wParam == VK_F4)))
+            return DefSubclassProc(handle, message, wp, lp) | DLGC_WANTMESSAGE;
+    }
+    if (message == CB_GETDROPPEDSTATE)
+        return state && state->combo_popup && IsWindowVisible(state->combo_popup);
+    if (message == CB_SHOWDROPDOWN) {
+        if (!state) return FALSE;
+        if (!wp) {
+            if (state->combo_popup) ShowWindow(state->combo_popup, SW_HIDE);
+            return TRUE;
+        }
+        if (state->combo_popup && IsWindowVisible(state->combo_popup)) return TRUE;
+        return win32_checkcombo_open(widget) == XXWIDGETS_OK;
+    }
+    if (message == WM_LBUTTONDOWN || opening_key) {
+        if (!widget->app->syncing && xxwidgets_focusable(widget)) {
+            if (message == WM_LBUTTONDOWN && state->combo_skip_mouse_open) {
+                state->combo_skip_mouse_open = 0; SetFocus(handle);
+            } else {
+                win32_checkcombo_open(widget);
+                if (message == WM_LBUTTONDOWN) state->combo_skip_mouse_open = 0;
+            }
+        }
+        return 0;
+    }
+    if (message == WM_LBUTTONDBLCLK || (message == WM_CHAR && (wp == VK_SPACE || wp == VK_RETURN)))
+        return 0;
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_checkcombo_control_proc, id);
+    return DefSubclassProc(handle, message, wp, lp);
+}
+
 static LRESULT CALLBACK win32_checkcombo_list_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp,
     UINT_PTR id, DWORD_PTR data)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)data;
     xxwidgets_win32_widget *state = widget->platform;
-    if (message == WM_KEYDOWN && (wp == VK_ESCAPE || wp == VK_RETURN || wp == VK_F4)) {
+    if ((message == WM_KEYDOWN && (wp == VK_ESCAPE || wp == VK_RETURN || wp == VK_F4)) ||
+        (message == WM_SYSKEYDOWN && (wp == VK_UP || wp == VK_DOWN || wp == VK_F4))) {
         ShowWindow(state->combo_popup, SW_HIDE); SetFocus((HWND)widget->native); return 0;
     }
     if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_checkcombo_list_proc, id);
@@ -971,7 +1420,8 @@ static xxwidgets_status win32_checkcombo_open(xxwidgets_widget *widget)
     xxwidgets_win32_widget *state = widget->platform;
     RECT button, work;
     MONITORINFO monitor;
-    int width, height, x, y;
+    int width, height, x, y, row_height = app->cell_height;
+    TEXTMETRICW metrics;
     xxwidgets_status status;
     if (!xxwidgets_focusable(widget) || !widget->item_count) return XXWIDGETS_OK;
     if (widget->value < 0) widget->value = 0;
@@ -989,7 +1439,7 @@ static xxwidgets_status win32_checkcombo_open(xxwidgets_widget *widget)
             0, 0, 0, 0, state->combo_popup, (HMENU)(INT_PTR)1, app->instance, NULL);
         if (!state->combo_list || !SetWindowSubclass(state->combo_list, win32_checkcombo_list_proc, 1, (DWORD_PTR)widget))
             goto create_failed;
-        SendMessageW(state->combo_list, WM_SETFONT, (WPARAM)app->font, FALSE);
+        SendMessageW(state->combo_list, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_CONTROLS], FALSE);
         SendMessageW(state->combo_list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0,
                      LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
         { LVCOLUMNW column = {0}; column.mask = LVCF_WIDTH; column.cx = 240;
@@ -1001,7 +1451,10 @@ static xxwidgets_status win32_checkcombo_open(xxwidgets_widget *widget)
     if (!GetWindowRect((HWND)widget->native, &button)) return XXWIDGETS_PLATFORM_ERROR;
     width = button.right - button.left;
     if (width < 24 * app->cell_width) width = 24 * app->cell_width;
-    height = ((int)(widget->item_count < 10 ? widget->item_count : 10) + 1) * app->cell_height;
+    if (win32_font_metrics((HWND)widget->native, app->role_fonts[XXWIDGETS_FONT_CONTROLS], &metrics) &&
+        row_height < metrics.tmHeight + metrics.tmExternalLeading + 6)
+        row_height = metrics.tmHeight + metrics.tmExternalLeading + 6;
+    height = ((int)(widget->item_count < 10 ? widget->item_count : 10) + 1) * row_height;
     x = button.left; y = button.bottom;
     memset(&monitor, 0, sizeof(monitor)); monitor.cbSize = sizeof(monitor);
     if (GetMonitorInfoW(MonitorFromWindow((HWND)widget->native, MONITOR_DEFAULTTONEAREST), &monitor)) {
@@ -1057,11 +1510,20 @@ static xxwidgets_status win32_sync_combo(xxwidgets_widget *widget)
         SendMessageW(list, CB_SETCURSEL, (WPARAM)widget->value, 0);
     } else {
         wchar_t *label;
+        wchar_t *previous;
         status = win32_wide(xxwidgets_combobox_caption(widget), &label); if (status != XXWIDGETS_OK) return status;
-        { size_t length = wcslen(label); wchar_t *caption = realloc(label, (length + 3) * sizeof(*label));
-          if (!caption) { free(label); return XXWIDGETS_OUT_OF_MEMORY; }
-          caption[length] = L' '; caption[length + 1] = 0x25be; caption[length + 2] = 0;
-          SetWindowTextW((HWND)widget->native, caption); free(caption); }
+        status = win32_window_text((HWND)widget->native, &previous);
+        if (status != XXWIDGETS_OK) { free(label); return status; }
+        if (SendMessageW((HWND)widget->native, CB_GETCOUNT, 0, 0) != 1 || wcscmp(previous, label)) {
+            LRESULT result;
+            SendMessageW((HWND)widget->native, CB_RESETCONTENT, 0, 0);
+            result = SendMessageW((HWND)widget->native, CB_ADDSTRING, 0, (LPARAM)label);
+            if (result == CB_ERR || result == CB_ERRSPACE) status = XXWIDGETS_PLATFORM_ERROR;
+        }
+        if (status == XXWIDGETS_OK && SendMessageW((HWND)widget->native, CB_SETCURSEL, 0, 0) == CB_ERR)
+            status = XXWIDGETS_PLATFORM_ERROR;
+        free(previous); free(label);
+        if (status != XXWIDGETS_OK) return status;
         if (list) for (i = 0; i < widget->item_count; ++i) {
             LVITEMW item = {0};
             unsigned int desired = INDEXTOSTATEIMAGEMASK(xxwidgets_checkcombobox_checked(widget, i) ? 2 : 1);
@@ -1787,9 +2249,22 @@ static xxwidgets_status win32_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
     SetLastError(0);
     if (!SetWindowLongPtrW(window, GWLP_HWNDPARENT, active ? (LONG_PTR)parent : 0) && GetLastError())
         return XXWIDGETS_PLATFORM_ERROR;
-    if (active && GetWindowRect(window, &bounds) && GetWindowRect(parent, &area))
-        SetWindowPos(window, NULL, area.left + ((area.right - area.left) - (bounds.right - bounds.left)) / 2,
-            area.top + ((area.bottom - area.top) - (bounds.bottom - bounds.top)) / 2, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    if (active && GetWindowRect(window, &bounds) && GetWindowRect(parent, &area)) {
+        int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
+        int x = area.left + ((area.right - area.left) - width) / 2;
+        int y = area.top + ((area.bottom - area.top) - height) / 2;
+        xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
+        if (native && native->font_layout) {
+            MONITORINFO monitor = {sizeof(monitor)};
+            if (GetMonitorInfoW(MonitorFromWindow(parent, MONITOR_DEFAULTTONEAREST), &monitor)) {
+                if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
+                if (x < monitor.rcWork.left) x = monitor.rcWork.left;
+                if (y + height > monitor.rcWork.bottom) y = monitor.rcWork.bottom - height;
+                if (y < monitor.rcWork.top) y = monitor.rcWork.top;
+            }
+        }
+        SetWindowPos(window, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    }
     if (active) {
         SendMessageW(window, WM_SETICON, ICON_BIG, SendMessageW(parent, WM_GETICON, ICON_BIG, 0));
         SendMessageW(window, WM_SETICON, ICON_SMALL, SendMessageW(parent, WM_GETICON, ICON_SMALL, 0));
@@ -1830,7 +2305,8 @@ static xxwidgets_status win32_about_content(xxwidgets_widget *window,
         text_x, app->cell_height, client.right - text_x - padding, 17 * app->cell_height,
         handle, (HMENU)(INT_PTR)101, app->instance, NULL);
     if (!edit) { free(wide); return XXWIDGETS_PLATFORM_ERROR; }
-    SendMessageW(edit, WM_SETFONT, (WPARAM)app->font, FALSE);
+    native->about_edit = edit;
+    SendMessageW(edit, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_TEXT_EDITS], FALSE);
     SendMessageW(edit, EM_SETLIMITTEXT, (WPARAM)INT_MAX - 1, 0);
     if (!SetWindowTextW(edit, wide)) { free(wide); return XXWIDGETS_PLATFORM_ERROR; }
     free(wide);
@@ -1904,5 +2380,6 @@ static xxwidgets_status win32_copy_text(xxwidgets_widget *window, const char *te
 
 const xxwidgets_backend_ops xxwidgets_native_ops = {
     "WinAPI", win32_init, win32_shutdown, win32_poll, win32_create, win32_destroy,
-    win32_sync, win32_read_text, win32_read_value, win32_focus, win32_modal_owner, win32_about_content, win32_copy_text
+    win32_sync, win32_read_text, win32_read_value, win32_focus, win32_modal_owner, win32_about_content, win32_copy_text,
+    win32_apply_fonts, win32_choose_font, win32_preview_font, win32_font_options_layout
 };
