@@ -25,6 +25,7 @@ typedef struct xxwidgets_backend_ops {
     xxwidgets_status (*preview_font)(xxwidgets_widget *widget, xxwidgets_font_role role,
         const xxwidgets_font *font);
     xxwidgets_status (*font_options_layout)(xxwidgets_widget *dialog, int refresh);
+    xxwidgets_status (*optimization_options_layout)(xxwidgets_widget *dialog, int refresh);
 } xxwidgets_backend_ops;
 
 struct xxwidgets_about_dialog {

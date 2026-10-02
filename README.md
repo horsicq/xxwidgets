@@ -115,6 +115,15 @@ native font resources and applies the choices to current and future controls,
 including report text. Font changes preserve explicit control bounds. The TUI
 stores preferences while the terminal controls their appearance.
 
+Include `<xxwidgets/xxwidgets_optimization_options.h>` for embedded or modal
+optimization settings. General and file buffer sizes use xxwidgets comboboxes
+with byte values: Default, then powers of two from 1 KiB through 1 GiB. Custom
+existing sizes round-trip without being replaced by a preset. Get/set APIs
+expose both sizes and the Use SSE2/Use AVX2 switches. The host supplies CPU and
+OS capabilities; unsupported switches stay unchecked and disabled, while a
+supported switch can be turned off and on. Only OK commits modal changes.
+The widget stores preferences; the host applies accepted values to its engine.
+
 Include `<xxwidgets/xxwidgets_context_options.h>` for Explorer context-menu
 preferences on Windows. The embedded form and modal dialog query the actual
 registration. OK or Apply writes the selected state; Cancel performs no writes.

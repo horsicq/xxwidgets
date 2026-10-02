@@ -1326,5 +1326,5 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {
     "GTK3", gtk_init_backend, gtk_shutdown_backend, gtk_poll_backend,
     gtk_create_backend, gtk_destroy_backend, gtk_sync_backend,
     gtk_read_text_backend, gtk_read_value_backend, gtk_focus_backend, gtk_modal_owner, gtk_about_content, gtk_copy_text,
-    gtk_apply_fonts, NULL, gtk_preview_font
+    gtk_apply_fonts, NULL, gtk_preview_font, NULL, NULL
 };

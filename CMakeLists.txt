@@ -73,6 +73,7 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_scan_options.h
     include/xxwidgets/xxwidgets_font_options.h
     include/xxwidgets/xxwidgets_context_options.h
+    include/xxwidgets/xxwidgets_optimization_options.h
     src/xxwidgets_internal.h
     src/xxwidgets.c
     src/xxwidgets_shortcuts.c
@@ -87,6 +88,7 @@ add_library(xxwidgets
     src/xxwidgets_scan_options.c
     src/xxwidgets_font_options.c
     src/xxwidgets_context_options.c
+    src/xxwidgets_optimization_options.c
     src/backends/xxwidgets_tui.c
     ${_xxwidgets_backend_source}
 )
@@ -181,6 +183,7 @@ if(XXWIDGETS_BUILD_EXAMPLES)
     xxwidgets_add_demo(xxwidgets_scan_options_demo examples/scan_options_demo.c)
     xxwidgets_add_demo(xxwidgets_font_options_demo examples/font_options_demo.c)
     xxwidgets_add_demo(xxwidgets_context_options_demo examples/context_options_demo.c)
+    xxwidgets_add_demo(xxwidgets_optimization_options_demo examples/optimization_options_demo.c)
     if(XXWIDGETS_BUILD_SETTINGS)
         xxwidgets_add_demo(xxwidgets_settings_demo examples/settings_demo.c)
         target_link_libraries(xxwidgets_settings_demo PRIVATE xxwidgets::settings)
@@ -219,7 +222,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             set_tests_properties(xxwidgets_win32 PROPERTIES TIMEOUT 30)
         endif()
         if(_xxwidgets_native STREQUAL "win32")
-            foreach(_xxwidgets_options IN ITEMS scan_options font_options context_options)
+            foreach(_xxwidgets_options IN ITEMS scan_options font_options context_options optimization_options)
                 add_executable(xxwidgets_${_xxwidgets_options}_tests tests/test_${_xxwidgets_options}.c)
                 target_link_libraries(xxwidgets_${_xxwidgets_options}_tests PRIVATE xxwidgets::xxwidgets)
                 target_link_libraries(xxwidgets_${_xxwidgets_options}_tests PRIVATE user32 gdi32 comctl32 advapi32)

@@ -1545,5 +1545,5 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {
     "AppKit", cocoa_init_backend, cocoa_shutdown_backend, cocoa_poll_backend,
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
     cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
-    cocoa_apply_fonts, NULL, cocoa_preview_font
+    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL
 };

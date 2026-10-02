@@ -1179,5 +1179,5 @@ static xxwidgets_status tui_apply_fonts(xxwidgets_app *app, const xxwidgets_font
 const xxwidgets_backend_ops xxwidgets_tui_ops = {
     "tui", tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,
     tui_sync, tui_read, tui_read, tui_focus, NULL, NULL, NULL,
-    tui_apply_fonts, NULL, NULL
+    tui_apply_fonts, NULL, NULL, NULL, NULL
 };

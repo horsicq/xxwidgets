@@ -31,7 +31,7 @@ typedef struct xxwidgets_win32_app {
 } xxwidgets_win32_app;
 
 typedef struct win32_font_layout {
-    struct { HWND handle; RECT rect; } children[40];
+    struct { HWND handle; RECT rect; int extra_height; } children[40];
     HWND last_focus;
     size_t count;
     int width, height, x, y, client_width, client_height, step_x, step_y;
@@ -587,7 +587,8 @@ static xxwidgets_status win32_font_layout_viewport(xxwidgets_widget *widget, int
         for (i = 0; i < layout->count; ++i) {
             RECT *rect = &layout->children[i].rect;
             if (!SetWindowPos(layout->children[i].handle, NULL, rect->left - layout->x, rect->top - layout->y,
-                rect->right - rect->left, rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE)) {
+                rect->right - rect->left, rect->bottom - rect->top + layout->children[i].extra_height,
+                SWP_NOZORDER | SWP_NOACTIVATE)) {
                 status = XXWIDGETS_PLATFORM_ERROR; break;
             }
         }
@@ -637,23 +638,84 @@ static LRESULT CALLBACK win32_font_options_proc(HWND window, UINT message, WPARA
     return DefSubclassProc(window, message, wp, lp);
 }
 
+static xxwidgets_status win32_font_layout_start(xxwidgets_widget *dialog)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
+    if (native->font_layout) return XXWIDGETS_OK;
+    native->font_layout = (win32_font_layout *)calloc(1, sizeof(*native->font_layout));
+    if (!native->font_layout) return XXWIDGETS_OUT_OF_MEMORY;
+    return SetWindowSubclass((HWND)dialog->native, win32_font_options_proc, 1, (DWORD_PTR)dialog)
+        ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
+}
+
+static xxwidgets_status win32_font_layout_fit(xxwidgets_widget *dialog)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
+    win32_font_layout *layout = native->font_layout;
+    HWND window = (HWND)dialog->native;
+    MONITORINFO monitor = {sizeof(monitor)};
+    RECT frame = {0, 0, layout->width, layout->height}, position;
+    LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE) | WS_HSCROLL | WS_VSCROLL;
+    int width, height, x, y;
+    xxwidgets_status status;
+    if (!GetWindowRect(window, &position) ||
+        !GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor) ||
+        !AdjustWindowRectEx(&frame, (DWORD)style, FALSE, (DWORD)GetWindowLongPtrW(window, GWL_EXSTYLE)))
+        return XXWIDGETS_PLATFORM_ERROR;
+    width = frame.right - frame.left; height = frame.bottom - frame.top;
+    if (width > monitor.rcWork.right - monitor.rcWork.left) width = monitor.rcWork.right - monitor.rcWork.left;
+    if (height > monitor.rcWork.bottom - monitor.rcWork.top) height = monitor.rcWork.bottom - monitor.rcWork.top;
+    x = position.left; y = position.top;
+    if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
+    if (x < monitor.rcWork.left) x = monitor.rcWork.left;
+    if (y + height > monitor.rcWork.bottom) y = monitor.rcWork.bottom - height;
+    if (y < monitor.rcWork.top) y = monitor.rcWork.top;
+    layout->updating = 1; ++dialog->app->syncing;
+    SetWindowLongPtrW(window, GWL_STYLE, style);
+    status = SetWindowPos(window, NULL, x, y, width, height,
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED) ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
+    --dialog->app->syncing; layout->updating = 0;
+    return status;
+}
+
+static xxwidgets_status win32_font_layout_update(xxwidgets_widget *dialog, int refresh)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
+    win32_font_layout *layout = native->font_layout;
+    HWND focus;
+    size_t i;
+    xxwidgets_status status = win32_font_layout_viewport(dialog, refresh);
+    if (status != XXWIDGETS_OK) return status;
+    focus = GetFocus();
+    /* Preserve manual scrolling until focus or the measured layout changes. */
+    if (!refresh && focus == layout->last_focus) return XXWIDGETS_OK;
+    layout->last_focus = focus;
+    for (i = 0; i < layout->count; ++i) if (layout->children[i].handle == focus) {
+        RECT *rect = &layout->children[i].rect;
+        int x = layout->x, y = layout->y;
+        if (rect->left < x || rect->right - rect->left > layout->client_width) x = rect->left;
+        else if (rect->right > x + layout->client_width) x = rect->right - layout->client_width;
+        if (rect->top < y || rect->bottom - rect->top > layout->client_height) y = rect->top;
+        else if (rect->bottom > y + layout->client_height) y = rect->bottom - layout->client_height;
+        if (x != layout->x || y != layout->y) {
+            layout->x = x; layout->y = y; return win32_font_layout_viewport(dialog, 1);
+        }
+        break;
+    }
+    return XXWIDGETS_OK;
+}
+
 static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int refresh)
 {
     xxwidgets_win32_app *app = (xxwidgets_win32_app *)dialog->app->platform;
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
     win32_font_layout *layout = native->font_layout;
-    HWND window = (HWND)dialog->native, focus;
+    HWND window = (HWND)dialog->native;
     xxwidgets_widget *child;
-    size_t i;
     int first = !layout;
-    xxwidgets_status status;
-    if (first) {
-        layout = (win32_font_layout *)calloc(1, sizeof(*layout));
-        if (!layout) return XXWIDGETS_OUT_OF_MEMORY;
-        native->font_layout = layout;
-        if (!SetWindowSubclass(window, win32_font_options_proc, 1, (DWORD_PTR)dialog))
-            return XXWIDGETS_PLATFORM_ERROR;
-    }
+    xxwidgets_status status = win32_font_layout_start(dialog);
+    if (status != XXWIDGETS_OK) return status;
+    layout = native->font_layout;
     if (first || refresh) {
         TEXTMETRICW controls, edits;
         int row_y[4], preview_y[4], preview_height[4], role, y;
@@ -720,52 +782,131 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
                 else if (child->rect.x == 72) { rect.right = layout->width - 18 * cw; rect.left = rect.right - 10 * cw; }
             }
             layout->children[layout->count].handle = (HWND)child->native;
+            layout->children[layout->count].extra_height = 0;
             layout->children[layout->count++].rect = rect;
         }
         if (first) {
-            MONITORINFO monitor = {sizeof(monitor)};
-            RECT frame = {0, 0, layout->width, layout->height}, position;
-            LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE) | WS_HSCROLL | WS_VSCROLL;
-            int width, height_px, x, top;
-            if (!GetWindowRect(window, &position) ||
-                !GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor) ||
-                !AdjustWindowRectEx(&frame, (DWORD)style, FALSE, (DWORD)GetWindowLongPtrW(window, GWL_EXSTYLE)))
-                return XXWIDGETS_PLATFORM_ERROR;
-            width = frame.right - frame.left; height_px = frame.bottom - frame.top;
-            if (width > monitor.rcWork.right - monitor.rcWork.left) width = monitor.rcWork.right - monitor.rcWork.left;
-            if (height_px > monitor.rcWork.bottom - monitor.rcWork.top) height_px = monitor.rcWork.bottom - monitor.rcWork.top;
-            x = position.left; top = position.top;
-            if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
-            if (x < monitor.rcWork.left) x = monitor.rcWork.left;
-            if (top + height_px > monitor.rcWork.bottom) top = monitor.rcWork.bottom - height_px;
-            if (top < monitor.rcWork.top) top = monitor.rcWork.top;
-            layout->updating = 1; ++dialog->app->syncing;
-            SetWindowLongPtrW(window, GWL_STYLE, style);
-            status = SetWindowPos(window, NULL, x, top, width, height_px,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED) ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
-            --dialog->app->syncing; layout->updating = 0;
+            status = win32_font_layout_fit(dialog);
             if (status != XXWIDGETS_OK) return status;
         }
     }
-    status = win32_font_layout_viewport(dialog, first || refresh);
+    return win32_font_layout_update(dialog, first || refresh);
+}
+
+static xxwidgets_status win32_optimization_options_layout(xxwidgets_widget *dialog, int refresh)
+{
+    xxwidgets_win32_app *app = (xxwidgets_win32_app *)dialog->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
+    win32_font_layout *layout;
+    HWND window = (HWND)dialog->native;
+    xxwidgets_widget *child;
+    int first = !native->font_layout;
+    xxwidgets_status status = win32_font_layout_start(dialog);
     if (status != XXWIDGETS_OK) return status;
-    focus = GetFocus();
-    /* Preserve manual scrolling until focus or the measured layout changes. */
-    if (!first && !refresh && focus == layout->last_focus) return XXWIDGETS_OK;
-    layout->last_focus = focus;
-    for (i = 0; i < layout->count; ++i) if (layout->children[i].handle == focus) {
-        RECT *rect = &layout->children[i].rect;
-        int x = layout->x, y = layout->y;
-        if (rect->left < x || rect->right - rect->left > layout->client_width) x = rect->left;
-        else if (rect->right > x + layout->client_width) x = rect->right - layout->client_width;
-        if (rect->top < y || rect->bottom - rect->top > layout->client_height) y = rect->top;
-        else if (rect->bottom > y + layout->client_height) y = rect->bottom - layout->client_height;
-        if (x != layout->x || y != layout->y) {
-            layout->x = x; layout->y = y; return win32_font_layout_viewport(dialog, 1);
+    layout = native->font_layout;
+    if (first || refresh) {
+        TEXTMETRICW metrics;
+        int columns[2] = {29 * app->cell_width, 29 * app->cell_width};
+        int buttons[2] = {10 * app->cell_width, 12 * app->cell_width};
+        int cw = app->cell_width, row = 2 * app->cell_height, label, gap, margin, combo_y, cpu_y, check_y, button_y;
+        int cpu_width = 0, second_x;
+        HDC dc;
+        HGDIOBJ previous;
+        if (!win32_font_metrics(window, app->role_fonts[XXWIDGETS_FONT_CONTROLS], &metrics))
+            return XXWIDGETS_PLATFORM_ERROR;
+        if (cw < metrics.tmAveCharWidth) cw = metrics.tmAveCharWidth;
+        if (row < metrics.tmHeight + metrics.tmExternalLeading + 10)
+            row = metrics.tmHeight + metrics.tmExternalLeading + 10;
+        label = metrics.tmHeight + metrics.tmExternalLeading + 4;
+        if (label < app->cell_height) label = app->cell_height;
+        gap = cw / 2; if (gap < 8) gap = 8;
+        margin = 2 * gap;
+        dc = GetDC(window);
+        if (!dc) return XXWIDGETS_PLATFORM_ERROR;
+        previous = SelectObject(dc, app->role_fonts[XXWIDGETS_FONT_CONTROLS]);
+        if (!previous || previous == HGDI_ERROR) { ReleaseDC(window, dc); return XXWIDGETS_PLATFORM_ERROR; }
+        for (child = dialog->app->widgets; child && status == XXWIDGETS_OK; child = child->next) {
+            SIZE size;
+            wchar_t text[128];
+            int column = child->rect.x > 2, width;
+            if (child->parent != dialog) continue;
+            if (child->kind == XXWIDGETS_COMBOBOX) {
+                size_t i;
+                for (i = 0; i < child->item_count; ++i) {
+                    wchar_t *item;
+                    status = win32_wide(child->items[i], &item);
+                    if (status != XXWIDGETS_OK) break;
+                    if (!GetTextExtentPoint32W(dc, item, (int)wcslen(item), &size)) status = XXWIDGETS_PLATFORM_ERROR;
+                    else {
+                        width = size.cx + GetSystemMetrics(SM_CXVSCROLL) + 2 * gap + 12;
+                        if (columns[column] < width) columns[column] = width;
+                    }
+                    free(item);
+                }
+                continue;
+            }
+            GetWindowTextW((HWND)child->native, text, sizeof(text) / sizeof(text[0]));
+            if (!GetTextExtentPoint32W(dc, text, (int)wcslen(text), &size)) { status = XXWIDGETS_PLATFORM_ERROR; break; }
+            width = size.cx + 2 * gap;
+            if (child->kind == XXWIDGETS_CHECKBOX) {
+                width += GetSystemMetrics(SM_CXMENUCHECK) + gap;
+                if (columns[column] < width) columns[column] = width;
+            } else if (child->kind == XXWIDGETS_BUTTON) {
+                int cancel = child->rect.x >= 50;
+                if (buttons[cancel] < width) buttons[cancel] = width;
+            } else if (child->rect.y == 5) cpu_width = width;
+            else if (columns[column] < width) columns[column] = width;
         }
-        break;
+        SelectObject(dc, previous); ReleaseDC(window, dc);
+        if (status != XXWIDGETS_OK) return status;
+        combo_y = margin + label + gap;
+        cpu_y = combo_y + row + 2 * gap;
+        check_y = cpu_y + label + gap;
+        button_y = check_y + row + 2 * gap;
+        second_x = margin + columns[0] + gap;
+        layout->width = second_x + columns[1] + margin;
+        if (layout->width < buttons[0] + buttons[1] + gap + 2 * margin)
+            layout->width = buttons[0] + buttons[1] + gap + 2 * margin;
+        if (layout->width < cpu_width + 2 * margin) layout->width = cpu_width + 2 * margin;
+        layout->height = button_y + row + margin;
+        layout->step_x = cw; layout->step_y = row; layout->count = 0;
+        ++dialog->app->syncing;
+        for (child = dialog->app->widgets; child; child = child->next) {
+            RECT rect;
+            int column = child->rect.x > 2, extra = 0;
+            if (child->parent != dialog) continue;
+            if (layout->count == sizeof(layout->children) / sizeof(layout->children[0])) {
+                --dialog->app->syncing; return XXWIDGETS_PLATFORM_ERROR;
+            }
+            rect.left = column ? second_x : margin; rect.right = rect.left + columns[column];
+            if (child->kind == XXWIDGETS_COMBOBOX) {
+                rect.top = combo_y; rect.bottom = rect.top + row;
+                /* Cache only the closed selection for focus scrolling; native
+                 * ComboBox geometry also reserves space for its dropdown. */
+                extra = 10 * row;
+                SendMessageW((HWND)child->native, CB_SETITEMHEIGHT, (WPARAM)-1, row - 6);
+                SendMessageW((HWND)child->native, CB_SETITEMHEIGHT, 0, row - 6);
+            } else if (child->kind == XXWIDGETS_CHECKBOX) {
+                rect.top = check_y; rect.bottom = rect.top + row;
+            } else if (child->kind == XXWIDGETS_BUTTON) {
+                int cancel = child->rect.x >= 50;
+                rect.right = layout->width - margin - (cancel ? 0 : buttons[1] + gap);
+                rect.left = rect.right - buttons[cancel]; rect.top = button_y; rect.bottom = rect.top + row;
+            } else {
+                rect.top = child->rect.y == 5 ? cpu_y : margin; rect.bottom = rect.top + label;
+                if (child->rect.y == 5) { rect.left = margin; rect.right = layout->width - margin; }
+            }
+            layout->children[layout->count].handle = (HWND)child->native;
+            layout->children[layout->count].extra_height = extra;
+            layout->children[layout->count++].rect = rect;
+        }
+        --dialog->app->syncing;
+        if (first) {
+            status = win32_font_layout_fit(dialog);
+            if (status != XXWIDGETS_OK) return status;
+        }
     }
-    return XXWIDGETS_OK;
+    return win32_font_layout_update(dialog, first || refresh);
 }
 
 static xxwidgets_status win32_window_text(HWND handle, wchar_t **result)
@@ -2381,5 +2522,5 @@ static xxwidgets_status win32_copy_text(xxwidgets_widget *window, const char *te
 const xxwidgets_backend_ops xxwidgets_native_ops = {
     "WinAPI", win32_init, win32_shutdown, win32_poll, win32_create, win32_destroy,
     win32_sync, win32_read_text, win32_read_value, win32_focus, win32_modal_owner, win32_about_content, win32_copy_text,
-    win32_apply_fonts, win32_choose_font, win32_preview_font, win32_font_options_layout
+    win32_apply_fonts, win32_choose_font, win32_preview_font, win32_font_options_layout, win32_optimization_options_layout
 };
