@@ -689,11 +689,15 @@ static int directory_exists(const browser_state *state, const char *directory)
     return 0;
 }
 
-xxwidgets_status xxwidgets_archivebrowser_set_directory(xxwidgets_widget *widget, const char *directory)
+/* select: a normalized folder path ("a/b/") whose row becomes the current one,
+ * or NULL for the first row. */
+static xxwidgets_status change_directory(xxwidgets_widget *widget, const char *directory, const char *select)
 {
     char *normalized;
     browser_state *state;
     xxwidgets_status status;
+    size_t row;
+    int value = 0;
     if (!browser_widget(widget)) return XXWIDGETS_INVALID_ARGUMENT;
     status = normalize_path(directory, 1, &normalized);
     if (status != XXWIDGETS_OK) return status;
@@ -701,7 +705,22 @@ xxwidgets_status xxwidgets_archivebrowser_set_directory(xxwidgets_widget *widget
     state = state_copy(widget->browser);
     if (!state) { free(normalized); return XXWIDGETS_OUT_OF_MEMORY; }
     free(state->directory); state->directory = normalized;
-    return install_state(widget, state, 0);
+    if (select) {
+        /* Chosen before the first sync, so a backend that starts its keyboard
+         * cursor on the current row starts it here too. */
+        status = build_view(state);
+        if (status != XXWIDGETS_OK) { state_free(state); return status; }
+        for (row = 0; row < state->row_count; ++row)
+            if (state->rows[row].entry.is_directory && !strcmp(state->rows[row].normalized, select)) {
+                value = (int)row; break;
+            }
+    }
+    return install_state(widget, state, value);
+}
+
+xxwidgets_status xxwidgets_archivebrowser_set_directory(xxwidgets_widget *widget, const char *directory)
+{
+    return change_directory(widget, directory, NULL);
 }
 
 const char *xxwidgets_archivebrowser_directory(const xxwidgets_widget *widget)
@@ -711,16 +730,22 @@ const char *xxwidgets_archivebrowser_directory(const xxwidgets_widget *widget)
 
 xxwidgets_status xxwidgets_archivebrowser_up(xxwidgets_widget *widget)
 {
-    char *parent, *slash;
+    char *parent, *slash, *left;
     xxwidgets_status status;
     if (!browser_widget(widget)) return XXWIDGETS_INVALID_ARGUMENT;
     parent = xxwidgets_strdup(xxwidgets_archivebrowser_directory(widget));
     if (!parent) return XXWIDGETS_OUT_OF_MEMORY;
     if (!parent[0]) { free(parent); return XXWIDGETS_OK; }
+    left = xxwidgets_strdup(parent);
+    if (!left) { free(parent); return XXWIDGETS_OUT_OF_MEMORY; }
     parent[strlen(parent) - 1] = 0;
     slash = strrchr(parent, '/');
     if (slash) slash[1] = 0; else parent[0] = 0;
-    status = xxwidgets_archivebrowser_set_directory(widget, parent);
+    /* Select the folder just left, as file managers do, so Enter goes back in.
+     * The directory is normalized, so it matches the row's normalized path
+     * whatever form ("./", backslashes) the archive stores. */
+    status = change_directory(widget, parent, left);
+    free(left);
     free(parent);
     return status;
 }

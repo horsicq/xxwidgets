@@ -29,7 +29,8 @@ static xxwidgets_status xxwidgets_process_clock(uint64_t *milliseconds)
 typedef struct process_state {
     xxwidgets_widget *owner, *window, *cancel;
     xxwidgets_widget *bars[XX_PD_LEVELS], *labels[XX_PD_LEVELS], *elapsed;
-    int stop_requested;
+    int stop_requested, minimum_rows;
+    char elapsed_text[160]; /* Shown text (same size as the render buffer); not set again unchanged. */
 } process_state;
 
 static void process_event(xxwidgets_app *app, const xxwidgets_event *event, void *user)
@@ -88,10 +89,14 @@ static void process_status(char *text, const char *status, size_t capacity)
 
 static xxwidgets_status process_render(process_state *state, const xx_pd_struct *progress, uint64_t elapsed)
 {
-    xxwidgets_rect rect = {2, 1, 60, 1};
+    /* Laid out for the width the window has: a small screen can give it less
+     * than the 64 columns it asks for, and it must not ask again each pass. */
+    int columns = state->window->rect.width < 24 ? 24 : state->window->rect.width;
+    xxwidgets_rect rect = {2, 1, 0, 1};
     xxwidgets_status status;
     char text[160], label[sizeof(progress->records[0].status) + 1];
     int i, row = 0;
+    rect.width = columns - 4;
     for (i = 0; i < XX_PD_LEVELS; ++i) {
         const xx_pd_record *record = &progress->records[i];
         int busy = record->is_busy != 0;
@@ -117,13 +122,19 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
         status = xxwidgets_widget_set_visible(state->labels[i], busy);
         if (status != XXWIDGETS_OK) return status;
     }
-    snprintf(text, sizeof(text), "Elapsed: %" PRIu64 ".%03u s", elapsed / 1000, (unsigned int)(elapsed % 1000));
-    status = xxwidgets_widget_set_text(state->elapsed, text);
-    if (status != XXWIDGETS_OK) return status;
-    rect.y = row * 3 + 1; rect.width = 42;
+    /* Tenths of a second: a millisecond counter changed on every pass of the
+     * dialog loop, so the toolkit always had a redraw pending and the loop
+     * never waited. */
+    snprintf(text, sizeof(text), "Elapsed: %" PRIu64 ".%u s", elapsed / 1000, (unsigned int)(elapsed % 1000 / 100));
+    if (strcmp(text, state->elapsed_text)) {
+        status = xxwidgets_widget_set_text(state->elapsed, text);
+        if (status != XXWIDGETS_OK) return status;
+        snprintf(state->elapsed_text, sizeof(state->elapsed_text), "%s", text);
+    }
+    rect.y = row * 3 + 1; rect.width = columns - 22;
     status = xxwidgets_widget_set_rect(state->elapsed, rect);
     if (status != XXWIDGETS_OK) return status;
-    rect.x = 48; rect.width = 14; rect.height = 2;
+    rect.x = columns - 16; rect.width = 14; rect.height = 2;
     status = xxwidgets_widget_set_rect(state->cancel, rect);
     if (status != XXWIDGETS_OK) return status;
     if (state->stop_requested) {
@@ -132,7 +143,21 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
         status = xxwidgets_widget_set_enabled(state->cancel, 0);
         if (status != XXWIDGETS_OK) return status;
     }
+    /* The window is asked for its height only when that changes. Asking on
+     * every pass fought the size a user, the window manager or a small screen
+     * gave it, and each answer started the next pass at once. */
     rect = state->window->rect; rect.height = row * 3 + 5;
+    if (rect.height == state->minimum_rows) return XXWIDGETS_OK;
+    /* The 64 columns as a minimum, which the backend fits to the screen:
+     * a width clamped on a small screen grows back when the screen does. */
+    status = xxwidgets_window_set_minimum_size(state->window, 64, rect.height);
+    if (status != XXWIDGETS_OK) return status;
+    state->minimum_rows = rect.height;
+    if (state->window->app->backend == XXWIDGETS_BACKEND_TUI) {
+        /* Centred for the height it has, not the 20 rows it was created with. */
+        const xxwidgets_rect *owner = &state->owner->rect;
+        rect.y = owner->y + (owner->height > rect.height ? (owner->height - rect.height) / 2 : 0);
+    }
     /* Native centering or user movement can put the frame above/left of the
      * primary display. Public logical rectangles require nonnegative bounds. */
     if (rect.x < 0) rect.x = 0;

@@ -325,6 +325,20 @@ origin. Coordinates must be 0–32767, dimensions 1–32767. Desktop window
 placement is advisory because the window manager can choose its position.
 TUI clips windows and children to the screen.
 
+Users can resize desktop windows; `XXWIDGETS_EVENT_RESIZE` reports the new
+client size in whole cells through `xxwidgets_widget_get_rect` (GTK rounds
+down, so a layout for that size never overhangs the window edge).
+A window that re-lays out its controls on RESIZE should pass its layout's
+smallest grid to `xxwidgets_window_set_minimum_size(window, columns, rows)`.
+Without that call GTK keeps a window at least as large as its controls'
+rects; backends with no such limit (WinAPI, AppKit, TUI today) accept and
+ignore it. GTK also shrinks a window that would not fit its monitor's work
+area, and the following RESIZE reports the size it got. GTK sizes a cell from
+the font and from its one-row controls: buttons, entries and combo boxes keep
+their theme but drop its minimum height, and a cell is as tall as the tallest
+of them plus a 2-pixel gap. Text that cannot fit its cells is ellipsized, with
+the whole text as the control's tooltip.
+
 All calls belong to one UI thread. Call `xxwidgets_app_run` for the built-in
 loop or `xxwidgets_app_poll` to integrate an existing loop; polling takes a
 nonnegative timeout in milliseconds. Callback handlers may update/focus

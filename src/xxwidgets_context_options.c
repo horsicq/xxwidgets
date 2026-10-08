@@ -146,7 +146,7 @@ static LONG read_value(HKEY key, const wchar_t *name, registry_value *value)
     error = RegQueryValueExW(key, name, NULL, &value->type, NULL, &value->size);
     if (error == ERROR_FILE_NOT_FOUND) return ERROR_SUCCESS;
     if (error != ERROR_SUCCESS) return error;
-    if ((size_t)value->size > SIZE_MAX - sizeof(wchar_t)) return ERROR_NOT_ENOUGH_MEMORY;
+    if ((uint64_t)value->size + sizeof(wchar_t) > SIZE_MAX) return ERROR_NOT_ENOUGH_MEMORY;
     value->data = (BYTE *)malloc((size_t)value->size + sizeof(wchar_t));
     if (!value->data) return ERROR_NOT_ENOUGH_MEMORY;
     memset(value->data, 0, (size_t)value->size + sizeof(wchar_t));

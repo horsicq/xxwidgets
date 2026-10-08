@@ -30,6 +30,7 @@ typedef struct tui_cell {
 
 typedef struct tui_edit {
     size_t caret;
+    char *seen; /* Text as last typed or shown; a different text came from the program. */
 } tui_edit;
 
 typedef struct tui_hexview {
@@ -40,6 +41,7 @@ typedef struct tui_hexview {
 typedef struct tui_state {
     xxwidgets_widget *focus;
     xxwidgets_widget *dropdown;
+    int dropdown_index; /* Highlighted item of an open COMBOBOX list. */
     tui_cell *cells;
     size_t capacity;
     int columns, rows, dirty;
@@ -150,6 +152,8 @@ static void tui_focus_next(xxwidgets_app *app, int backwards)
     int found = 0;
     for (widget = app->widgets; widget; widget = widget->next) {
         if (!tui_eligible(widget)) continue;
+        /* An empty list box draws nothing to focus, as in the GTK backend. */
+        if (widget != state->focus && widget->kind == XXWIDGETS_LISTBOX && !widget->item_count) continue;
         if (!first) first = widget;
         last = widget;
         if (backwards) {
@@ -196,9 +200,13 @@ static void tui_fill(tui_state *state, tui_clip clip, unsigned char style)
             tui_put(state, clip, x, y, ' ', style);
 }
 
+#define TUI_TEXT_MULTILINE 1
+#define TUI_TEXT_ELLIPSIS 2 /* A line cut at the edge ends in an ellipsis (not for edits: the caret cell). */
+
 static void tui_text(tui_state *state, tui_clip clip, long long x, long long y,
-                     const char *text, unsigned char style, int multiline)
+                     const char *text, unsigned char style, int flags)
 {
+    int multiline = flags & TUI_TEXT_MULTILINE;
     size_t length, remaining = strlen(text);
     long long start = x;
     while (remaining && y < clip.bottom) {
@@ -211,6 +219,14 @@ static void tui_text(tui_state *state, tui_clip clip, long long x, long long y,
         }
         if (glyph == '\r') continue;
         if (glyph < 32 || glyph == 127) glyph = ' ';
+        if ((flags & TUI_TEXT_ELLIPSIS) && x == clip.right - 1 && x > start && remaining &&
+            *text != '\n' && *text != '\r') {
+            /* The line goes on past the edge: say so instead of cutting it. */
+            tui_put(state, clip, x, y, 0x2026, style);
+            if (!multiline) break;
+            while (remaining && *text != '\n') { ++text; --remaining; }
+            continue;
+        }
         tui_put(state, clip, x++, y, glyph, style);
         if (!multiline && x >= clip.right) break;
     }
@@ -268,20 +284,24 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
     long long col, row;
     char label[32];
     if (!widget->visible || clip.left >= clip.right || clip.top >= clip.bottom) return;
+    if ((widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_CHECKBOX ||
+         widget->kind == XXWIDGETS_COMBOBOX || widget->kind == XXWIDGETS_CHECKCOMBOBOX) &&
+        clip.bottom > y + 1)
+        clip.bottom = y + 1;
     tui_fill(state, clip, style);
     switch (widget->kind) {
     case XXWIDGETS_LABEL:
-        tui_text(state, clip, x, y, widget->text, style, 1);
+        tui_text(state, clip, x, y, widget->text, style, TUI_TEXT_MULTILINE | TUI_TEXT_ELLIPSIS);
         break;
     case XXWIDGETS_BUTTON:
         tui_put(state, clip, x, y, '[', style);
         tui_put(state, clip, bounds.right - 1, y, ']', style);
         bounds.left = x + 1; bounds.right--;
-        tui_text(state, tui_intersect(clip, bounds), x + 1, y, widget->text, style, 0);
+        tui_text(state, tui_intersect(clip, bounds), x + 1, y, widget->text, style, TUI_TEXT_ELLIPSIS);
         break;
     case XXWIDGETS_CHECKBOX:
         tui_text(state, clip, x, y, widget->value ? "[x] " : "[ ] ", style, 0);
-        tui_text(state, clip, x + 4, y, widget->text, style, 0);
+        tui_text(state, clip, x + 4, y, widget->text, style, TUI_TEXT_ELLIPSIS);
         break;
     case XXWIDGETS_COMBOBOX:
     case XXWIDGETS_CHECKCOMBOBOX:
@@ -289,7 +309,7 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
         tui_put(state, clip, bounds.right - 2, y, 0x25be, style);
         tui_put(state, clip, bounds.right - 1, y, ']', style);
         bounds.left = x + 1; bounds.right -= 3;
-        tui_text(state, tui_intersect(clip, bounds), x + 1, y, xxwidgets_combobox_caption(widget), style, 0);
+        tui_text(state, tui_intersect(clip, bounds), x + 1, y, xxwidgets_combobox_caption(widget), style, TUI_TEXT_ELLIPSIS);
         break;
     case XXWIDGETS_EDIT: {
         tui_edit *edit = (tui_edit *)widget->platform;
@@ -395,7 +415,7 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
             tui_fill(state, tui_intersect(clip, bounds), item_style);
             tui_put(state, clip, x, row, item == selected_row ? '>' :
                 widget->kind == XXWIDGETS_ARCHIVEBROWSER && xxwidgets_archivebrowser_row_selected(widget, item) ? '*' : ' ', item_style);
-            tui_text(state, clip, x + 1, row, widget->items[item] + offset, item_style, 0);
+            tui_text(state, clip, x + 1, row, widget->items[item] + offset, item_style, TUI_TEXT_ELLIPSIS);
         }
         break;
     }
@@ -418,10 +438,21 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
     }
 }
 
+/* A modal window stays on the terminal: one centred in a main window taller
+ * than a short terminal would hang off the bottom. One taller than the
+ * terminal starts at its top, so its title and upper rows show. */
+static long long tui_window_top(const tui_state *state, const xxwidgets_widget *window)
+{
+    long long y = window->rect.y, height = (long long)window->rect.height + 2;
+    if (window == window->app->modal_window && y + height > state->rows)
+        y = height <= state->rows ? state->rows - height : 0;
+    return y;
+}
+
 static void tui_window(xxwidgets_app *app, xxwidgets_widget *window)
 {
     tui_state *state = (tui_state *)app->platform;
-    long long x = window->rect.x, y = window->rect.y;
+    long long x = window->rect.x, y = tui_window_top(state, window);
     tui_clip screen = { 0, 0, state->columns, state->rows };
     tui_clip outer = { x, y, x + (long long)window->rect.width + 2,
         y + (long long)window->rect.height + 2 };
@@ -558,6 +589,29 @@ static xxwidgets_status tui_present(tui_state *state)
     return XXWIDGETS_OK;
 }
 
+/* The highlighted item of an open list: a COMBOBOX keeps its value until an
+ * item is picked, a CHECKCOMBOBOX moves its value as its toggle cursor. */
+static int tui_dropdown_row(const tui_state *state, const xxwidgets_widget *widget)
+{
+    int index = widget->kind == XXWIDGETS_COMBOBOX ? state->dropdown_index : widget->value;
+    if (index >= (int)widget->item_count) index = (int)widget->item_count - 1;
+    return index < 0 ? 0 : index;
+}
+
+/* Close the open list. Picking emits SELECT once, for an item that differs. */
+static void tui_dropdown_pick(tui_state *state, int pick)
+{
+    xxwidgets_widget *widget = state->dropdown;
+    int index;
+    state->dropdown = NULL; state->dirty = 1;
+    if (!pick || !widget || widget->kind != XXWIDGETS_COMBOBOX || !widget->item_count) return;
+    index = tui_dropdown_row(state, widget);
+    if (index != widget->value) {
+        widget->value = index;
+        xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, index);
+    }
+}
+
 static void tui_dropdown(xxwidgets_app *app)
 {
     tui_state *state = app->platform;
@@ -570,9 +624,9 @@ static void tui_dropdown(xxwidgets_app *app)
     }
     visible = widget->item_count < 8 ? widget->item_count : 8;
     if (visible > (size_t)state->rows - 2) visible = (size_t)state->rows - 2;
-    start = widget->value >= (int)visible ? (size_t)widget->value - visible + 1 : 0;
+    start = tui_dropdown_row(state, widget) >= (int)visible ? (size_t)tui_dropdown_row(state, widget) - visible + 1 : 0;
     x = widget->parent->rect.x + widget->rect.x + 1;
-    y = widget->parent->rect.y + widget->rect.y + 2;
+    y = tui_window_top(state, widget->parent) + widget->rect.y + 2;
     width = widget->rect.width > 20 ? widget->rect.width : 20;
     if (width > state->columns) width = state->columns;
     if (x + width > state->columns) x = state->columns - width;
@@ -584,13 +638,13 @@ static void tui_dropdown(xxwidgets_app *app)
     client.left++; client.top++; client.right--; client.bottom--;
     for (row = 0; row < visible && start + row < widget->item_count; ++row) {
         size_t index = start + row;
-        unsigned char style = widget->value == (int)index ? TUI_FOCUS : TUI_NORMAL;
+        unsigned char style = tui_dropdown_row(state, widget) == (int)index ? TUI_FOCUS : TUI_NORMAL;
         tui_clip line = {client.left, client.top + (long long)row, client.right, client.top + (long long)row + 1};
         tui_fill(state, line, style);
         if (widget->kind == XXWIDGETS_CHECKCOMBOBOX) {
             tui_text(state, line, line.left, line.top, xxwidgets_checkcombobox_checked(widget, index) ? "[x] " : "[ ] ", style, 0);
-            tui_text(state, line, line.left + 4, line.top, widget->items[index], style, 0);
-        } else tui_text(state, line, line.left, line.top, widget->items[index], style, 0);
+            tui_text(state, line, line.left + 4, line.top, widget->items[index], style, TUI_TEXT_ELLIPSIS);
+        } else tui_text(state, line, line.left, line.top, widget->items[index], style, TUI_TEXT_ELLIPSIS);
     }
 }
 
@@ -633,6 +687,8 @@ static xxwidgets_status tui_change_edit(xxwidgets_widget *widget, size_t from,
     status = xxwidgets_store_text(widget, text);
     free(text);
     if (status != XXWIDGETS_OK) return status;
+    free(edit->seen);
+    edit->seen = xxwidgets_strdup(widget->text);
     edit->caret = from + inserted;
     ((tui_state *)widget->app->platform)->dirty = 1;
     xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, 0);
@@ -672,8 +728,10 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
     xxwidgets_widget *widget = state->focus;
     if (tui_shortcut(widget, key, modifiers)) return XXWIDGETS_OK;
     if (key == TUI_KEY_TAB || key == TUI_KEY_BACKTAB) {
-        state->dropdown = NULL; state->dirty = 1;
-        tui_focus_next(app, key == TUI_KEY_BACKTAB); return XXWIDGETS_OK;
+        /* A pick that started an operation has already moved focus. */
+        tui_dropdown_pick(state, 1);
+        if (state->focus == widget) tui_focus_next(app, key == TUI_KEY_BACKTAB);
+        return XXWIDGETS_OK;
     }
     if (key == TUI_KEY_ESCAPE || key == 3 || key == 4) {
         if (state->dropdown) { state->dropdown = NULL; state->dirty = 1; return XXWIDGETS_OK; }
@@ -685,27 +743,37 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
         return XXWIDGETS_OK;
     }
     if (key == 12) { state->dirty = 1; return XXWIDGETS_OK; }
+    /* Enter on an open list picks from it, even in a dialog with a default button. */
+    if (key == TUI_KEY_ENTER && state->dropdown && state->dropdown == widget) {
+        tui_dropdown_pick(state, 1); return XXWIDGETS_OK;
+    }
     if (key == TUI_KEY_ENTER && app->modal_default) {
         xxwidgets_emit(app->modal_default, XXWIDGETS_EVENT_CLICK, 0); return XXWIDGETS_OK;
     }
     if (!widget || !tui_eligible(widget)) return XXWIDGETS_OK;
     if (xxwidgets_combo_kind(widget)) {
-        int index = widget->value;
+        /* An open COMBOBOX list moves only its highlight; Enter, Space or Tab
+         * picks it and Escape keeps the old item, as native lists do. Arrows
+         * on a closed one change the item at once. */
+        int open = state->dropdown == widget, highlight = open && widget->kind == XXWIDGETS_COMBOBOX;
+        int index = highlight ? tui_dropdown_row(state, widget) : widget->value;
         if (key == TUI_KEY_ENTER || key == ' ') {
-            if (state->dropdown != widget) {
+            if (!open) {
                 if (widget->item_count) {
                     if (widget->kind == XXWIDGETS_CHECKCOMBOBOX && widget->value < 0) widget->value = 0;
                     state->dropdown = widget;
+                    state->dropdown_index = widget->value;
                 }
             } else if (key == ' ' && widget->kind == XXWIDGETS_CHECKCOMBOBOX)
                 return xxwidgets_checkcombobox_user_toggle(widget, (size_t)widget->value);
-            else state->dropdown = NULL;
+            else { tui_dropdown_pick(state, 1); return XXWIDGETS_OK; }
         } else if (widget->item_count) {
             if (key == TUI_KEY_DOWN && index + 1 < (int)widget->item_count) ++index;
             else if (key == TUI_KEY_UP && index > 0) --index;
             else if (key == TUI_KEY_HOME) index = 0;
             else if (key == TUI_KEY_END) index = (int)widget->item_count - 1;
-            if (index != widget->value) {
+            if (highlight) state->dropdown_index = index;
+            else if (index != widget->value) {
                 widget->value = index;
                 if (widget->kind == XXWIDGETS_COMBOBOX) xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, index);
             }
@@ -722,13 +790,15 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
         case TUI_KEY_RIGHT: edit->caret = tui_next(widget->text, edit->caret); break;
         case TUI_KEY_HOME: edit->caret = 0; break;
         case TUI_KEY_END: edit->caret = length; break;
+        case TUI_KEY_ENTER:
+            /* As in the native backends: Enter in a field is its default action. */
+            xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, 0);
+            return XXWIDGETS_OK;
         case TUI_KEY_BACKSPACE:
             if (edit->caret) return tui_change_edit(widget, tui_previous(widget->text, edit->caret), edit->caret, NULL, 0);
             break;
         case TUI_KEY_DELETE:
             if (edit->caret < length) return tui_change_edit(widget, edit->caret, tui_next(widget->text, edit->caret), NULL, 0);
-            break;
-        case TUI_KEY_ENTER:
             break;
         default:
             if (key >= 32 && key < 0x110000 && key != 127 && !(key >= 0xd800 && key <= 0xdfff))
@@ -1131,6 +1201,7 @@ static void tui_destroy(xxwidgets_widget *widget)
     tui_state *state = (tui_state *)widget->app->platform;
     if (state->focus == widget) state->focus = NULL;
     if (state->dropdown == widget) state->dropdown = NULL;
+    if (widget->kind == XXWIDGETS_EDIT && widget->platform) free(((tui_edit *)widget->platform)->seen);
     free(widget->platform); widget->platform = NULL; state->dirty = 1;
 }
 
@@ -1139,6 +1210,18 @@ static xxwidgets_status tui_sync(xxwidgets_widget *widget)
     tui_state *state = (tui_state *)widget->app->platform;
     if (widget->kind == XXWIDGETS_EDIT && widget->platform) {
         tui_edit *edit = (tui_edit *)widget->platform;
+        if (!edit->seen || strcmp(edit->seen, widget->text)) {
+            /* Text set by the program (e.g. a path completed): caret to the
+             * end, as the native backends do. In the focused field it keeps
+             * its place around a small change, as when a '~' is expanded. */
+            size_t caret = SIZE_MAX;
+            if (edit->seen && widget == state->focus)
+                caret = xxwidgets_edit_caret(edit->seen, edit->caret, widget->text);
+            if (caret == SIZE_MAX) caret = strlen(widget->text);
+            edit->caret = caret;
+            free(edit->seen);
+            edit->seen = xxwidgets_strdup(widget->text);
+        }
         if (edit->caret > strlen(widget->text)) edit->caret = strlen(widget->text);
         while (edit->caret && (((unsigned char)widget->text[edit->caret] & 0xc0) == 0x80))
             --edit->caret;
@@ -1176,8 +1259,14 @@ static xxwidgets_status tui_apply_fonts(xxwidgets_app *app, const xxwidgets_font
     return XXWIDGETS_OK;
 }
 
+static int tui_has_focus(const xxwidgets_widget *widget)
+{
+    const tui_state *state = (const tui_state *)widget->app->platform;
+    return state && state->focus == widget;
+}
+
 const xxwidgets_backend_ops xxwidgets_tui_ops = {
     "tui", tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,
     tui_sync, tui_read, tui_read, tui_focus, NULL, NULL, NULL,
-    tui_apply_fonts, NULL, NULL, NULL, NULL
+    tui_apply_fonts, NULL, NULL, NULL, NULL, NULL, tui_has_focus
 };

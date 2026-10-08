@@ -565,7 +565,7 @@ static xxwidgets_status win32_font_layout_viewport(xxwidgets_widget *widget, int
     /* One scrollbar can reduce the other dimension. Recheck the viewport after
      * each change before clamping offsets and positioning the cached children. */
     for (pass = 0; pass < 3; ++pass) {
-        SCROLLINFO info = {sizeof(info)};
+        SCROLLINFO info = {sizeof(info), 0, 0, 0, 0, 0, 0};
         RECT next;
         int max_x = layout->width > client.right ? layout->width - client.right : 0;
         int max_y = layout->height > client.bottom ? layout->height - client.bottom : 0;
@@ -611,7 +611,7 @@ static LRESULT CALLBACK win32_font_options_proc(HWND window, UINT message, WPARA
             int *offset = horizontal ? &layout->x : &layout->y;
             int page = horizontal ? layout->client_width : layout->client_height;
             int step = horizontal ? layout->step_x : layout->step_y;
-            SCROLLINFO info = {sizeof(info)};
+            SCROLLINFO info = {sizeof(info), 0, 0, 0, 0, 0, 0};
             info.fMask = SIF_TRACKPOS;
             switch (action) {
             case SB_LINEUP: *offset -= step; break;
@@ -653,7 +653,7 @@ static xxwidgets_status win32_font_layout_fit(xxwidgets_widget *dialog)
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
     win32_font_layout *layout = native->font_layout;
     HWND window = (HWND)dialog->native;
-    MONITORINFO monitor = {sizeof(monitor)};
+    MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
     RECT frame = {0, 0, layout->width, layout->height}, position;
     LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE) | WS_HSCROLL | WS_VSCROLL;
     int width, height, x, y;
@@ -2396,7 +2396,7 @@ static xxwidgets_status win32_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
         int y = area.top + ((area.bottom - area.top) - height) / 2;
         xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
         if (native && native->font_layout) {
-            MONITORINFO monitor = {sizeof(monitor)};
+            MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
             if (GetMonitorInfoW(MonitorFromWindow(parent, MONITOR_DEFAULTTONEAREST), &monitor)) {
                 if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
                 if (x < monitor.rcWork.left) x = monitor.rcWork.left;
@@ -2522,5 +2522,5 @@ static xxwidgets_status win32_copy_text(xxwidgets_widget *window, const char *te
 const xxwidgets_backend_ops xxwidgets_native_ops = {
     "WinAPI", win32_init, win32_shutdown, win32_poll, win32_create, win32_destroy,
     win32_sync, win32_read_text, win32_read_value, win32_focus, win32_modal_owner, win32_about_content, win32_copy_text,
-    win32_apply_fonts, win32_choose_font, win32_preview_font, win32_font_options_layout, win32_optimization_options_layout
+    win32_apply_fonts, win32_choose_font, win32_preview_font, win32_font_options_layout, win32_optimization_options_layout, NULL, NULL
 };

@@ -26,6 +26,9 @@ typedef struct xxwidgets_backend_ops {
         const xxwidgets_font *font);
     xxwidgets_status (*font_options_layout)(xxwidgets_widget *dialog, int refresh);
     xxwidgets_status (*optimization_options_layout)(xxwidgets_widget *dialog, int refresh);
+    xxwidgets_status (*choose_file)(xxwidgets_widget *owner, xxwidgets_file_dialog_mode mode,
+        const char *title, const char *initial, char **path, int *accepted);
+    int (*has_focus)(const xxwidgets_widget *widget);
 } xxwidgets_backend_ops;
 
 struct xxwidgets_about_dialog {
@@ -82,6 +85,9 @@ struct xxwidgets_widget {
     uint64_t tree_content_revision;
     struct xxwidgets_shortcut_binding *shortcuts;
     size_t shortcut_count;
+    /* WINDOW: xxwidgets_window_set_minimum_size; backends without a resize
+     * limit ignore it. */
+    int min_columns, min_rows, has_minimum;
     int value;
     int visible;
     int enabled;
@@ -94,6 +100,9 @@ char *xxwidgets_strdup(const char *text);
 int xxwidgets_valid_utf8(const char *text);
 /* Backend input helpers update cached state before dispatch. */
 xxwidgets_status xxwidgets_store_text(xxwidgets_widget *widget, const char *text);
+/* Where an edit's caret goes when the program replaces its text: a byte
+ * offset into now, or SIZE_MAX for the end. caret is a byte offset into old. */
+size_t xxwidgets_edit_caret(const char *old, size_t caret, const char *now);
 void xxwidgets_emit(xxwidgets_widget *widget, xxwidgets_event_type type, int value);
 enum {
     XXWIDGETS_MOD_CTRL = 1, XXWIDGETS_MOD_ALT = 2,

@@ -41,6 +41,24 @@ char *xxwidgets_strdup(const char *text)
     return copy;
 }
 
+/* The texts share a prefix and a suffix around one changed span. A caret in
+ * the unchanged end stays before the same text. A caret in front of the span
+ * stays where it is when the span is small next to the unchanged end (a '~'
+ * expanded with the caret at 0), but not when the text was replaced. */
+size_t xxwidgets_edit_caret(const char *old, size_t caret, const char *now)
+{
+    size_t old_length = strlen(old), now_length = strlen(now), prefix = 0, suffix = 0, shorter;
+    if (caret > old_length) return SIZE_MAX;
+    shorter = old_length < now_length ? old_length : now_length;
+    while (prefix < shorter && old[prefix] == now[prefix]) ++prefix;
+    while (prefix && ((unsigned char)now[prefix] & 0xc0) == 0x80) --prefix;
+    while (suffix < shorter - prefix && old[old_length - 1 - suffix] == now[now_length - 1 - suffix]) ++suffix;
+    while (suffix && ((unsigned char)old[old_length - suffix] & 0xc0) == 0x80) --suffix;
+    if (caret >= old_length - suffix) return now_length - (old_length - caret);
+    if (caret <= prefix && suffix > old_length - prefix - suffix) return caret;
+    return SIZE_MAX;
+}
+
 xxwidgets_status xxwidgets_store_text(xxwidgets_widget *widget, const char *text)
 {
     char *copy;
@@ -348,6 +366,37 @@ xxwidgets_status xxwidgets_widget_set_rect(xxwidgets_widget *widget, xxwidgets_r
     previous = widget->rect; widget->rect = rect;
     status = sync_widget(widget);
     if (status != XXWIDGETS_OK) { widget->rect = previous; sync_widget(widget); }
+    return status;
+}
+
+int xxwidgets_widget_has_focus(const xxwidgets_widget *widget)
+{
+    if (!widget || !widget->app->ops->has_focus) return -1;
+    return widget->app->ops->has_focus(widget) ? 1 : 0;
+}
+
+xxwidgets_status xxwidgets_widget_get_rect(const xxwidgets_widget *widget, xxwidgets_rect *rect)
+{
+    if (!widget || !rect) return XXWIDGETS_INVALID_ARGUMENT;
+    *rect = widget->rect;
+    return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_window_set_minimum_size(xxwidgets_widget *window, int columns, int rows)
+{
+    int previous_columns, previous_rows, previous_set;
+    xxwidgets_status status;
+    if (!window || window->kind != XXWIDGETS_WINDOW ||
+        columns < 0 || rows < 0 || columns > 32767 || rows > 32767) return XXWIDGETS_INVALID_ARGUMENT;
+    previous_columns = window->min_columns; previous_rows = window->min_rows;
+    previous_set = window->has_minimum;
+    window->min_columns = columns; window->min_rows = rows; window->has_minimum = 1;
+    status = sync_widget(window);
+    if (status != XXWIDGETS_OK) {
+        window->min_columns = previous_columns; window->min_rows = previous_rows;
+        window->has_minimum = previous_set;
+        sync_widget(window);
+    }
     return status;
 }
 

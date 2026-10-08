@@ -1,4 +1,5 @@
 #include "xxwidgets_internal.h"
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct options_state {
@@ -101,4 +102,33 @@ finish:
         *accepted = 1;
     }
     return status;
+}
+
+xxwidgets_status xxwidgets_file_dialog(xxwidgets_widget *owner, xxwidgets_file_dialog_mode mode,
+    const char *title, const char *initial, char **path, int *accepted)
+{
+    xxwidgets_status status;
+    xxwidgets_app *app;
+    if (path) *path = NULL;
+    if (accepted) *accepted = 0;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !path || !accepted ||
+        (mode != XXWIDGETS_FILE_DIALOG_OPEN && mode != XXWIDGETS_FILE_DIALOG_SAVE) ||
+        (title && !xxwidgets_valid_utf8(title))) return XXWIDGETS_INVALID_ARGUMENT;
+    app = owner->app;
+    if (app->dispatch_depth || app->polling || app->syncing || app->quit ||
+        (app->modal_window && app->modal_window != owner)) return XXWIDGETS_BUSY;
+    if (!app->ops->choose_file) return XXWIDGETS_UNAVAILABLE;
+    status = app->ops->choose_file(owner, mode, title, initial, path, accepted);
+    /* Cancellation, failure and an empty selection all leave no path behind. */
+    if (status != XXWIDGETS_OK || !*accepted || !*path || !**path) {
+        free(*path);
+        *path = NULL;
+        *accepted = 0;
+    }
+    return status;
+}
+
+int xxwidgets_file_dialog_available(const xxwidgets_app *app)
+{
+    return app && app->ops && app->ops->choose_file;
 }

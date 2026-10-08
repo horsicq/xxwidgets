@@ -139,9 +139,21 @@ XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_text(xxwidgets_widget *widge
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_text(xxwidgets_widget *widget,
     char *buffer, size_t capacity, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_rect(xxwidgets_widget *widget, xxwidgets_rect rect);
+/* Current rect in cells. For a window this follows user resizes, which are
+ * reported as XXWIDGETS_EVENT_RESIZE. */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_rect(const xxwidgets_widget *widget, xxwidgets_rect *rect);
+/* Smallest client area, in cells, the user can resize a window to; for a
+ * window that re-lays out its controls on RESIZE, pass its layout's minimum.
+ * Without a call, GTK keeps a window at least as large as its controls'
+ * rects. Backends whose windows have no such limit accept and ignore it. */
+XXWIDGETS_API xxwidgets_status xxwidgets_window_set_minimum_size(xxwidgets_widget *window,
+    int columns, int rows);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_visible(xxwidgets_widget *widget, int visible);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *widget, int enabled);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_focus(xxwidgets_widget *widget);
+/* 1 when the widget (or a part of it, such as a list row) has keyboard focus,
+ * 0 when it has not, -1 when the backend cannot tell. */
+XXWIDGETS_API int xxwidgets_widget_has_focus(const xxwidgets_widget *widget);
 /* CHECKBOX: 0/1; PROGRESS: 0..100; list controls: -1 or visible row;
  * comboboxes: -1 or record index (checkbox cursor is separate from checks).
  * TREEVIEW: -1 or original node index; selecting a hidden node opens ancestors.
@@ -321,6 +333,23 @@ XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_show(xxwidgets_about_dialo
  * rules are the same as about_dialog_show. Text is borrowed for this call. */
 XXWIDGETS_API xxwidgets_status xxwidgets_text_dialog(xxwidgets_widget *owner,
     const char *title, const char *text);
+
+typedef enum xxwidgets_file_dialog_mode {
+    XXWIDGETS_FILE_DIALOG_OPEN = 0, /* choose an existing file */
+    XXWIDGETS_FILE_DIALOG_SAVE      /* choose a file name; replacing a file is confirmed */
+} xxwidgets_file_dialog_mode;
+
+/* Native file chooser. Modal/reentrancy rules are the same as
+ * about_dialog_show. title is UTF-8 and may be NULL. initial may be NULL or
+ * empty; a file preselects it, a folder (or a missing file's folder) is where
+ * the chooser starts. On acceptance *path receives a malloc'd file path the
+ * caller frees and *accepted is 1. Cancellation is successful with
+ * accepted == 0 and *path NULL. UNAVAILABLE when the backend has no native
+ * chooser; xxwidgets_file_dialog_available reports that in advance. */
+XXWIDGETS_API xxwidgets_status xxwidgets_file_dialog(xxwidgets_widget *owner,
+    xxwidgets_file_dialog_mode mode, const char *title, const char *initial,
+    char **path, int *accepted);
+XXWIDGETS_API int xxwidgets_file_dialog_available(const xxwidgets_app *app);
 
 /* Read-only HexView: 64-bit addresses, hex bytes and printable ASCII. Data is
  * copied and rendered as selectable rows. Defaults: base 0, 16 bytes per row.
