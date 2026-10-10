@@ -16,18 +16,15 @@ static int valid_options(const xxwidgets_scan_options *options)
 
 static int valid_bounds(xxwidgets_rect bounds)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 60 && bounds.height >= 13 &&
-        bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 60 && bounds.height >= 13 && bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
 }
 
 static void option_rects(xxwidgets_rect bounds, xxwidgets_rect *rects)
 {
     int first = (bounds.width - 2) / 2, second = bounds.width - first - 2;
     size_t i;
-    for (i = 0; i < 6; ++i)
-        rects[i] = (xxwidgets_rect){bounds.x, bounds.y + 1 + (int)i * 2, first, 1};
-    for (i = 6; i < 8; ++i)
-        rects[i] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 1 + (int)(i - 6) * 2, second, 1};
+    for (i = 0; i < 6; ++i) rects[i] = (xxwidgets_rect){bounds.x, bounds.y + 1 + (int)i * 2, first, 1};
+    for (i = 6; i < 8; ++i) rects[i] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 1 + (int)(i - 6) * 2, second, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_FLAGS_LABEL] = (xxwidgets_rect){bounds.x, bounds.y, first, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_DATABASES_LABEL] = (xxwidgets_rect){bounds.x + first + 2, bounds.y, second, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_MAIN_DATABASE_LABEL] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 6, second, 2};
@@ -48,15 +45,12 @@ xxwidgets_status xxwidgets_scan_options_init(xxwidgets_scan_options *options)
     return XXWIDGETS_OK;
 }
 
-xxwidgets_widget *xxwidgets_scan_options_widget_control(
-    const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options_control_id control)
+xxwidgets_widget *xxwidgets_scan_options_widget_control(const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options_control_id control)
 {
-    return widget && control >= 0 && control < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT
-        ? widget->controls[control] : NULL;
+    return widget && control >= 0 && control < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT ? widget->controls[control] : NULL;
 }
 
-xxwidgets_status xxwidgets_scan_options_widget_get(
-    const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options *options)
+xxwidgets_status xxwidgets_scan_options_widget_get(const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options *options)
 {
     xxwidgets_scan_options result = {0};
     size_t i;
@@ -74,8 +68,7 @@ xxwidgets_status xxwidgets_scan_options_widget_get(
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_scan_options_widget_set(
-    xxwidgets_scan_options_widget *widget, const xxwidgets_scan_options *options)
+xxwidgets_status xxwidgets_scan_options_widget_set(xxwidgets_scan_options_widget *widget, const xxwidgets_scan_options *options)
 {
     int previous[8];
     size_t i;
@@ -95,14 +88,11 @@ xxwidgets_status xxwidgets_scan_options_widget_set(
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner,
-    xxwidgets_rect bounds, xxwidgets_scan_options_widget **out_widget)
+xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_options_widget **out_widget)
 {
     static const char *const labels[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT] = {
-        "Deep scan", "Heuristic scan", "Verbose results", "Aggressive scan",
-        "Hide unknown results", "Format text report", "Extra database", "Custom database",
-        "Scan flags", "Databases", "Main database is always used"
-    };
+        "Deep scan",      "Heuristic scan",  "Verbose results", "Aggressive scan", "Hide unknown results",        "Format text report",
+        "Extra database", "Custom database", "Scan flags",      "Databases",       "Main database is always used"};
     xxwidgets_scan_options_widget *widget;
     xxwidgets_scan_options defaults;
     xxwidgets_rect rects[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT];
@@ -110,17 +100,14 @@ xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner,
     size_t i;
     if (!out_widget) return XXWIDGETS_INVALID_ARGUMENT;
     *out_widget = NULL;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds))
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing) return XXWIDGETS_BUSY;
     widget = (xxwidgets_scan_options_widget *)calloc(1, sizeof(*widget));
     if (!widget) return XXWIDGETS_OUT_OF_MEMORY;
     widget->owner = owner;
     option_rects(bounds, rects);
     for (i = 0; i < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner,
-            i < 8 ? XXWIDGETS_CHECKBOX : XXWIDGETS_LABEL, labels[i], rects[i], &widget->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, i < 8 ? XXWIDGETS_CHECKBOX : XXWIDGETS_LABEL, labels[i], rects[i], &widget->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
     xxwidgets_scan_options_init(&defaults);
@@ -137,8 +124,7 @@ xxwidgets_status xxwidgets_scan_options_widget_destroy(xxwidgets_scan_options_wi
 {
     size_t i;
     if (!widget) return XXWIDGETS_INVALID_ARGUMENT;
-    if (widget->owner->app->dispatch_depth || widget->owner->app->polling || widget->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (widget->owner->app->dispatch_depth || widget->owner->app->polling || widget->owner->app->syncing) return XXWIDGETS_BUSY;
     for (i = 0; i < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT; ++i) {
         xxwidgets_status status;
         if (!widget->controls[i]) continue;
@@ -150,8 +136,7 @@ xxwidgets_status xxwidgets_scan_options_widget_destroy(xxwidgets_scan_options_wi
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_scan_options_widget_set_rect(
-    xxwidgets_scan_options_widget *widget, xxwidgets_rect bounds)
+xxwidgets_status xxwidgets_scan_options_widget_set_rect(xxwidgets_scan_options_widget *widget, xxwidgets_rect bounds)
 {
     xxwidgets_rect rects[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT], previous[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT];
     size_t i;
@@ -181,13 +166,14 @@ static void scan_options_event(xxwidgets_app *app, const xxwidgets_event *event,
     (void)app;
     if (event->widget == state->window && event->type == XXWIDGETS_EVENT_CLOSE) state->done = 1;
     else if (event->type == XXWIDGETS_EVENT_CLICK) {
-        if (event->widget == state->ok) { state->accepted = 1; state->done = 1; }
-        else if (event->widget == state->cancel) state->done = 1;
+        if (event->widget == state->ok) {
+            state->accepted = 1;
+            state->done = 1;
+        } else if (event->widget == state->cancel) state->done = 1;
     }
 }
 
-xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner,
-    const char *title, xxwidgets_scan_options *options, int *accepted)
+xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_scan_options *options, int *accepted)
 {
     xxwidgets_scan_options_widget *form = NULL;
     xxwidgets_widget *previous_focus = NULL, *control;
@@ -199,30 +185,30 @@ xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner,
     xxwidgets_status status, cleanup;
     int owner_enabled, owner_disabled = 0, modal_attached = 0;
     if (accepted) *accepted = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !accepted || !valid_options(options) ||
-        owner->rect.x > INT_MAX - 66 || owner->rect.y > INT_MAX - 21)
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !accepted || !valid_options(options) || owner->rect.x > INT_MAX - 66 || owner->rect.y > INT_MAX - 21)
         return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit)
-        return XXWIDGETS_BUSY;
-    previous_event = app->on_event; previous_user = app->user_data;
+    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
     owner_enabled = owner->enabled;
     for (control = app->widgets; control; control = control->next)
-        if (control->parent == owner && xxwidgets_focusable(control)) { previous_focus = control; break; }
-    app->on_event = scan_options_event; app->user_data = &state;
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 64, 19}, &state.window);
+        if (control->parent == owner && xxwidgets_focusable(control)) {
+            previous_focus = control;
+            break;
+        }
+    app->on_event = scan_options_event;
+    app->user_data = &state;
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 64, 19}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
     status = xxwidgets_scan_options_widget_create(state.window, (xxwidgets_rect){2, 1, 60, 13}, &form);
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_scan_options_widget_set(form, options);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "OK",
-        (xxwidgets_rect){38, 15, 10, 2}, &state.ok);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "OK", (xxwidgets_rect){38, 15, 10, 2}, &state.ok);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Cancel",
-        (xxwidgets_rect){50, 15, 12, 2}, &state.cancel);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Cancel", (xxwidgets_rect){50, 15, 12, 2}, &state.cancel);
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
@@ -234,8 +220,7 @@ xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner,
     }
     status = xxwidgets_widget_focus(form->controls[XXWIDGETS_SCAN_OPTIONS_DEEP]);
     while (status == XXWIDGETS_OK && !state.done && !app->quit) status = xxwidgets_app_poll(app, 30);
-    if (status == XXWIDGETS_OK && state.accepted && !app->quit)
-        status = xxwidgets_scan_options_widget_get(form, &selected);
+    if (status == XXWIDGETS_OK && state.accepted && !app->quit) status = xxwidgets_scan_options_widget_get(form, &selected);
     else state.accepted = 0;
 finish:
     if (owner_disabled) {
@@ -255,8 +240,12 @@ finish:
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     app->modal_window = NULL;
-    app->on_event = previous_event; app->user_data = previous_user;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
     if (previous_focus) xxwidgets_widget_focus(previous_focus);
-    if (status == XXWIDGETS_OK && state.accepted) { *options = selected; *accepted = 1; }
+    if (status == XXWIDGETS_OK && state.accepted) {
+        *options = selected;
+        *accepted = 1;
+    }
     return status;
 }

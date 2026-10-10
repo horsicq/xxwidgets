@@ -31,8 +31,7 @@ typedef struct registry_value {
 static xxwidgets_status registry_error(LONG error)
 {
     SetLastError((DWORD)error);
-    return error == ERROR_NOT_ENOUGH_MEMORY || error == ERROR_OUTOFMEMORY
-        ? XXWIDGETS_OUT_OF_MEMORY : XXWIDGETS_PLATFORM_ERROR;
+    return error == ERROR_NOT_ENOUGH_MEMORY || error == ERROR_OUTOFMEMORY ? XXWIDGETS_OUT_OF_MEMORY : XXWIDGETS_PLATFORM_ERROR;
 }
 
 static int valid_component(const char *text, int file_class)
@@ -43,8 +42,7 @@ static int valid_component(const char *text, int file_class)
     if (!strcmp(text, ".") || !strcmp(text, "..")) return 0;
     for (i = 0; text[i]; ++i) {
         unsigned char c = (unsigned char)text[i];
-        if (i >= 128 || !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) return 0;
+        if (i >= 128 || !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) return 0;
     }
     return 1;
 }
@@ -57,14 +55,18 @@ static wchar_t *wide_utf8(const char *text)
     if (count <= 0 || (size_t)count > SIZE_MAX / sizeof(*wide)) return NULL;
     wide = (wchar_t *)malloc((size_t)count * sizeof(*wide));
     if (wide && !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, count)) {
-        free(wide); return NULL;
+        free(wide);
+        return NULL;
     }
     return wide;
 }
 
 static void free_target(registry_target *target)
 {
-    free(target->key); free(target->caption); free(target->command); free(target->icon);
+    free(target->key);
+    free(target->caption);
+    free(target->command);
+    free(target->icon);
     memset(target, 0, sizeof(*target));
 }
 
@@ -82,41 +84,51 @@ static xxwidgets_status make_target(const xxwidgets_context_config *config, regi
     memset(target, 0, sizeof(*target));
     if (!config) return status;
     file_class = config->file_class && config->file_class[0] ? config->file_class : "*";
-    if (!valid_component(config->application_id, 0) || !valid_component(file_class, 1) ||
-        !config->caption || !config->caption[0] || !xxwidgets_valid_utf8(config->caption) ||
-        !config->executable || !xxwidgets_valid_utf8(config->executable) ||
-        (config->scope != XXWIDGETS_CONTEXT_CURRENT_USER && config->scope != XXWIDGETS_CONTEXT_ALL_USERS)) return status;
+    if (!valid_component(config->application_id, 0) || !valid_component(file_class, 1) || !config->caption || !config->caption[0] ||
+        !xxwidgets_valid_utf8(config->caption) || !config->executable || !xxwidgets_valid_utf8(config->executable) ||
+        (config->scope != XXWIDGETS_CONTEXT_CURRENT_USER && config->scope != XXWIDGETS_CONTEXT_ALL_USERS))
+        return status;
     for (i = 0; config->caption[i]; ++i)
         if ((unsigned char)config->caption[i] < 32 || config->caption[i] == 127) return status;
     for (i = 0; config->executable[i]; ++i)
-        if ((unsigned char)config->executable[i] < 32 || config->executable[i] == 127 ||
-            config->executable[i] == '"' || config->executable[i] == '%') return status;
+        if ((unsigned char)config->executable[i] < 32 || config->executable[i] == 127 || config->executable[i] == '"' || config->executable[i] == '%') return status;
     input = wide_utf8(config->executable);
-    id = wide_utf8(config->application_id); class_name = wide_utf8(file_class);
+    id = wide_utf8(config->application_id);
+    class_name = wide_utf8(file_class);
     target->caption = wide_utf8(config->caption);
-    if (!input || !id || !class_name || !target->caption) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
-    for (i = 0; input[i]; ++i) if (input[i] == L'/') input[i] = L'\\';
+    if (!input || !id || !class_name || !target->caption) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto done;
+    }
+    for (i = 0; input[i]; ++i)
+        if (input[i] == L'/') input[i] = L'\\';
     length = wcslen(input);
-    if (!((length >= 3 && ((input[0] >= L'A' && input[0] <= L'Z') ||
-        (input[0] >= L'a' && input[0] <= L'z')) && input[1] == L':' && input[2] == L'\\') ||
-        (length >= 5 && input[0] == L'\\' && input[1] == L'\\' &&
-        input[2] != L'?' && input[2] != L'.'))) goto done;
+    if (!((length >= 3 && ((input[0] >= L'A' && input[0] <= L'Z') || (input[0] >= L'a' && input[0] <= L'z')) && input[1] == L':' && input[2] == L'\\') ||
+          (length >= 5 && input[0] == L'\\' && input[1] == L'\\' && input[2] != L'?' && input[2] != L'.')))
+        goto done;
     required = GetFullPathNameW(input, 0, NULL, NULL);
     if (!required || required > 32768) goto done;
     absolute = (wchar_t *)malloc((size_t)required * sizeof(*absolute));
-    if (!absolute) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
+    if (!absolute) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto done;
+    }
     actual = GetFullPathNameW(input, required, absolute, NULL);
     if (!actual || actual >= required) goto done;
     length = wcslen(absolute);
     if (length < 4 || _wcsicmp(absolute + length - 4, L".exe")) goto done;
     attributes = GetFileAttributesW(absolute);
     if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY)) goto done;
-    class_length = wcslen(class_name); id_length = wcslen(id);
+    class_length = wcslen(class_name);
+    id_length = wcslen(id);
     key_length = prefix_length + class_length + shell_length + id_length;
     target->key = (wchar_t *)malloc((key_length + 1) * sizeof(*target->key));
     target->icon = (wchar_t *)malloc((length + 3) * sizeof(*target->icon));
     target->command = (wchar_t *)malloc((length + 8) * sizeof(*target->command));
-    if (!target->key || !target->icon || !target->command) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
+    if (!target->key || !target->icon || !target->command) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto done;
+    }
     memcpy(target->key, prefix, prefix_length * sizeof(*target->key));
     offset = prefix_length;
     memcpy(target->key + offset, class_name, class_length * sizeof(*target->key));
@@ -124,14 +136,19 @@ static xxwidgets_status make_target(const xxwidgets_context_config *config, regi
     memcpy(target->key + offset, shell, shell_length * sizeof(*target->key));
     offset += shell_length;
     memcpy(target->key + offset, id, (id_length + 1) * sizeof(*target->key));
-    target->icon[0] = L'"'; memcpy(target->icon + 1, absolute, length * sizeof(*absolute));
-    target->icon[length + 1] = L'"'; target->icon[length + 2] = 0;
+    target->icon[0] = L'"';
+    memcpy(target->icon + 1, absolute, length * sizeof(*absolute));
+    target->icon[length + 1] = L'"';
+    target->icon[length + 2] = 0;
     memcpy(target->command, target->icon, (length + 2) * sizeof(*absolute));
     memcpy(target->command + length + 2, L" \"%1\"", 6 * sizeof(*absolute));
     target->hive = config->scope == XXWIDGETS_CONTEXT_CURRENT_USER ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE;
     status = XXWIDGETS_OK;
 done:
-    free(id); free(class_name); free(input); free(absolute);
+    free(id);
+    free(class_name);
+    free(input);
+    free(absolute);
     if (status != XXWIDGETS_OK) {
         free_target(target);
         SetLastError(status == XXWIDGETS_OUT_OF_MEMORY ? ERROR_NOT_ENOUGH_MEMORY : ERROR_INVALID_PARAMETER);
@@ -151,14 +168,18 @@ static LONG read_value(HKEY key, const wchar_t *name, registry_value *value)
     if (!value->data) return ERROR_NOT_ENOUGH_MEMORY;
     memset(value->data, 0, (size_t)value->size + sizeof(wchar_t));
     error = RegQueryValueExW(key, name, NULL, &value->type, value->data, &value->size);
-    if (error != ERROR_SUCCESS) { free(value->data); value->data = NULL; return error; }
-    value->present = 1; return ERROR_SUCCESS;
+    if (error != ERROR_SUCCESS) {
+        free(value->data);
+        value->data = NULL;
+        return error;
+    }
+    value->present = 1;
+    return ERROR_SUCCESS;
 }
 
 static LONG restore_value(HKEY key, const wchar_t *name, const registry_value *value)
 {
-    LONG error = value->present ? RegSetValueExW(key, name, 0, value->type, value->data, value->size)
-        : RegDeleteValueW(key, name);
+    LONG error = value->present ? RegSetValueExW(key, name, 0, value->type, value->data, value->size) : RegDeleteValueW(key, name);
     return error == ERROR_FILE_NOT_FOUND ? ERROR_SUCCESS : error;
 }
 
@@ -177,7 +198,8 @@ static LONG can_delete_tree(HKEY key, unsigned int depth)
     LONG error;
     if (depth >= 64) return ERROR_BADKEY;
     for (;;) {
-        wchar_t name[256]; DWORD count = 256;
+        wchar_t name[256];
+        DWORD count = 256;
         HKEY child;
         error = RegEnumKeyExW(key, index++, name, &count, NULL, NULL, NULL, NULL);
         if (error == ERROR_NO_MORE_ITEMS) return ERROR_SUCCESS;
@@ -204,17 +226,24 @@ xxwidgets_status xxwidgets_context_is_registered(const xxwidgets_context_config 
         xxwidgets_status status = make_target(config, &target);
         if (status != XXWIDGETS_OK) return status;
         error = RegOpenKeyExW(target.hive, target.key, 0, KEY_READ, &key);
-        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) { free_target(&target); return XXWIDGETS_OK; }
-        if (error != ERROR_SUCCESS) { free_target(&target); return registry_error(error); }
+        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
+            free_target(&target);
+            return XXWIDGETS_OK;
+        }
+        if (error != ERROR_SUCCESS) {
+            free_target(&target);
+            return registry_error(error);
+        }
         error = RegOpenKeyExW(key, L"command", 0, KEY_READ, &command);
         if (error == ERROR_SUCCESS) {
             error = read_value(command, NULL, &value);
-            if (error == ERROR_SUCCESS && value.present && value.type == REG_SZ &&
-                value.size % sizeof(wchar_t) == 0)
+            if (error == ERROR_SUCCESS && value.present && value.type == REG_SZ && value.size % sizeof(wchar_t) == 0)
                 *registered = !_wcsicmp((const wchar_t *)value.data, target.command);
-            free(value.data); RegCloseKey(command);
+            free(value.data);
+            RegCloseKey(command);
         } else if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) error = ERROR_SUCCESS;
-        RegCloseKey(key); free_target(&target);
+        RegCloseKey(key);
+        free_target(&target);
         return error == ERROR_SUCCESS ? XXWIDGETS_OK : registry_error(error);
     }
 #else
@@ -241,16 +270,15 @@ xxwidgets_status xxwidgets_context_set_enabled(const xxwidgets_context_config *c
             if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) error = ERROR_SUCCESS;
             else if (error == ERROR_SUCCESS) {
                 error = can_delete_tree(key, 0);
-                RegCloseKey(key); key = NULL;
+                RegCloseKey(key);
+                key = NULL;
                 if (error == ERROR_SUCCESS) error = RegDeleteTreeW(target.hive, target.key);
             }
             goto done;
         }
-        error = RegCreateKeyExW(target.hive, target.key, 0, NULL, 0,
-            KEY_READ | KEY_WRITE | DELETE, NULL, &key, &key_disposition);
+        error = RegCreateKeyExW(target.hive, target.key, 0, NULL, 0, KEY_READ | KEY_WRITE | DELETE, NULL, &key, &key_disposition);
         if (error != ERROR_SUCCESS) goto done;
-        error = RegCreateKeyExW(key, L"command", 0, NULL, 0,
-            KEY_READ | KEY_WRITE | DELETE, NULL, &command, &command_disposition);
+        error = RegCreateKeyExW(key, L"command", 0, NULL, 0, KEY_READ | KEY_WRITE | DELETE, NULL, &command, &command_disposition);
         if (error != ERROR_SUCCESS) goto rollback;
         error = read_value(key, NULL, &caption);
         if (error == ERROR_SUCCESS) error = read_value(key, L"Icon", &icon);
@@ -261,14 +289,17 @@ xxwidgets_status xxwidgets_context_set_enabled(const xxwidgets_context_config *c
         if (error == ERROR_SUCCESS) error = write_text(key, L"Icon", target.icon);
         if (error == ERROR_SUCCESS) error = write_text(command, NULL, target.command);
         if (error == ERROR_SUCCESS) goto done;
-rollback:
+    rollback:
         if (key_disposition == REG_CREATED_NEW_KEY) {
             LONG cleanup_error;
-            if (command) { RegCloseKey(command); command = NULL; }
-            RegCloseKey(key); key = NULL;
+            if (command) {
+                RegCloseKey(command);
+                command = NULL;
+            }
+            RegCloseKey(key);
+            key = NULL;
             cleanup_error = RegDeleteTreeW(target.hive, target.key);
-            if (cleanup_error != ERROR_SUCCESS && cleanup_error != ERROR_FILE_NOT_FOUND)
-                error = cleanup_error;
+            if (cleanup_error != ERROR_SUCCESS && cleanup_error != ERROR_FILE_NOT_FOUND) error = cleanup_error;
         } else {
             /* All prior values were captured before the first write. */
             if (captured) {
@@ -281,16 +312,21 @@ rollback:
             }
             if (command_disposition == REG_CREATED_NEW_KEY) {
                 LONG cleanup_error;
-                if (command) { RegCloseKey(command); command = NULL; }
+                if (command) {
+                    RegCloseKey(command);
+                    command = NULL;
+                }
                 cleanup_error = RegDeleteTreeW(key, L"command");
-                if (cleanup_error != ERROR_SUCCESS && cleanup_error != ERROR_FILE_NOT_FOUND)
-                    error = cleanup_error;
+                if (cleanup_error != ERROR_SUCCESS && cleanup_error != ERROR_FILE_NOT_FOUND) error = cleanup_error;
             }
         }
-done:
+    done:
         if (command) RegCloseKey(command);
         if (key) RegCloseKey(key);
-        free(caption.data); free(icon.data); free(value.data); free_target(&target);
+        free(caption.data);
+        free(icon.data);
+        free(value.data);
+        free_target(&target);
         if (error != ERROR_SUCCESS) return registry_error(error);
         SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
         return XXWIDGETS_OK;
@@ -302,7 +338,9 @@ done:
 }
 
 xxwidgets_status xxwidgets_context_register(const xxwidgets_context_config *config)
-{ return xxwidgets_context_set_enabled(config, 1); }
+{
+    return xxwidgets_context_set_enabled(config, 1);
+}
 
 struct xxwidgets_context_options {
     xxwidgets_widget *owner;
@@ -311,11 +349,9 @@ struct xxwidgets_context_options {
     char *strings[4];
 };
 
-xxwidgets_widget *xxwidgets_context_options_control(const xxwidgets_context_options *options,
-    xxwidgets_context_options_control_id control)
+xxwidgets_widget *xxwidgets_context_options_control(const xxwidgets_context_options *options, xxwidgets_context_options_control_id control)
 {
-    return options && control >= 0 && control < XXWIDGETS_CONTEXT_OPTIONS_CONTROL_COUNT
-        ? options->controls[control] : NULL;
+    return options && control >= 0 && control < XXWIDGETS_CONTEXT_OPTIONS_CONTROL_COUNT ? options->controls[control] : NULL;
 }
 
 xxwidgets_status xxwidgets_context_options_refresh(xxwidgets_context_options *options)
@@ -328,7 +364,7 @@ xxwidgets_status xxwidgets_context_options_refresh(xxwidgets_context_options *op
     status = xxwidgets_widget_set_value(options->controls[XXWIDGETS_CONTEXT_OPTIONS_ENABLE], registered);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_text(options->controls[XXWIDGETS_CONTEXT_OPTIONS_STATUS],
-            registered ? "Explorer context menu is enabled." : "Explorer context menu is disabled.");
+                                           registered ? "Explorer context menu is enabled." : "Explorer context menu is disabled.");
     return status;
 }
 
@@ -341,15 +377,14 @@ xxwidgets_status xxwidgets_context_options_apply(xxwidgets_context_options *opti
     if (status == XXWIDGETS_OK) status = xxwidgets_context_set_enabled(&options->config, enabled);
     if (status != XXWIDGETS_OK) {
         xxwidgets_context_options_refresh(options);
-        xxwidgets_widget_set_text(options->controls[XXWIDGETS_CONTEXT_OPTIONS_STATUS],
-            "Cannot change the context menu. Check permissions and the application path.");
+        xxwidgets_widget_set_text(options->controls[XXWIDGETS_CONTEXT_OPTIONS_STATUS], "Cannot change the context menu. Check permissions and the application path.");
         return status;
     }
     return xxwidgets_context_options_refresh(options);
 }
 
-xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-    const xxwidgets_context_config *config, xxwidgets_context_options **out_options)
+xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidgets_context_config *config,
+                                                  xxwidgets_context_options **out_options)
 {
     static const xxwidgets_kind kinds[3] = {XXWIDGETS_CHECKBOX, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
     xxwidgets_context_options *options;
@@ -361,24 +396,31 @@ xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner, xxwid
     xxwidgets_status status;
     if (!out_options) return XXWIDGETS_INVALID_ARGUMENT;
     *out_options = NULL;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !config || bounds.x < 0 || bounds.y < 0 ||
-        bounds.width < 36 || bounds.height < 6 || bounds.x > INT_MAX - bounds.width ||
-        bounds.y > INT_MAX - bounds.height) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !config || bounds.x < 0 || bounds.y < 0 || bounds.width < 36 || bounds.height < 6 ||
+        bounds.x > INT_MAX - bounds.width || bounds.y > INT_MAX - bounds.height)
+        return XXWIDGETS_INVALID_ARGUMENT;
     if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing) return XXWIDGETS_BUSY;
     status = xxwidgets_context_is_registered(config, &registered);
     if (status != XXWIDGETS_OK) return status;
     options = (xxwidgets_context_options *)calloc(1, sizeof(*options));
     if (!options) return XXWIDGETS_OUT_OF_MEMORY;
-    options->owner = owner; options->config.scope = config->scope;
-    strings[0] = config->application_id; strings[1] = config->caption;
+    options->owner = owner;
+    options->config.scope = config->scope;
+    strings[0] = config->application_id;
+    strings[1] = config->caption;
     strings[2] = config->file_class && config->file_class[0] ? config->file_class : "*";
     strings[3] = config->executable;
     for (i = 0; i < 4; ++i) {
         options->strings[i] = xxwidgets_strdup(strings[i]);
-        if (!options->strings[i]) { status = XXWIDGETS_OUT_OF_MEMORY; goto failed; }
+        if (!options->strings[i]) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto failed;
+        }
     }
-    options->config.application_id = options->strings[0]; options->config.caption = options->strings[1];
-    options->config.file_class = options->strings[2]; options->config.executable = options->strings[3];
+    options->config.application_id = options->strings[0];
+    options->config.caption = options->strings[1];
+    options->config.file_class = options->strings[2];
+    options->config.executable = options->strings[3];
     rects[0] = (xxwidgets_rect){bounds.x, bounds.y, bounds.width, 2};
     rects[1] = (xxwidgets_rect){bounds.x, bounds.y + 2, 10, 2};
     rects[2] = (xxwidgets_rect){bounds.x, bounds.y + 4, bounds.width, bounds.height - 4};
@@ -388,9 +430,11 @@ xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner, xxwid
     }
     status = xxwidgets_context_options_refresh(options);
     if (status != XXWIDGETS_OK) goto failed;
-    *out_options = options; return XXWIDGETS_OK;
+    *out_options = options;
+    return XXWIDGETS_OK;
 failed:
-    xxwidgets_context_options_destroy(options); return status;
+    xxwidgets_context_options_destroy(options);
+    return status;
 }
 
 xxwidgets_status xxwidgets_context_options_destroy(xxwidgets_context_options *options)
@@ -398,8 +442,7 @@ xxwidgets_status xxwidgets_context_options_destroy(xxwidgets_context_options *op
     size_t i;
     xxwidgets_status status;
     if (!options) return XXWIDGETS_INVALID_ARGUMENT;
-    if (options->owner->app->dispatch_depth || options->owner->app->polling || options->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (options->owner->app->dispatch_depth || options->owner->app->polling || options->owner->app->syncing) return XXWIDGETS_BUSY;
     for (i = 0; i < XXWIDGETS_CONTEXT_OPTIONS_CONTROL_COUNT; ++i) {
         if (!options->controls[i]) continue;
         status = xxwidgets_widget_destroy(options->controls[i]);
@@ -407,11 +450,11 @@ xxwidgets_status xxwidgets_context_options_destroy(xxwidgets_context_options *op
         options->controls[i] = NULL;
     }
     for (i = 0; i < 4; ++i) free(options->strings[i]);
-    free(options); return XXWIDGETS_OK;
+    free(options);
+    return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_context_options_dialog(xxwidgets_widget *owner, const char *title,
-    const xxwidgets_context_config *config, int *accepted)
+xxwidgets_status xxwidgets_context_options_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_context_config *config, int *accepted)
 {
     xxwidgets_option option = {"Enable Explorer context menu", 0};
     int changed = 0;

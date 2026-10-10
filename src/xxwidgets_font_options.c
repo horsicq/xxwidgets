@@ -7,12 +7,14 @@
 int xxwidgets_font_valid(const xxwidgets_font *font)
 {
     const unsigned char *text;
-    if (!font || !memchr(font->family, 0, sizeof(font->family)) ||
-        !xxwidgets_valid_utf8(font->family) ||
-        (font->point_size && (font->point_size < 4 || font->point_size > 96)) ||
-        (font->bold != 0 && font->bold != 1) || (font->italic != 0 && font->italic != 1)) return 0;
+    if (!font || !memchr(font->family, 0, sizeof(font->family)) || !xxwidgets_valid_utf8(font->family) ||
+        (font->point_size && (font->point_size < 4 || font->point_size > 96)) || (font->bold != 0 && font->bold != 1) || (font->italic != 0 && font->italic != 1))
+        return 0;
     text = (const unsigned char *)font->family;
-    while (*text) { if (*text < 32 || *text == 127) return 0; ++text; }
+    while (*text) {
+        if (*text < 32 || *text == 127) return 0;
+        ++text;
+    }
     return 1;
 }
 
@@ -28,13 +30,15 @@ static int valid_options(const xxwidgets_font_options *options)
 xxwidgets_status xxwidgets_font_options_init(xxwidgets_font_options *options)
 {
     if (!options) return XXWIDGETS_INVALID_ARGUMENT;
-    memset(options, 0, sizeof(*options)); return XXWIDGETS_OK;
+    memset(options, 0, sizeof(*options));
+    return XXWIDGETS_OK;
 }
 
 xxwidgets_status xxwidgets_app_get_font_options(const xxwidgets_app *app, xxwidgets_font_options *options)
 {
     if (!app || !options) return XXWIDGETS_INVALID_ARGUMENT;
-    *options = app->font_options; return XXWIDGETS_OK;
+    *options = app->font_options;
+    return XXWIDGETS_OK;
 }
 
 xxwidgets_status xxwidgets_app_set_font_options(xxwidgets_app *app, const xxwidgets_font_options *options)
@@ -51,23 +55,24 @@ xxwidgets_status xxwidgets_app_set_font_options(xxwidgets_app *app, const xxwidg
     return status;
 }
 
-xxwidgets_status xxwidgets_font_choose_dialog(xxwidgets_widget *owner, xxwidgets_font_role role,
-    xxwidgets_font *font, int *accepted)
+xxwidgets_status xxwidgets_font_choose_dialog(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted)
 {
     xxwidgets_font copied;
     xxwidgets_status status;
     xxwidgets_app *app;
     if (accepted) *accepted = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || role < 0 || role >= XXWIDGETS_FONT_ROLE_COUNT ||
-        !xxwidgets_font_valid(font) || !accepted) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || role < 0 || role >= XXWIDGETS_FONT_ROLE_COUNT || !xxwidgets_font_valid(font) || !accepted)
+        return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->quit ||
-        (app->modal_window && app->modal_window != owner)) return XXWIDGETS_BUSY;
+    if (app->dispatch_depth || app->polling || app->syncing || app->quit || (app->modal_window && app->modal_window != owner)) return XXWIDGETS_BUSY;
     if (!app->ops->choose_font) return XXWIDGETS_UNAVAILABLE;
     copied = *font;
     status = app->ops->choose_font(owner, role, &copied, accepted);
     if (status == XXWIDGETS_OK && *accepted) {
-        if (!xxwidgets_font_valid(&copied)) { *accepted = 0; return XXWIDGETS_PLATFORM_ERROR; }
+        if (!xxwidgets_font_valid(&copied)) {
+            *accepted = 0;
+            return XXWIDGETS_PLATFORM_ERROR;
+        }
         *font = copied;
     } else *accepted = 0;
     return status;
@@ -107,8 +112,8 @@ static xxwidgets_status preview_row(font_state *state, size_t role, const xxwidg
 {
     char text[192];
     xxwidgets_status status;
-    snprintf(text, sizeof(text), "AaBb 0123 - %s, %u pt%s%s", font->family[0] ? font->family : "Default family",
-        font->point_size, font->bold ? ", bold" : "", font->italic ? ", italic" : "");
+    snprintf(text, sizeof(text), "AaBb 0123 - %s, %u pt%s%s", font->family[0] ? font->family : "Default family", font->point_size, font->bold ? ", bold" : "",
+             font->italic ? ", italic" : "");
     status = xxwidgets_widget_set_text(state->rows[role].preview, text);
     if (status == XXWIDGETS_OK && state->window->app->ops->preview_font)
         status = state->window->app->ops->preview_font(state->rows[role].preview, (xxwidgets_font_role)role, font);
@@ -130,8 +135,8 @@ static xxwidgets_status fill_row(font_state *state, size_t role)
 
 static void font_error(font_state *state, xxwidgets_status status)
 {
-    xxwidgets_widget_set_text(state->error, status == XXWIDGETS_INVALID_ARGUMENT ?
-        "Enter a font family and size 4..96; 0 uses the default size." : xxwidgets_status_string(status));
+    xxwidgets_widget_set_text(state->error,
+                              status == XXWIDGETS_INVALID_ARGUMENT ? "Enter a font family and size 4..96; 0 uses the default size." : xxwidgets_status_string(status));
 }
 
 static void font_event(xxwidgets_app *app, const xxwidgets_event *event, void *user_data)
@@ -139,15 +144,21 @@ static void font_event(xxwidgets_app *app, const xxwidgets_event *event, void *u
     font_state *state = (font_state *)user_data;
     size_t role;
     (void)app;
-    if ((event->widget == state->window && event->type == XXWIDGETS_EVENT_CLOSE) ||
-        (event->widget == state->cancel && event->type == XXWIDGETS_EVENT_CLICK)) { state->done = 1; return; }
+    if ((event->widget == state->window && event->type == XXWIDGETS_EVENT_CLOSE) || (event->widget == state->cancel && event->type == XXWIDGETS_EVENT_CLICK)) {
+        state->done = 1;
+        return;
+    }
     if (event->type != XXWIDGETS_EVENT_CLICK) return;
     for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
-        if (event->widget == state->rows[role].choose) { state->pending_choose = (int)role; return; }
+        if (event->widget == state->rows[role].choose) {
+            state->pending_choose = (int)role;
+            return;
+        }
         if (event->widget == state->rows[role].reset) {
             xxwidgets_status status;
             memset(&state->options.fonts[role], 0, sizeof(xxwidgets_font));
-            status = fill_row(state, role); if (status != XXWIDGETS_OK) font_error(state, status);
+            status = fill_row(state, role);
+            if (status != XXWIDGETS_OK) font_error(state, status);
             state->layout_dirty = 1;
             return;
         }
@@ -159,19 +170,26 @@ static void font_event(xxwidgets_app *app, const xxwidgets_event *event, void *u
             status = read_row(state, role, &copied.fonts[role]);
             if (status != XXWIDGETS_OK) break;
         }
-        if (status != XXWIDGETS_OK) { font_error(state, status); return; }
+        if (status != XXWIDGETS_OK) {
+            font_error(state, status);
+            return;
+        }
         state->options = copied;
-        for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT && status == XXWIDGETS_OK; ++role)
-            status = preview_row(state, role, &copied.fonts[role]);
+        for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT && status == XXWIDGETS_OK; ++role) status = preview_row(state, role, &copied.fonts[role]);
         state->layout_dirty = 1;
-        if (status != XXWIDGETS_OK) { font_error(state, status); return; }
+        if (status != XXWIDGETS_OK) {
+            font_error(state, status);
+            return;
+        }
         xxwidgets_widget_set_text(state->error, "");
-        if (event->widget == state->ok) { state->accepted = 1; state->done = 1; }
+        if (event->widget == state->ok) {
+            state->accepted = 1;
+            state->done = 1;
+        }
     }
 }
 
-xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const char *title,
-    xxwidgets_font_options *options, int *accepted)
+xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_font_options *options, int *accepted)
 {
     static const char *roles[] = {"Controls", "Table views", "Tree views", "Text edits"};
     font_state state = {0};
@@ -183,26 +201,32 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
     size_t role;
     xxwidgets_status status = XXWIDGETS_OK, cleanup;
     if (accepted) *accepted = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !xxwidgets_valid_utf8(title) ||
-        !valid_options(options) || !accepted) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !xxwidgets_valid_utf8(title) || !valid_options(options) || !accepted) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
-    state.options = *options; state.pending_choose = -1;
-    previous_event = app->on_event; previous_user = app->user_data; previous_default = app->modal_default;
+    state.options = *options;
+    state.pending_choose = -1;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    previous_default = app->modal_default;
     owner_enabled = owner->enabled;
     for (widget = app->widgets; widget; widget = widget->next)
-        if (widget->parent == owner && xxwidgets_focusable(widget)) { focus = widget; break; }
-    app->on_event = font_event; app->user_data = &state;
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x < 32765 ? owner->rect.x + 2 : owner->rect.x,
-            owner->rect.y < 32765 ? owner->rect.y + 2 : owner->rect.y, 100, 23}, &state.window);
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            focus = widget;
+            break;
+        }
+    app->on_event = font_event;
+    app->user_data = &state;
+    status = xxwidgets_widget_create(
+        app, NULL, XXWIDGETS_WINDOW, title,
+        (xxwidgets_rect){owner->rect.x < 32765 ? owner->rect.x + 2 : owner->rect.x, owner->rect.y < 32765 ? owner->rect.y + 2 : owner->rect.y, 100, 23}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
-#define FONT_CONTROL(slot, kind, text, x, y, width) do { \
-    status = xxwidgets_widget_create(app, state.window, kind, text, \
-        (xxwidgets_rect){x, y, width, 1}, slot); \
-    if (status != XXWIDGETS_OK) goto finish; \
-} while (0)
+#define FONT_CONTROL(slot, kind, text, x, y, width)                                                              \
+    do {                                                                                                         \
+        status = xxwidgets_widget_create(app, state.window, kind, text, (xxwidgets_rect){x, y, width, 1}, slot); \
+        if (status != XXWIDGETS_OK) goto finish;                                                                 \
+    } while (0)
     for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
         xxwidgets_widget *label;
         int y = 1 + (int)role * 4;
@@ -214,7 +238,8 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
         FONT_CONTROL(&state.rows[role].choose, XXWIDGETS_BUTTON, "Choose", 88, y, 10);
         FONT_CONTROL(&state.rows[role].reset, XXWIDGETS_BUTTON, "Default", 88, y + 2, 10);
         FONT_CONTROL(&state.rows[role].preview, XXWIDGETS_LABEL, "", 22, y + 2, 64);
-        status = fill_row(&state, role); if (status != XXWIDGETS_OK) goto finish;
+        status = fill_row(&state, role);
+        if (status != XXWIDGETS_OK) goto finish;
     }
     FONT_CONTROL(&state.error, XXWIDGETS_LABEL, "", 2, 18, 96);
     FONT_CONTROL(&state.preview, XXWIDGETS_BUTTON, "Preview", 2, 20, 14);
@@ -226,10 +251,12 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
         if (status != XXWIDGETS_OK) goto finish;
     }
     app->modal_default = state.ok;
-    status = xxwidgets_widget_set_enabled(owner, 0); if (status != XXWIDGETS_OK) goto finish;
+    status = xxwidgets_widget_set_enabled(owner, 0);
+    if (status != XXWIDGETS_OK) goto finish;
     disabled = 1;
     if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(state.window, owner, 1); if (status != XXWIDGETS_OK) goto finish;
+        status = app->ops->modal_owner(state.window, owner, 1);
+        if (status != XXWIDGETS_OK) goto finish;
         attached = 1;
     }
     status = xxwidgets_widget_focus(state.rows[0].family);
@@ -240,14 +267,15 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
             int chosen = 0, pending = state.pending_choose;
             state.pending_choose = -1;
             status = read_row(&state, (size_t)pending, &selected);
-            if (status == XXWIDGETS_OK)
-                status = xxwidgets_font_choose_dialog(state.window, (xxwidgets_font_role)pending, &selected, &chosen);
+            if (status == XXWIDGETS_OK) status = xxwidgets_font_choose_dialog(state.window, (xxwidgets_font_role)pending, &selected, &chosen);
             if (status == XXWIDGETS_UNAVAILABLE) {
                 xxwidgets_widget_focus(state.rows[pending].family);
                 xxwidgets_widget_set_text(state.error, "Edit family, size, and style, then select Preview.");
                 status = XXWIDGETS_OK;
-            } else if (status != XXWIDGETS_OK) { font_error(&state, status); status = XXWIDGETS_OK; }
-            else if (chosen) {
+            } else if (status != XXWIDGETS_OK) {
+                font_error(&state, status);
+                status = XXWIDGETS_OK;
+            } else if (chosen) {
                 state.options.fonts[pending] = selected;
                 status = fill_row(&state, (size_t)pending);
                 state.layout_dirty = 1;
@@ -272,9 +300,14 @@ finish:
         cleanup = xxwidgets_widget_destroy(state.window);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    app->modal_window = NULL; app->modal_default = previous_default;
-    app->on_event = previous_event; app->user_data = previous_user;
+    app->modal_window = NULL;
+    app->modal_default = previous_default;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
     if (focus) xxwidgets_widget_focus(focus);
-    if (status == XXWIDGETS_OK && state.accepted) { *options = state.options; *accepted = 1; }
+    if (status == XXWIDGETS_OK && state.accepted) {
+        *options = state.options;
+        *accepted = 1;
+    }
     return status;
 }

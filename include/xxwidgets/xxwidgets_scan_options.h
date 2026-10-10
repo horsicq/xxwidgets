@@ -37,24 +37,18 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_init(xxwidgets_scan_option
  * and labels. Bounds use text cells and require at least 60 x 13. Children
  * belong to the owner WINDOW and use its app callback. Destroy this form before
  * its owner/app; borrowed controls must not be destroyed separately. */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner,
-    xxwidgets_rect bounds, xxwidgets_scan_options_widget **out_widget);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_options_widget **out_widget);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_destroy(xxwidgets_scan_options_widget *widget);
-XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_options_widget_control(
-    const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options_control_id control);
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_get(
-    const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options *options);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_options_widget_control(const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options_control_id control);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_get(const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options *options);
 /* Atomic updates copy scalar values and emit no input events. */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_set(
-    xxwidgets_scan_options_widget *widget, const xxwidgets_scan_options *options);
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_set_rect(
-    xxwidgets_scan_options_widget *widget, xxwidgets_rect bounds);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_set(xxwidgets_scan_options_widget *widget, const xxwidgets_scan_options *options);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_set_rect(xxwidgets_scan_options_widget *widget, xxwidgets_rect bounds);
 
 /* Shows the same form with OK/Cancel. Successful OK copies settings back;
  * Cancel, Escape, closing, or errors preserve the supplied settings. Start
  * modal dialogs after returning from event callbacks/polling. */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner,
-    const char *title, xxwidgets_scan_options *options, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_scan_options *options, int *accepted);
 
 #ifdef __cplusplus
 }

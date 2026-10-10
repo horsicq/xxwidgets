@@ -42,30 +42,26 @@ XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_init(xxwidgets_opt
  * remain editable even when the user turns them off. Children belong to owner
  * and use its app callback. Destroy the form before its owner/app; borrowed
  * controls must not be destroyed separately. */
-XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_create(xxwidgets_widget *owner,
-    xxwidgets_rect bounds, const xxwidgets_optimization_capabilities *capabilities,
-    xxwidgets_optimization_options_widget **out_widget);
+XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
+                                                                            const xxwidgets_optimization_capabilities *capabilities,
+                                                                            xxwidgets_optimization_options_widget **out_widget);
 XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_destroy(xxwidgets_optimization_options_widget *widget);
-XXWIDGETS_API xxwidgets_widget *xxwidgets_optimization_options_widget_control(
-    const xxwidgets_optimization_options_widget *widget, xxwidgets_optimization_options_control_id control);
-XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_get(
-    const xxwidgets_optimization_options_widget *widget, xxwidgets_optimization_options *options);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_optimization_options_widget_control(const xxwidgets_optimization_options_widget *widget,
+                                                                              xxwidgets_optimization_options_control_id control);
+XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_get(const xxwidgets_optimization_options_widget *widget, xxwidgets_optimization_options *options);
 /* Buffer records contain UINT64 byte counts representing size_t values.
  * Choices include powers of two from 1 KiB through 1 GiB. Any other nonzero
  * size is preserved by a copied custom record. Zero means Default (64 KiB)
  * and round-trips as zero; resolving that default belongs to the host.
  * Setters copy values atomically and emit no input events. */
-XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_set(
-    xxwidgets_optimization_options_widget *widget, const xxwidgets_optimization_options *options);
-XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_set_rect(
-    xxwidgets_optimization_options_widget *widget, xxwidgets_rect bounds);
+XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_set(xxwidgets_optimization_options_widget *widget, const xxwidgets_optimization_options *options);
+XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_set_rect(xxwidgets_optimization_options_widget *widget, xxwidgets_rect bounds);
 
 /* Successful OK commits normalized settings. Cancel, Escape, closing, and
  * errors preserve the supplied settings, including unsupported-feature flags.
  * Invoke after returning from event callbacks/polling. */
-XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_dialog(xxwidgets_widget *owner,
-    const char *title, const xxwidgets_optimization_capabilities *capabilities,
-    xxwidgets_optimization_options *options, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_optimization_capabilities *capabilities,
+                                                                     xxwidgets_optimization_options *options, int *accepted);
 
 #ifdef __cplusplus
 }

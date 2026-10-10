@@ -24,12 +24,15 @@
  * cell view already pads its text by 2 px above and below. Selector node
  * names and min-height need GTK 3.20, so older GTK skips this sheet and the
  * measurement simply sees the untrimmed controls. */
-static const char GRID_CSS[] =
-    "." GRID_CLASS " > button." CELL_CLASS ","
-    "." GRID_CLASS " > entry." CELL_CLASS ","
-    "." GRID_CLASS " > combobox." CELL_CLASS " > box > button.combo { min-height: 0; }\n"
-    "." GRID_CLASS " > button." CELL_CLASS " { padding-left: 4px; padding-right: 4px; }\n"
-    "." GRID_CLASS " > combobox." CELL_CLASS " > box > button.combo { padding-top: 0; padding-bottom: 0; }\n";
+static const char GRID_CSS[] = "." GRID_CLASS " > button." CELL_CLASS
+                               ","
+                               "." GRID_CLASS " > entry." CELL_CLASS
+                               ","
+                               "." GRID_CLASS " > combobox." CELL_CLASS
+                               " > box > button.combo { min-height: 0; }\n"
+                               "." GRID_CLASS " > button." CELL_CLASS
+                               " { padding-left: 4px; padding-right: 4px; }\n"
+                               "." GRID_CLASS " > combobox." CELL_CLASS " > box > button.combo { padding-top: 0; padding-bottom: 0; }\n";
 
 typedef struct gtk_app_state {
     int cell_width;
@@ -43,12 +46,12 @@ typedef struct gtk_app_state {
 } gtk_app_state;
 
 typedef struct gtk_widget_state {
-    GtkWidget *root; /* Scrolled container for a list, otherwise the control. */
-    GtkWidget *content; /* A window's GtkLayout. */
+    GtkWidget *root;               /* Scrolled container for a list, otherwise the control. */
+    GtkWidget *content;            /* A window's GtkLayout. */
     int frame_width, frame_height; /* WINDOW: last configured client size. */
-    int fit_position; /* WINDOW: the next resize is ours; keep the frame on screen. */
-    int min_width, min_height; /* WINDOW: content size request last applied. */
-    void *monitor; /* WINDOW: GdkMonitor the minimum was clamped to (GTK 3.22+). */
+    int fit_position;              /* WINDOW: the next resize is ours; keep the frame on screen. */
+    int min_width, min_height;     /* WINDOW: content size request last applied. */
+    void *monitor;                 /* WINDOW: GdkMonitor the minimum was clamped to (GTK 3.22+). */
     GtkWidget *browser_scroll, *browser_address, *browser_up;
     size_t rendered_items;
     uint64_t rendered_hex_revision;
@@ -106,9 +109,8 @@ static gchar *font_css_text(const PangoFontDescription *description)
     }
     size = pango_font_description_get_size(description);
     if (size > 0) g_string_append_printf(css, " font-size: %dpt;", size / PANGO_SCALE);
-    g_string_append_printf(css, " font-weight: %s; font-style: %s; }",
-        pango_font_description_get_weight(description) >= PANGO_WEIGHT_BOLD ? "bold" : "normal",
-        pango_font_description_get_style(description) == PANGO_STYLE_ITALIC ? "italic" : "normal");
+    g_string_append_printf(css, " font-weight: %s; font-style: %s; }", pango_font_description_get_weight(description) >= PANGO_WEIGHT_BOLD ? "bold" : "normal",
+                           pango_font_description_get_style(description) == PANGO_STYLE_ITALIC ? "italic" : "normal");
     return g_string_free(css, FALSE);
 }
 
@@ -121,9 +123,7 @@ static void font_css_load(GtkCssProvider *provider, const PangoFontDescription *
 
 static void font_attach(GtkWidget *native, GtkCssProvider *provider, guint priority)
 {
-    if (native && provider)
-        gtk_style_context_add_provider(gtk_widget_get_style_context(native),
-            GTK_STYLE_PROVIDER(provider), priority);
+    if (native && provider) gtk_style_context_add_provider(gtk_widget_get_style_context(native), GTK_STYLE_PROVIDER(provider), priority);
 }
 
 /* Formatted views default to monospace; a role family replaces that default. */
@@ -131,8 +131,7 @@ static void row_font_attributes(xxwidgets_widget *widget, GtkWidget *label)
 {
     gtk_app_state *app = widget->app->platform;
     gtk_widget_state *state = widget->platform;
-    const PangoFontDescription *description = state->has_preview ? state->preview_font :
-        app->fonts[xxwidgets_widget_font_role(widget)];
+    const PangoFontDescription *description = state->has_preview ? state->preview_font : app->fonts[xxwidgets_widget_font_role(widget)];
     PangoAttrList *attributes = NULL;
     if (!description || !pango_font_description_get_family(description)) {
         attributes = pango_attr_list_new();
@@ -147,8 +146,7 @@ static void rows_font_attributes(xxwidgets_widget *widget)
     GList *rows, *row;
     if (widget->kind != XXWIDGETS_HEXVIEW && widget->kind != XXWIDGETS_ARCHIVEVIEW) return;
     rows = gtk_container_get_children(GTK_CONTAINER(widget->native));
-    for (row = rows; row; row = row->next)
-        row_font_attributes(widget, gtk_bin_get_child(GTK_BIN(row->data)));
+    for (row = rows; row; row = row->next) row_font_attributes(widget, gtk_bin_get_child(GTK_BIN(row->data)));
     g_list_free(rows);
 }
 
@@ -162,10 +160,8 @@ static void fonts_attach(xxwidgets_widget *widget)
     role = app->font_css[xxwidgets_widget_font_role(widget)];
     font_attach(GTK_WIDGET(widget->native), role, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     font_attach(state->combo_box, role, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    font_attach(state->browser_address, app->font_css[XXWIDGETS_FONT_TEXT_EDITS],
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    font_attach(state->browser_up, app->font_css[XXWIDGETS_FONT_CONTROLS],
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    font_attach(state->browser_address, app->font_css[XXWIDGETS_FONT_TEXT_EDITS], GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    font_attach(state->browser_up, app->font_css[XXWIDGETS_FONT_CONTROLS], GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
 static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options)
@@ -177,7 +173,8 @@ static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font
         const xxwidgets_font *font = &options->fonts[role];
         fonts[role] = gtk_font_description(font);
         if (!fonts[role] && (font->family[0] || font->point_size || font->bold || font->italic)) {
-            for (size_t i = 0; i < role; ++i) if (fonts[i]) pango_font_description_free(fonts[i]);
+            for (size_t i = 0; i < role; ++i)
+                if (fonts[i]) pango_font_description_free(fonts[i]);
             return XXWIDGETS_OUT_OF_MEMORY;
         }
     }
@@ -192,21 +189,18 @@ static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font
     return XXWIDGETS_OK;
 }
 
-static xxwidgets_status gtk_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role,
-    const xxwidgets_font *font)
+static xxwidgets_status gtk_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role, const xxwidgets_font *font)
 {
     gtk_widget_state *state = widget->platform;
     PangoFontDescription *description = gtk_font_description(font);
     (void)role;
-    if (!description && (font->family[0] || font->point_size || font->bold || font->italic))
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (!description && (font->family[0] || font->point_size || font->bold || font->italic)) return XXWIDGETS_OUT_OF_MEMORY;
     if (state->preview_font) pango_font_description_free(state->preview_font);
     state->preview_font = description;
     state->has_preview = 1;
     if (!state->preview_css) {
         state->preview_css = gtk_css_provider_new();
-        font_attach(GTK_WIDGET(widget->native), state->preview_css,
-            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+        font_attach(GTK_WIDGET(widget->native), state->preview_css, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     }
     if (state->preview_css) font_css_load(state->preview_css, description);
     rows_font_attributes(widget);
@@ -230,9 +224,11 @@ static int pixel_rect(xxwidgets_widget *widget, int *x, int *y, int *width, int 
         py += GRID_ROW_GAP / 2;
         ph -= GRID_ROW_GAP;
     }
-    if (px < INT_MIN || px > INT_MAX || py < INT_MIN || py > INT_MAX ||
-        pw <= 0 || pw > INT_MAX || ph <= 0 || ph > INT_MAX) return 0;
-    *x = (int)px; *y = (int)py; *width = (int)pw; *height = (int)ph;
+    if (px < INT_MIN || px > INT_MAX || py < INT_MIN || py > INT_MAX || pw <= 0 || pw > INT_MAX || ph <= 0 || ph > INT_MAX) return 0;
+    *x = (int)px;
+    *y = (int)py;
+    *width = (int)pw;
+    *height = (int)ph;
     return 1;
 }
 
@@ -242,8 +238,8 @@ static int monitor_workarea(GtkWidget *native, int x, int y, GdkRectangle *area)
     /* A realized window knows its monitor, also where positions are not
      * reported (Wayland); before that, the requested position decides. */
     GdkWindow *window = gtk_widget_get_window(native);
-    GdkMonitor *monitor = window ? gdk_display_get_monitor_at_window(gtk_widget_get_display(native), window) :
-        gdk_display_get_monitor_at_point(gtk_widget_get_display(native), x, y);
+    GdkMonitor *monitor =
+        window ? gdk_display_get_monitor_at_window(gtk_widget_get_display(native), window) : gdk_display_get_monitor_at_point(gtk_widget_get_display(native), x, y);
     if (!monitor) return 0;
     gdk_monitor_get_workarea(monitor, area);
 #else
@@ -259,8 +255,7 @@ static int monitor_workarea(GtkWidget *native, int x, int y, GdkRectangle *area)
  * the size it actually got. */
 /* Work area of the monitor at (x, y) and the window manager's frame size;
  * returns 0 when the monitor is unknown. */
-static int window_frame_area(xxwidgets_widget *widget, int x, int y, GdkRectangle *area,
-    int *frame_width, int *frame_height)
+static int window_frame_area(xxwidgets_widget *widget, int x, int y, GdkRectangle *area, int *frame_width, int *frame_height)
 {
     GtkWidget *native = widget->native;
     GdkWindow *window = gtk_widget_get_window(native);
@@ -361,17 +356,18 @@ static void window_update_minimum(xxwidgets_widget *window)
 
 static GtkLabel *control_label(GtkWidget *native)
 {
-    GtkWidget *label = GTK_IS_LABEL(native) ? native :
-        GTK_IS_BIN(native) ? gtk_bin_get_child(GTK_BIN(native)) : NULL;
+    GtkWidget *label = GTK_IS_LABEL(native) ? native : GTK_IS_BIN(native) ? gtk_bin_get_child(GTK_BIN(native)) : NULL;
     return label && GTK_IS_LABEL(label) ? GTK_LABEL(label) : NULL;
 }
 
 /* A label that its cells cut short shows the whole text as its tooltip. */
-static gboolean ellipsis_tooltip(GtkWidget *native, gint x, gint y, gboolean keyboard,
-    GtkTooltip *tooltip, gpointer data)
+static gboolean ellipsis_tooltip(GtkWidget *native, gint x, gint y, gboolean keyboard, GtkTooltip *tooltip, gpointer data)
 {
     GtkLabel *label = control_label(native);
-    (void)x; (void)y; (void)keyboard; (void)data;
+    (void)x;
+    (void)y;
+    (void)keyboard;
+    (void)data;
     if (!label || !pango_layout_is_ellipsized(gtk_label_get_layout(label))) return FALSE;
     gtk_tooltip_set_text(tooltip, gtk_label_get_text(label));
     return TRUE;
@@ -395,8 +391,7 @@ static void cell_control(GtkWidget *native)
     if (GTK_IS_COMBO_BOX(native)) {
         GList *cells = gtk_cell_layout_get_cells(GTK_CELL_LAYOUT(native));
         for (GList *cell = cells; cell; cell = cell->next)
-            if (GTK_IS_CELL_RENDERER_TEXT(cell->data))
-                g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+            if (GTK_IS_CELL_RENDERER_TEXT(cell->data)) g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
         g_list_free(cells);
     }
     if (GTK_IS_BUTTON(native)) {
@@ -440,7 +435,8 @@ static int measure_control_height(void)
 static gboolean window_close(GtkWidget *native, GdkEvent *event, gpointer data)
 {
     xxwidgets_widget *widget = data;
-    (void)native; (void)event;
+    (void)native;
+    (void)event;
     if (!widget->app->syncing) xxwidgets_emit(widget, XXWIDGETS_EVENT_CLOSE, 0);
     /* The handler may hide the window or quit. Destruction belongs to the core. */
     return TRUE;
@@ -454,15 +450,15 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
     /* Round down: a layout for the rounded-up count would overhang the edge. */
     int width = event->width / app_state->cell_width;
     int height = event->height / app_state->cell_height;
-    if ((event->width != state->frame_width || event->height != state->frame_height) &&
-        gtk_widget_get_mapped(native)) {
+    if ((event->width != state->frame_width || event->height != state->frame_height) && gtk_widget_get_mapped(native)) {
         /* A size change the toolkit caused (the first map, its minimum, a wider
          * grid) must not push the window off its monitor. Resizes and moves by
          * the user are theirs and are left alone. */
         if (state->fit_position) {
             int x, y, fitted_x, fitted_y;
             gtk_window_get_position(GTK_WINDOW(native), &x, &y);
-            fitted_x = x; fitted_y = y;
+            fitted_x = x;
+            fitted_y = y;
             window_fit_position(widget, &fitted_x, &fitted_y, event->width, event->height);
             if (fitted_x != x || fitted_y != y) gtk_window_move(GTK_WINDOW(native), fitted_x, fitted_y);
         }
@@ -520,22 +516,22 @@ static gboolean list_key(GtkWidget *native, GdkEventKey *event, gpointer data)
     guint at = 0, count, k;
     int backward;
     (void)native;
-    if (event->keyval != GDK_KEY_Tab && event->keyval != GDK_KEY_ISO_Left_Tab &&
-        event->keyval != GDK_KEY_KP_Tab) return FALSE;
+    if (event->keyval != GDK_KEY_Tab && event->keyval != GDK_KEY_ISO_Left_Tab && event->keyval != GDK_KEY_KP_Tab) return FALSE;
     if (event->state & (GDK_CONTROL_MASK | GDK_MOD1_MASK)) return FALSE;
     backward = event->keyval == GDK_KEY_ISO_Left_Tab || (event->state & GDK_SHIFT_MASK);
     /* The other focusable controls of this window, in Tab (creation) order;
      * 'at' is where this list sits among them. */
     order = g_ptr_array_new();
     for (candidate = widget->app->widgets; candidate; candidate = candidate->next) {
-        if (candidate == widget) { at = order->len; continue; }
-        if (candidate->parent == widget->parent && xxwidgets_focusable(candidate))
-            g_ptr_array_add(order, candidate);
+        if (candidate == widget) {
+            at = order->len;
+            continue;
+        }
+        if (candidate->parent == widget->parent && xxwidgets_focusable(candidate)) g_ptr_array_add(order, candidate);
     }
     count = order->len;
     for (k = 0; k < count; ++k) {
-        candidate = (xxwidgets_widget *)g_ptr_array_index(order,
-            backward ? (at + count - 1 - k) % count : (at + k) % count);
+        candidate = (xxwidgets_widget *)g_ptr_array_index(order, backward ? (at + count - 1 - k) % count : (at + k) % count);
         gtk_focus_backend(candidate);
         if (gtk_has_focus(candidate)) break;
     }
@@ -547,8 +543,7 @@ static void edit_changed(GtkEditable *native, gpointer data)
 {
     xxwidgets_widget *widget = data;
     if (widget->app->syncing) return;
-    if (xxwidgets_store_text(widget, gtk_entry_get_text(GTK_ENTRY(native))) == XXWIDGETS_OK)
-        xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, 0);
+    if (xxwidgets_store_text(widget, gtk_entry_get_text(GTK_ENTRY(native))) == XXWIDGETS_OK) xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, 0);
 }
 
 static void combo_changed(GtkComboBox *native, gpointer data)
@@ -565,8 +560,7 @@ static void combo_checked(GtkToggleButton *native, gpointer data)
     size_t index = (size_t)GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(native), "xxwidgets-index"));
     if (widget->app->syncing || !xxwidgets_focusable(widget) || index >= widget->item_count) return;
     widget->value = (int)index;
-    if (!!gtk_toggle_button_get_active(native) != xxwidgets_checkcombobox_checked(widget, index))
-        xxwidgets_checkcombobox_user_toggle(widget, index);
+    if (!!gtk_toggle_button_get_active(native) != xxwidgets_checkcombobox_checked(widget, index)) xxwidgets_checkcombobox_user_toggle(widget, index);
 }
 
 static void checkbox_changed(GtkToggleButton *native, gpointer data)
@@ -624,11 +618,8 @@ static void scanresults_sync(xxwidgets_widget *widget)
         for (row = 0; row < widget->item_count; ++row) {
             GtkTreeIter iter;
             gtk_list_store_append(store, &iter);
-            gtk_list_store_set(store, &iter,
-                0, xxwidgets_scanresults_cell(widget, row, 0),
-                1, xxwidgets_scanresults_cell(widget, row, 1),
-                2, xxwidgets_scanresults_cell(widget, row, 2),
-                3, xxwidgets_scanresults_cell(widget, row, 3), -1);
+            gtk_list_store_set(store, &iter, 0, xxwidgets_scanresults_cell(widget, row, 0), 1, xxwidgets_scanresults_cell(widget, row, 1), 2,
+                               xxwidgets_scanresults_cell(widget, row, 2), 3, xxwidgets_scanresults_cell(widget, row, 3), -1);
         }
         state->rendered_items = widget->item_count;
         state->rendered_hex_revision = xxwidgets_row_revision(widget);
@@ -653,8 +644,7 @@ static void treeview_selection_read(xxwidgets_widget *widget)
     GtkTreeModel *model;
     GtkTreeIter iter;
     widget->value = -1;
-    if (gtk_tree_selection_get_selected(
-        gtk_tree_view_get_selection(GTK_TREE_VIEW(widget->native)), &model, &iter))
+    if (gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(widget->native)), &model, &iter))
         gtk_tree_model_get(model, &iter, 1, &widget->value, -1);
 }
 
@@ -687,18 +677,18 @@ static void treeview_selected(GtkTreeSelection *selection, gpointer data)
 {
     xxwidgets_widget *widget = data;
     (void)selection;
-    if (widget->app->syncing || !xxwidgets_focusable(widget) ||
-        ((gtk_widget_state *)widget->platform)->tree_collapsing) return;
+    if (widget->app->syncing || !xxwidgets_focusable(widget) || ((gtk_widget_state *)widget->platform)->tree_collapsing) return;
     treeview_selection_read(widget);
     xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
 }
 
-static gboolean treeview_before_collapse(GtkTreeView *native, GtkTreeIter *iter,
-    GtkTreePath *path, gpointer data)
+static gboolean treeview_before_collapse(GtkTreeView *native, GtkTreeIter *iter, GtkTreePath *path, gpointer data)
 {
     xxwidgets_widget *widget = data;
     gtk_widget_state *state = widget->platform;
-    (void)native; (void)iter; (void)path;
+    (void)native;
+    (void)iter;
+    (void)path;
     if (!widget->app->syncing) {
         state->tree_collapsing = 1;
         state->tree_before_collapse = widget->value;
@@ -715,17 +705,18 @@ static void treeview_expand_visible(xxwidgets_widget *widget)
     ++widget->app->syncing;
     for (node = 0; node < state->tree_count; ++node) {
         int expanded;
-        if (xxwidgets_treeview_row_of_node(widget, node) != SIZE_MAX &&
-            xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK && expanded) {
+        if (xxwidgets_treeview_row_of_node(widget, node) != SIZE_MAX && xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK && expanded) {
             GtkTreePath *path = gtk_tree_model_get_path(model, &state->tree_iters[node]);
-            if (path) { gtk_tree_view_expand_row(tree, path, FALSE); gtk_tree_path_free(path); }
+            if (path) {
+                gtk_tree_view_expand_row(tree, path, FALSE);
+                gtk_tree_path_free(path);
+            }
         }
     }
     --widget->app->syncing;
 }
 
-static void treeview_expansion(GtkTreeView *native, GtkTreeIter *iter,
-    GtkTreePath *path, xxwidgets_widget *widget, int expanded)
+static void treeview_expansion(GtkTreeView *native, GtkTreeIter *iter, GtkTreePath *path, xxwidgets_widget *widget, int expanded)
 {
     gtk_widget_state *state = widget->platform;
     int node = -1;
@@ -770,8 +761,7 @@ static gboolean treeview_key(GtkWidget *native, GdkEventKey *key, gpointer data)
         return TRUE;
     }
     if (key->keyval == GDK_KEY_space) {
-        if (xxwidgets_treeview_has_children(widget, (size_t)widget->value) &&
-            xxwidgets_treeview_get_expanded(widget, (size_t)widget->value, &expanded) == XXWIDGETS_OK)
+        if (xxwidgets_treeview_has_children(widget, (size_t)widget->value) && xxwidgets_treeview_get_expanded(widget, (size_t)widget->value, &expanded) == XXWIDGETS_OK)
             xxwidgets_treeview_user_expand(widget, (size_t)widget->value, !expanded);
         else xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
         return TRUE;
@@ -779,8 +769,7 @@ static gboolean treeview_key(GtkWidget *native, GdkEventKey *key, gpointer data)
     return FALSE;
 }
 
-static void treeview_activated(GtkTreeView *native, GtkTreePath *path,
-    GtkTreeViewColumn *column, gpointer data)
+static void treeview_activated(GtkTreeView *native, GtkTreePath *path, GtkTreeViewColumn *column, gpointer data)
 {
     xxwidgets_widget *widget = data;
     GtkTreeIter iter;
@@ -790,8 +779,7 @@ static void treeview_activated(GtkTreeView *native, GtkTreePath *path,
     if (!gtk_tree_model_get_iter(gtk_tree_view_get_model(native), &iter, path)) return;
     gtk_tree_model_get(gtk_tree_view_get_model(native), &iter, 1, &node, -1);
     if (node < 0) return;
-    if (xxwidgets_treeview_has_children(widget, (size_t)node) &&
-        xxwidgets_treeview_get_expanded(widget, (size_t)node, &expanded) == XXWIDGETS_OK)
+    if (xxwidgets_treeview_has_children(widget, (size_t)node) && xxwidgets_treeview_get_expanded(widget, (size_t)node, &expanded) == XXWIDGETS_OK)
         xxwidgets_treeview_user_expand(widget, (size_t)node, !expanded);
     else xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, node);
 }
@@ -812,8 +800,7 @@ static xxwidgets_status treeview_sync(xxwidgets_widget *widget)
             xxwidgets_tree_node entry;
             xxwidgets_treeview_get_node(widget, node, &entry);
             gtk_tree_store_append(store, &iters[node], entry.parent == SIZE_MAX ? NULL : &iters[entry.parent]);
-            gtk_tree_store_set(store, &iters[node], 0, xxwidgets_treeview_display_text(widget, node),
-                1, (int)node, -1);
+            gtk_tree_store_set(store, &iters[node], 0, xxwidgets_treeview_display_text(widget, node), 1, (int)node, -1);
         }
         free(state->tree_iters);
         state->tree_iters = iters;
@@ -855,8 +842,7 @@ static void browser_selection_read(xxwidgets_widget *widget, int changed)
         if (xxwidgets_archivebrowser_row_selected(widget, (size_t)row)) at = row;
         gtk_tree_path_free(cursor);
     }
-    if (previous >= 0 && (size_t)previous < widget->item_count &&
-        !xxwidgets_archivebrowser_row_selected(widget, (size_t)previous)) previous = -1;
+    if (previous >= 0 && (size_t)previous < widget->item_count && !xxwidgets_archivebrowser_row_selected(widget, (size_t)previous)) previous = -1;
     widget->value = changed ? (at >= 0 ? at : previous) : (previous >= 0 ? previous : at);
     if (widget->value < 0) widget->value = first;
     ((gtk_widget_state *)widget->platform)->browser_value = widget->value;
@@ -871,13 +857,12 @@ static void browser_selected(GtkTreeSelection *selection, gpointer data)
     xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
 }
 
-static void browser_activated(GtkTreeView *native, GtkTreePath *path,
-                              GtkTreeViewColumn *column, gpointer data)
+static void browser_activated(GtkTreeView *native, GtkTreePath *path, GtkTreeViewColumn *column, gpointer data)
 {
     xxwidgets_widget *widget = data;
-    (void)native; (void)column;
-    if (!widget->app->syncing)
-        xxwidgets_archivebrowser_user_activate(widget, gtk_tree_path_get_indices(path)[0]);
+    (void)native;
+    (void)column;
+    if (!widget->app->syncing) xxwidgets_archivebrowser_user_activate(widget, gtk_tree_path_get_indices(path)[0]);
 }
 
 static void browser_up_clicked(GtkButton *native, gpointer data)
@@ -892,8 +877,7 @@ static void browser_context_at(xxwidgets_widget *widget, int x, int y)
     gtk_widget_state *state = widget->platform;
     int local_x = x, local_y = y;
     if (!xxwidgets_focusable(widget) || widget->app->syncing) return;
-    gtk_widget_translate_coordinates(GTK_WIDGET(widget->native), state->root,
-        x, y, &local_x, &local_y);
+    gtk_widget_translate_coordinates(GTK_WIDGET(widget->native), state->root, x, y, &local_x, &local_y);
     xxwidgets_emit_context(widget, widget->value, local_x, local_y);
 }
 
@@ -908,7 +892,8 @@ static gboolean browser_popup_menu(GtkWidget *native, gpointer data)
         GdkRectangle area;
         gtk_tree_view_scroll_to_cell(tree, path, NULL, FALSE, 0, 0);
         gtk_tree_view_get_cell_area(tree, path, gtk_tree_view_get_column(tree, 0), &area);
-        x = area.x + 16; y = area.y + area.height / 2;
+        x = area.x + 16;
+        y = area.y + area.height / 2;
         gtk_tree_path_free(path);
     }
     gtk_tree_view_convert_bin_window_to_widget_coords(tree, x, y, &x, &y);
@@ -938,8 +923,7 @@ static gboolean browser_button_press(GtkWidget *native, GdkEventButton *event, g
         /* The clicked row also becomes the keyboard cursor, so Enter and the
          * arrows act on the row the status line names. set_cursor selects
          * only that row: a selection it already belongs to is kept. */
-        GList *kept = gtk_tree_selection_path_is_selected(selection, path) ?
-            gtk_tree_selection_get_selected_rows(selection, NULL) : NULL, *item;
+        GList *kept = gtk_tree_selection_path_is_selected(selection, path) ? gtk_tree_selection_get_selected_rows(selection, NULL) : NULL, *item;
         gtk_tree_view_set_cursor(tree, path, NULL, FALSE);
         for (item = kept; item; item = item->next) gtk_tree_selection_select_path(selection, item->data);
         if (kept) {
@@ -973,22 +957,24 @@ static gboolean window_shortcut(GtkWidget *native, GdkEventKey *event, gpointer 
     (void)native;
     if (key >= GDK_KEY_F1 && key <= GDK_KEY_F24) key = XXWIDGETS_KEY_F1 + key - GDK_KEY_F1;
     else switch (key) {
-    case GDK_KEY_Escape: key = XXWIDGETS_KEY_ESCAPE; break;
-    case GDK_KEY_Return: case GDK_KEY_KP_Enter: key = XXWIDGETS_KEY_ENTER; break;
-    case GDK_KEY_Tab: case GDK_KEY_ISO_Left_Tab: key = XXWIDGETS_KEY_TAB; break;
-    case GDK_KEY_BackSpace: key = XXWIDGETS_KEY_BACKSPACE; break;
-    case GDK_KEY_Delete: key = XXWIDGETS_KEY_DELETE; break;
-    case GDK_KEY_Insert: key = XXWIDGETS_KEY_INSERT; break;
-    case GDK_KEY_Home: key = XXWIDGETS_KEY_HOME; break;
-    case GDK_KEY_End: key = XXWIDGETS_KEY_END; break;
-    case GDK_KEY_Page_Up: key = XXWIDGETS_KEY_PAGEUP; break;
-    case GDK_KEY_Page_Down: key = XXWIDGETS_KEY_PAGEDOWN; break;
-    case GDK_KEY_Up: key = XXWIDGETS_KEY_UP; break;
-    case GDK_KEY_Down: key = XXWIDGETS_KEY_DOWN; break;
-    case GDK_KEY_Left: key = XXWIDGETS_KEY_LEFT; break;
-    case GDK_KEY_Right: key = XXWIDGETS_KEY_RIGHT; break;
-    default: key = gdk_keyval_to_unicode(key); break;
-    }
+            case GDK_KEY_Escape: key = XXWIDGETS_KEY_ESCAPE; break;
+            case GDK_KEY_Return:
+            case GDK_KEY_KP_Enter: key = XXWIDGETS_KEY_ENTER; break;
+            case GDK_KEY_Tab:
+            case GDK_KEY_ISO_Left_Tab: key = XXWIDGETS_KEY_TAB; break;
+            case GDK_KEY_BackSpace: key = XXWIDGETS_KEY_BACKSPACE; break;
+            case GDK_KEY_Delete: key = XXWIDGETS_KEY_DELETE; break;
+            case GDK_KEY_Insert: key = XXWIDGETS_KEY_INSERT; break;
+            case GDK_KEY_Home: key = XXWIDGETS_KEY_HOME; break;
+            case GDK_KEY_End: key = XXWIDGETS_KEY_END; break;
+            case GDK_KEY_Page_Up: key = XXWIDGETS_KEY_PAGEUP; break;
+            case GDK_KEY_Page_Down: key = XXWIDGETS_KEY_PAGEDOWN; break;
+            case GDK_KEY_Up: key = XXWIDGETS_KEY_UP; break;
+            case GDK_KEY_Down: key = XXWIDGETS_KEY_DOWN; break;
+            case GDK_KEY_Left: key = XXWIDGETS_KEY_LEFT; break;
+            case GDK_KEY_Right: key = XXWIDGETS_KEY_RIGHT; break;
+            default: key = gdk_keyval_to_unicode(key); break;
+        }
     if (event->state & GDK_CONTROL_MASK) modifiers |= XXWIDGETS_MOD_CTRL;
     if (event->state & GDK_MOD1_MASK) modifiers |= XXWIDGETS_MOD_ALT;
     if (event->state & GDK_SHIFT_MASK) modifiers |= XXWIDGETS_MOD_SHIFT;
@@ -999,9 +985,7 @@ static gboolean window_shortcut(GtkWidget *native, GdkEventKey *event, gpointer 
 static gboolean browser_key(GtkWidget *native, GdkEventKey *event, gpointer data)
 {
     xxwidgets_widget *widget = data;
-    if (event->keyval == GDK_KEY_Menu ||
-        (event->keyval == GDK_KEY_F10 && (event->state & GDK_SHIFT_MASK)))
-        return browser_popup_menu(native, data);
+    if (event->keyval == GDK_KEY_Menu || (event->keyval == GDK_KEY_F10 && (event->state & GDK_SHIFT_MASK))) return browser_popup_menu(native, data);
     if (event->keyval == GDK_KEY_BackSpace && !widget->app->syncing) {
         xxwidgets_archivebrowser_user_up(widget);
         return TRUE;
@@ -1013,8 +997,7 @@ static void browser_sort_clicked(GtkTreeViewColumn *column, gpointer data)
 {
     xxwidgets_widget *widget = data;
     if (!widget->app->syncing)
-        xxwidgets_archivebrowser_user_sort(widget,
-            (xxwidgets_archive_column)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(column), "xxwidgets-column")));
+        xxwidgets_archivebrowser_user_sort(widget, (xxwidgets_archive_column)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(column), "xxwidgets-column")));
 }
 
 static void browser_sync(xxwidgets_widget *widget)
@@ -1035,8 +1018,7 @@ static void browser_sync(xxwidgets_widget *widget)
         gtk_editable_set_position(GTK_EDITABLE(state->browser_address), -1);
         g_free(address);
     }
-    if (!directory[0] && gtk_widget_is_focus(state->browser_up))
-        gtk_widget_grab_focus(GTK_WIDGET(tree)); /* Up is about to become insensitive */
+    if (!directory[0] && gtk_widget_is_focus(state->browser_up)) gtk_widget_grab_focus(GTK_WIDGET(tree)); /* Up is about to become insensitive */
     gtk_widget_set_sensitive(state->browser_up, directory[0] != '\0');
     if (state->rendered_hex_revision != widget->browser_revision) {
         GType *types = g_new(GType, columns + 1);
@@ -1051,12 +1033,11 @@ static void browser_sync(xxwidgets_widget *widget)
         /* Columns only grow by default: a long name from an earlier listing
          * would keep pushing the other columns out of view. */
         gtk_tree_view_columns_autosize(tree);
-        while (gtk_tree_view_get_n_columns(tree) > 5)
-            gtk_tree_view_remove_column(tree, gtk_tree_view_get_column(tree, 5));
+        while (gtk_tree_view_get_n_columns(tree) > 5) gtk_tree_view_remove_column(tree, gtk_tree_view_get_column(tree, 5));
         for (column = 5; column < columns; ++column) {
             GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-            GtkTreeViewColumn *view_column = gtk_tree_view_column_new_with_attributes(
-                xxwidgets_archivebrowser_column_title(widget, (size_t)column), renderer, "text", column + 1, NULL);
+            GtkTreeViewColumn *view_column =
+                gtk_tree_view_column_new_with_attributes(xxwidgets_archivebrowser_column_title(widget, (size_t)column), renderer, "text", column + 1, NULL);
             gtk_tree_view_column_set_resizable(view_column, TRUE);
             gtk_tree_view_column_set_clickable(view_column, TRUE);
             gtk_tree_view_column_set_min_width(view_column, 100);
@@ -1071,24 +1052,21 @@ static void browser_sync(xxwidgets_widget *widget)
             size_t source;
             if (xxwidgets_archivebrowser_get_entry(widget, row, &source, &entry) != XXWIDGETS_OK) continue;
             gtk_list_store_append(store, &iter);
-            gtk_list_store_set(store, &iter, 0, entry.is_directory ? "folder" : "text-x-generic",
-                1, xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_NAME),
-                2, xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_SIZE),
-                3, xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_PACKED_SIZE),
-                4, xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_MODIFIED),
-                5, xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_ATTRIBUTES), -1);
+            gtk_list_store_set(store, &iter, 0, entry.is_directory ? "folder" : "text-x-generic", 1,
+                               xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_NAME), 2,
+                               xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_SIZE), 3,
+                               xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_PACKED_SIZE), 4,
+                               xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_MODIFIED), 5,
+                               xxwidgets_archivebrowser_cell(widget, row, XXWIDGETS_ARCHIVE_COLUMN_ATTRIBUTES), -1);
             for (column = 5; column < columns; ++column)
-                gtk_list_store_set(store, &iter, column + 1,
-                    xxwidgets_archivebrowser_cell(widget, row, (xxwidgets_archive_column)column), -1);
+                gtk_list_store_set(store, &iter, column + 1, xxwidgets_archivebrowser_cell(widget, row, (xxwidgets_archive_column)column), -1);
         }
         state->rendered_hex_revision = widget->browser_revision;
     }
     for (column = 0; column < columns; ++column) {
         GtkTreeViewColumn *native_column = gtk_tree_view_get_column(tree, column);
-        gtk_tree_view_column_set_sort_indicator(native_column,
-            column == (int)xxwidgets_archivebrowser_sort_column(widget));
-        gtk_tree_view_column_set_sort_order(native_column,
-            xxwidgets_archivebrowser_sort_descending(widget) ? GTK_SORT_DESCENDING : GTK_SORT_ASCENDING);
+        gtk_tree_view_column_set_sort_indicator(native_column, column == (int)xxwidgets_archivebrowser_sort_column(widget));
+        gtk_tree_view_column_set_sort_order(native_column, xxwidgets_archivebrowser_sort_descending(widget) ? GTK_SORT_DESCENDING : GTK_SORT_ASCENDING);
     }
     if (widget->value >= 0) {
         /* A new listing or folder has no keyboard cursor, and Enter acts on the
@@ -1101,7 +1079,8 @@ static void browser_sync(xxwidgets_widget *widget)
         if (cursor) {
             int depth = 0, *at = gtk_tree_path_get_indices_with_depth(cursor, &depth);
             if (depth < 1 || (at[0] != widget->value && widget->value != state->browser_value)) {
-                gtk_tree_path_free(cursor); cursor = NULL;
+                gtk_tree_path_free(cursor);
+                cursor = NULL;
             }
         }
         if (!cursor) {
@@ -1125,11 +1104,12 @@ static void browser_sync(xxwidgets_widget *widget)
         }
         if (!same) {
             gtk_tree_selection_unselect_all(selection);
-            for (i = 0; i < widget->item_count; ++i) if (xxwidgets_archivebrowser_row_selected(widget, i)) {
-                GtkTreePath *path = gtk_tree_path_new_from_indices((int)i, -1);
-                gtk_tree_selection_select_path(selection, path);
-                gtk_tree_path_free(path);
-            }
+            for (i = 0; i < widget->item_count; ++i)
+                if (xxwidgets_archivebrowser_row_selected(widget, i)) {
+                    GtkTreePath *path = gtk_tree_path_new_from_indices((int)i, -1);
+                    gtk_tree_selection_select_path(selection, path);
+                    gtk_tree_path_free(path);
+                }
         }
         if (widget->value >= 0) {
             GtkTreePath *path = gtk_tree_path_new_from_indices(widget->value, -1);
@@ -1175,8 +1155,7 @@ static void list_scrolled(GtkAdjustment *adjustment, gpointer data)
 {
     xxwidgets_widget *widget = data;
     gtk_widget_state *state = widget->platform;
-    if (state) state->follow_tail = gtk_adjustment_get_value(adjustment) +
-        gtk_adjustment_get_page_size(adjustment) >= gtk_adjustment_get_upper(adjustment) - 2.0;
+    if (state) state->follow_tail = gtk_adjustment_get_value(adjustment) + gtk_adjustment_get_page_size(adjustment) >= gtk_adjustment_get_upper(adjustment) - 2.0;
 }
 
 /* ...and stays there when its height or content changes. A user who scrolled
@@ -1186,8 +1165,7 @@ static void list_resized(GtkAdjustment *adjustment, gpointer data)
     xxwidgets_widget *widget = data;
     gtk_widget_state *state = widget->platform;
     double end;
-    if (!state || !state->follow_tail || widget->value < 0 ||
-        (size_t)widget->value + 1 != widget->item_count) return;
+    if (!state || !state->follow_tail || widget->value < 0 || (size_t)widget->value + 1 != widget->item_count) return;
     end = gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment);
     if (gtk_adjustment_get_value(adjustment) != end) gtk_adjustment_set_value(adjustment, end);
 }
@@ -1225,8 +1203,7 @@ static xxwidgets_status gtk_init_backend(xxwidgets_app *app)
         if (!installed && (css = gtk_css_provider_new()) != NULL) {
             /* Installed once per process: the screen keeps the provider. */
             if (gtk_css_provider_load_from_data(css, GRID_CSS, -1, NULL))
-                gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
-                    GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+                gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
             g_object_unref(css);
             installed = 1;
         }
@@ -1234,12 +1211,10 @@ static xxwidgets_status gtk_init_backend(xxwidgets_app *app)
     probe = gtk_label_new("M");
     g_object_ref_sink(probe);
     context = gtk_widget_get_pango_context(probe);
-    metrics = pango_context_get_metrics(context, pango_context_get_font_description(context),
-                                        pango_context_get_language(context));
+    metrics = pango_context_get_metrics(context, pango_context_get_font_description(context), pango_context_get_language(context));
     if (metrics) {
         int width = PANGO_PIXELS_CEIL(pango_font_metrics_get_approximate_char_width(metrics));
-        int height = PANGO_PIXELS_CEIL(pango_font_metrics_get_ascent(metrics) +
-                                      pango_font_metrics_get_descent(metrics)) + 4;
+        int height = PANGO_PIXELS_CEIL(pango_font_metrics_get_ascent(metrics) + pango_font_metrics_get_descent(metrics)) + 4;
         if (width > 0) state->cell_width = width;
         if (height > 0) state->cell_height = height;
         pango_font_metrics_unref(metrics);
@@ -1249,8 +1224,7 @@ static xxwidgets_status gtk_init_backend(xxwidgets_app *app)
     /* One-row controls get the whole cell minus GRID_ROW_GAP, so the cell
      * must hold the tallest of them; labels alone would need only the text. */
     control_height = measure_control_height();
-    if (control_height + GRID_ROW_GAP > state->cell_height)
-        state->cell_height = control_height + GRID_ROW_GAP;
+    if (control_height + GRID_ROW_GAP > state->cell_height) state->cell_height = control_height + GRID_ROW_GAP;
     state->base_cell_width = state->cell_width;
     g_signal_connect(gdk_screen_get_default(), "monitors-changed", G_CALLBACK(screen_changed), app);
     g_signal_connect(gdk_screen_get_default(), "size-changed", G_CALLBACK(screen_changed), app);
@@ -1267,10 +1241,11 @@ static void gtk_shutdown_backend(xxwidgets_app *app)
     gtk_app_state *state = app->platform;
     if (state && state->fit_source) g_source_remove(state->fit_source);
     if (state) g_signal_handlers_disconnect_by_data(gdk_screen_get_default(), app);
-    if (state) for (size_t role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
-        if (state->fonts[role]) pango_font_description_free(state->fonts[role]);
-        if (state->font_css[role]) g_object_unref(state->font_css[role]);
-    }
+    if (state)
+        for (size_t role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
+            if (state->fonts[role]) pango_font_description_free(state->fonts[role]);
+            if (state->font_css[role]) g_object_unref(state->font_css[role]);
+        }
     free(app->platform);
     app->platform = NULL;
 }
@@ -1299,8 +1274,7 @@ static xxwidgets_status gtk_poll_backend(xxwidgets_app *app, int timeout_ms)
             if (timeout_ms > 0 && g_get_monotonic_time() >= deadline) break;
             continue;
         }
-        if (processed || timeout_ms == 0 || expired ||
-            g_get_monotonic_time() >= deadline) break;
+        if (processed || timeout_ms == 0 || expired || g_get_monotonic_time() >= deadline) break;
         if (g_main_context_iteration(NULL, TRUE)) ++processed;
     }
     if (timer) {
@@ -1323,209 +1297,200 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
     if (!state) return XXWIDGETS_OUT_OF_MEMORY;
     widget->platform = state;
     switch (widget->kind) {
-    case XXWIDGETS_WINDOW:
-        native = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-        /* A GtkLayout, unlike GtkFixed, requests no size from its children
-         * and clips them to the client area: overflowing controls can neither
-         * grow the window nor paint outside it, and the window can shrink.
-         * Its minimum comes from window_update_minimum alone. */
-        state->content = gtk_layout_new(NULL, NULL);
-        /* Cleared if another client destroys the window, which frees the layout. */
-        g_object_add_weak_pointer(G_OBJECT(state->content), (gpointer *)&state->content);
-        gtk_style_context_add_class(gtk_widget_get_style_context(state->content), GRID_CLASS);
-        gtk_container_add(GTK_CONTAINER(native), state->content);
-        gtk_widget_show(state->content);
-        g_signal_connect(native, "delete-event", G_CALLBACK(window_close), widget);
-        g_signal_connect(native, "key-press-event", G_CALLBACK(window_shortcut), widget);
-        g_signal_connect(native, "configure-event", G_CALLBACK(window_configure), widget);
-        state->fit_position = 1;
-        state->min_width = state->min_height = -1;
-        break;
-    case XXWIDGETS_LABEL:
-        native = gtk_label_new("");
-        gtk_label_set_xalign(GTK_LABEL(native), 0.0f);
-        gtk_label_set_ellipsize(GTK_LABEL(native), PANGO_ELLIPSIZE_END);
-        gtk_widget_set_has_tooltip(native, TRUE);
-        g_signal_connect(native, "query-tooltip", G_CALLBACK(ellipsis_tooltip), NULL);
-        break;
-    case XXWIDGETS_BUTTON:
-        native = gtk_button_new_with_label(widget->text);
-        g_signal_connect(native, "clicked", G_CALLBACK(button_clicked), widget);
-        break;
-    case XXWIDGETS_EDIT:
-        native = gtk_entry_new();
-        g_signal_connect(native, "changed", G_CALLBACK(edit_changed), widget);
-        g_signal_connect(native, "activate", G_CALLBACK(edit_activated), widget);
-        break;
-    case XXWIDGETS_CHECKBOX:
-        native = gtk_check_button_new_with_label(widget->text);
-        g_signal_connect(native, "toggled", G_CALLBACK(checkbox_changed), widget);
-        break;
-    case XXWIDGETS_COMBOBOX:
-        native = gtk_combo_box_text_new();
-        g_signal_connect(native, "changed", G_CALLBACK(combo_changed), widget);
-        break;
-    case XXWIDGETS_CHECKCOMBOBOX: {
-        GtkWidget *popover, *scroll;
-        native = gtk_menu_button_new();
-        popover = gtk_popover_new(native);
-        scroll = gtk_scrolled_window_new(NULL, NULL);
-        state->combo_scroll = scroll;
-        state->combo_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-        gtk_container_add(GTK_CONTAINER(scroll), state->combo_box);
-        gtk_container_add(GTK_CONTAINER(popover), scroll);
-        gtk_menu_button_set_popover(GTK_MENU_BUTTON(native), popover);
-        gtk_widget_show_all(scroll);
-        break;
-    }
-    case XXWIDGETS_LISTBOX:
-    case XXWIDGETS_ARCHIVEVIEW:
-    case XXWIDGETS_HEXVIEW:
-        native = gtk_list_box_new();
-        gtk_list_box_set_selection_mode(GTK_LIST_BOX(native), GTK_SELECTION_SINGLE);
-        state->root = gtk_scrolled_window_new(NULL, NULL);
-        g_object_ref_sink(state->root);
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root),
-                                       GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-        gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
-        /* The rows take focus. A focusable scrolled window would take it itself
-         * when the list is empty: a Tab stop with nothing drawn for it. */
-        gtk_widget_set_can_focus(state->root, FALSE);
-        gtk_container_add(GTK_CONTAINER(state->root), native);
-        gtk_widget_show(native);
-        g_signal_connect(native, "row-selected", G_CALLBACK(list_selected), widget);
-        g_signal_connect(native, "key-press-event", G_CALLBACK(list_key), widget);
-        if (widget->kind == XXWIDGETS_LISTBOX) {
-            GtkAdjustment *adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(state->root));
-            state->follow_tail = 1;
-            g_signal_connect(adjustment, "value-changed", G_CALLBACK(list_scrolled), widget);
-            g_signal_connect(adjustment, "changed", G_CALLBACK(list_resized), widget);
+        case XXWIDGETS_WINDOW:
+            native = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+            /* A GtkLayout, unlike GtkFixed, requests no size from its children
+             * and clips them to the client area: overflowing controls can neither
+             * grow the window nor paint outside it, and the window can shrink.
+             * Its minimum comes from window_update_minimum alone. */
+            state->content = gtk_layout_new(NULL, NULL);
+            /* Cleared if another client destroys the window, which frees the layout. */
+            g_object_add_weak_pointer(G_OBJECT(state->content), (gpointer *)&state->content);
+            gtk_style_context_add_class(gtk_widget_get_style_context(state->content), GRID_CLASS);
+            gtk_container_add(GTK_CONTAINER(native), state->content);
+            gtk_widget_show(state->content);
+            g_signal_connect(native, "delete-event", G_CALLBACK(window_close), widget);
+            g_signal_connect(native, "key-press-event", G_CALLBACK(window_shortcut), widget);
+            g_signal_connect(native, "configure-event", G_CALLBACK(window_configure), widget);
+            state->fit_position = 1;
+            state->min_width = state->min_height = -1;
+            break;
+        case XXWIDGETS_LABEL:
+            native = gtk_label_new("");
+            gtk_label_set_xalign(GTK_LABEL(native), 0.0f);
+            gtk_label_set_ellipsize(GTK_LABEL(native), PANGO_ELLIPSIZE_END);
+            gtk_widget_set_has_tooltip(native, TRUE);
+            g_signal_connect(native, "query-tooltip", G_CALLBACK(ellipsis_tooltip), NULL);
+            break;
+        case XXWIDGETS_BUTTON:
+            native = gtk_button_new_with_label(widget->text);
+            g_signal_connect(native, "clicked", G_CALLBACK(button_clicked), widget);
+            break;
+        case XXWIDGETS_EDIT:
+            native = gtk_entry_new();
+            g_signal_connect(native, "changed", G_CALLBACK(edit_changed), widget);
+            g_signal_connect(native, "activate", G_CALLBACK(edit_activated), widget);
+            break;
+        case XXWIDGETS_CHECKBOX:
+            native = gtk_check_button_new_with_label(widget->text);
+            g_signal_connect(native, "toggled", G_CALLBACK(checkbox_changed), widget);
+            break;
+        case XXWIDGETS_COMBOBOX:
+            native = gtk_combo_box_text_new();
+            g_signal_connect(native, "changed", G_CALLBACK(combo_changed), widget);
+            break;
+        case XXWIDGETS_CHECKCOMBOBOX: {
+            GtkWidget *popover, *scroll;
+            native = gtk_menu_button_new();
+            popover = gtk_popover_new(native);
+            scroll = gtk_scrolled_window_new(NULL, NULL);
+            state->combo_scroll = scroll;
+            state->combo_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+            gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+            gtk_container_add(GTK_CONTAINER(scroll), state->combo_box);
+            gtk_container_add(GTK_CONTAINER(popover), scroll);
+            gtk_menu_button_set_popover(GTK_MENU_BUTTON(native), popover);
+            gtk_widget_show_all(scroll);
+            break;
         }
-        /* Keeps the selected row in view, e.g. the newest log line. */
-        g_signal_connect(native, "size-allocate", G_CALLBACK(hex_allocated), widget);
-        break;
-    case XXWIDGETS_PROGRESS:
-        native = gtk_progress_bar_new();
-        break;
-    case XXWIDGETS_TREEVIEW: {
-        GtkTreeStore *store = gtk_tree_store_new(2, G_TYPE_STRING, G_TYPE_INT);
-        GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-        GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes("", renderer, "text", 0, NULL);
-        native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
-        g_object_unref(store);
-        gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(native), FALSE);
-        gtk_tree_view_append_column(GTK_TREE_VIEW(native), column);
-        g_object_set(renderer, "single-paragraph-mode", TRUE, NULL);
-        gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_SINGLE);
-        state->root = gtk_scrolled_window_new(NULL, NULL);
-        g_object_ref_sink(state->root);
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-        gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
-        gtk_container_add(GTK_CONTAINER(state->root), native);
-        g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed", G_CALLBACK(treeview_selected), widget);
-        g_signal_connect(native, "row-expanded", G_CALLBACK(treeview_expanded), widget);
-        g_signal_connect(native, "row-collapsed", G_CALLBACK(treeview_collapsed), widget);
-        g_signal_connect(native, "test-collapse-row", G_CALLBACK(treeview_before_collapse), widget);
-        g_signal_connect(native, "key-press-event", G_CALLBACK(treeview_key), widget);
-        g_signal_connect(native, "row-activated", G_CALLBACK(treeview_activated), widget);
-        gtk_widget_show(native);
-        break;
-    }
-    case XXWIDGETS_SCANRESULTS: {
-        static const char *titles[] = {"Type", "Name", "Version", "Info"};
-        static const int widths[] = {100, 220, 100, 260};
-        GtkListStore *store = gtk_list_store_new(4, G_TYPE_STRING, G_TYPE_STRING,
-            G_TYPE_STRING, G_TYPE_STRING);
-        int column;
-        native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
-        g_object_unref(store);
-        gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_SINGLE);
-        state->root = gtk_scrolled_window_new(NULL, NULL);
-        g_object_ref_sink(state->root);
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root),
-            GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-        gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
-        gtk_container_add(GTK_CONTAINER(state->root), native);
-        for (column = 0; column < 4; ++column) {
+        case XXWIDGETS_LISTBOX:
+        case XXWIDGETS_ARCHIVEVIEW:
+        case XXWIDGETS_HEXVIEW:
+            native = gtk_list_box_new();
+            gtk_list_box_set_selection_mode(GTK_LIST_BOX(native), GTK_SELECTION_SINGLE);
+            state->root = gtk_scrolled_window_new(NULL, NULL);
+            g_object_ref_sink(state->root);
+            gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+            gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
+            /* The rows take focus. A focusable scrolled window would take it itself
+             * when the list is empty: a Tab stop with nothing drawn for it. */
+            gtk_widget_set_can_focus(state->root, FALSE);
+            gtk_container_add(GTK_CONTAINER(state->root), native);
+            gtk_widget_show(native);
+            g_signal_connect(native, "row-selected", G_CALLBACK(list_selected), widget);
+            g_signal_connect(native, "key-press-event", G_CALLBACK(list_key), widget);
+            if (widget->kind == XXWIDGETS_LISTBOX) {
+                GtkAdjustment *adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(state->root));
+                state->follow_tail = 1;
+                g_signal_connect(adjustment, "value-changed", G_CALLBACK(list_scrolled), widget);
+                g_signal_connect(adjustment, "changed", G_CALLBACK(list_resized), widget);
+            }
+            /* Keeps the selected row in view, e.g. the newest log line. */
+            g_signal_connect(native, "size-allocate", G_CALLBACK(hex_allocated), widget);
+            break;
+        case XXWIDGETS_PROGRESS: native = gtk_progress_bar_new(); break;
+        case XXWIDGETS_TREEVIEW: {
+            GtkTreeStore *store = gtk_tree_store_new(2, G_TYPE_STRING, G_TYPE_INT);
             GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-            GtkTreeViewColumn *view_column = gtk_tree_view_column_new_with_attributes(
-                titles[column], renderer, "text", column, NULL);
-            gtk_tree_view_column_set_resizable(view_column, TRUE);
-            gtk_tree_view_column_set_sizing(view_column, GTK_TREE_VIEW_COLUMN_FIXED);
-            gtk_tree_view_column_set_fixed_width(view_column, widths[column]);
-            gtk_tree_view_column_set_min_width(view_column, 60);
-            g_object_set(renderer, "single-paragraph-mode", TRUE, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
-            gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
+            GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes("", renderer, "text", 0, NULL);
+            native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+            g_object_unref(store);
+            gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(native), FALSE);
+            gtk_tree_view_append_column(GTK_TREE_VIEW(native), column);
+            g_object_set(renderer, "single-paragraph-mode", TRUE, NULL);
+            gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_SINGLE);
+            state->root = gtk_scrolled_window_new(NULL, NULL);
+            g_object_ref_sink(state->root);
+            gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+            gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
+            gtk_container_add(GTK_CONTAINER(state->root), native);
+            g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed", G_CALLBACK(treeview_selected), widget);
+            g_signal_connect(native, "row-expanded", G_CALLBACK(treeview_expanded), widget);
+            g_signal_connect(native, "row-collapsed", G_CALLBACK(treeview_collapsed), widget);
+            g_signal_connect(native, "test-collapse-row", G_CALLBACK(treeview_before_collapse), widget);
+            g_signal_connect(native, "key-press-event", G_CALLBACK(treeview_key), widget);
+            g_signal_connect(native, "row-activated", G_CALLBACK(treeview_activated), widget);
+            gtk_widget_show(native);
+            break;
         }
-        g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed",
-            G_CALLBACK(scanresults_selected), widget);
-        gtk_widget_show(native);
-        break;
-    }
-    case XXWIDGETS_ARCHIVEBROWSER: {
-        static const char *titles[] = {"Name", "Size", "Packed Size", "Modified", "Attributes"};
-        GtkListStore *store = gtk_list_store_new(6, G_TYPE_STRING, G_TYPE_STRING,
-            G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
-        GtkWidget *address_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
-        int column;
-        native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
-        g_object_unref(store);
-        gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_MULTIPLE);
-        state->root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-        g_object_ref_sink(state->root);
-        state->browser_up = gtk_button_new_from_icon_name("go-up", GTK_ICON_SIZE_BUTTON);
-        gtk_widget_set_tooltip_text(state->browser_up, "Up one folder (Backspace)");
-        state->browser_address = gtk_entry_new();
-        gtk_editable_set_editable(GTK_EDITABLE(state->browser_address), FALSE);
-        gtk_box_pack_start(GTK_BOX(address_bar), state->browser_up, FALSE, FALSE, 0);
-        gtk_box_pack_start(GTK_BOX(address_bar), state->browser_address, TRUE, TRUE, 0);
-        gtk_box_pack_start(GTK_BOX(state->root), address_bar, FALSE, FALSE, 0);
-        state->browser_scroll = gtk_scrolled_window_new(NULL, NULL);
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->browser_scroll),
-            GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-        gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->browser_scroll), GTK_SHADOW_IN);
-        gtk_container_add(GTK_CONTAINER(state->browser_scroll), native);
-        gtk_box_pack_start(GTK_BOX(state->root), state->browser_scroll, TRUE, TRUE, 0);
-        for (column = 0; column < 5; ++column) {
-            GtkTreeViewColumn *view_column = gtk_tree_view_column_new();
-            GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-            gtk_tree_view_column_set_title(view_column, titles[column]);
-            if (!column) {
-                GtkCellRenderer *icon = gtk_cell_renderer_pixbuf_new();
-                gtk_tree_view_column_pack_start(view_column, icon, FALSE);
-                gtk_tree_view_column_add_attribute(view_column, icon, "icon-name", 0);
-            } else if (column == 1 || column == 2) g_object_set(renderer, "xalign", 1.0f, NULL);
-            gtk_tree_view_column_pack_start(view_column, renderer, TRUE);
-            gtk_tree_view_column_add_attribute(view_column, renderer, "text", column + 1);
-            gtk_tree_view_column_set_resizable(view_column, TRUE);
-            gtk_tree_view_column_set_clickable(view_column, TRUE);
-            gtk_tree_view_column_set_min_width(view_column, column ? 80 : 180);
-            g_object_set_data(G_OBJECT(view_column), "xxwidgets-column", GINT_TO_POINTER(column));
-            g_signal_connect(view_column, "clicked", G_CALLBACK(browser_sort_clicked), widget);
-            gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
+        case XXWIDGETS_SCANRESULTS: {
+            static const char *titles[] = {"Type", "Name", "Version", "Info"};
+            static const int widths[] = {100, 220, 100, 260};
+            GtkListStore *store = gtk_list_store_new(4, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+            int column;
+            native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+            g_object_unref(store);
+            gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_SINGLE);
+            state->root = gtk_scrolled_window_new(NULL, NULL);
+            g_object_ref_sink(state->root);
+            gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->root), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+            gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
+            gtk_container_add(GTK_CONTAINER(state->root), native);
+            for (column = 0; column < 4; ++column) {
+                GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+                GtkTreeViewColumn *view_column = gtk_tree_view_column_new_with_attributes(titles[column], renderer, "text", column, NULL);
+                gtk_tree_view_column_set_resizable(view_column, TRUE);
+                gtk_tree_view_column_set_sizing(view_column, GTK_TREE_VIEW_COLUMN_FIXED);
+                gtk_tree_view_column_set_fixed_width(view_column, widths[column]);
+                gtk_tree_view_column_set_min_width(view_column, 60);
+                g_object_set(renderer, "single-paragraph-mode", TRUE, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+                gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
+            }
+            g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed", G_CALLBACK(scanresults_selected), widget);
+            gtk_widget_show(native);
+            break;
         }
-        g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed", G_CALLBACK(browser_selected), widget);
-        g_signal_connect(native, "row-activated", G_CALLBACK(browser_activated), widget);
-        g_signal_connect(native, "key-press-event", G_CALLBACK(browser_key), widget);
-        g_signal_connect(native, "button-press-event", G_CALLBACK(browser_button_press), widget);
-        g_signal_connect(native, "popup-menu", G_CALLBACK(browser_popup_menu), widget);
-        g_signal_connect(state->browser_up, "clicked", G_CALLBACK(browser_up_clicked), widget);
-        gtk_widget_show_all(state->root);
-        break;
-    }
-    default:
-        free(state);
-        widget->platform = NULL;
-        return XXWIDGETS_INVALID_ARGUMENT;
+        case XXWIDGETS_ARCHIVEBROWSER: {
+            static const char *titles[] = {"Name", "Size", "Packed Size", "Modified", "Attributes"};
+            GtkListStore *store = gtk_list_store_new(6, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+            GtkWidget *address_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+            int column;
+            native = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+            g_object_unref(store);
+            gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_MULTIPLE);
+            state->root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+            g_object_ref_sink(state->root);
+            state->browser_up = gtk_button_new_from_icon_name("go-up", GTK_ICON_SIZE_BUTTON);
+            gtk_widget_set_tooltip_text(state->browser_up, "Up one folder (Backspace)");
+            state->browser_address = gtk_entry_new();
+            gtk_editable_set_editable(GTK_EDITABLE(state->browser_address), FALSE);
+            gtk_box_pack_start(GTK_BOX(address_bar), state->browser_up, FALSE, FALSE, 0);
+            gtk_box_pack_start(GTK_BOX(address_bar), state->browser_address, TRUE, TRUE, 0);
+            gtk_box_pack_start(GTK_BOX(state->root), address_bar, FALSE, FALSE, 0);
+            state->browser_scroll = gtk_scrolled_window_new(NULL, NULL);
+            gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->browser_scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+            gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->browser_scroll), GTK_SHADOW_IN);
+            gtk_container_add(GTK_CONTAINER(state->browser_scroll), native);
+            gtk_box_pack_start(GTK_BOX(state->root), state->browser_scroll, TRUE, TRUE, 0);
+            for (column = 0; column < 5; ++column) {
+                GtkTreeViewColumn *view_column = gtk_tree_view_column_new();
+                GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
+                gtk_tree_view_column_set_title(view_column, titles[column]);
+                if (!column) {
+                    GtkCellRenderer *icon = gtk_cell_renderer_pixbuf_new();
+                    gtk_tree_view_column_pack_start(view_column, icon, FALSE);
+                    gtk_tree_view_column_add_attribute(view_column, icon, "icon-name", 0);
+                } else if (column == 1 || column == 2) g_object_set(renderer, "xalign", 1.0f, NULL);
+                gtk_tree_view_column_pack_start(view_column, renderer, TRUE);
+                gtk_tree_view_column_add_attribute(view_column, renderer, "text", column + 1);
+                gtk_tree_view_column_set_resizable(view_column, TRUE);
+                gtk_tree_view_column_set_clickable(view_column, TRUE);
+                gtk_tree_view_column_set_min_width(view_column, column ? 80 : 180);
+                g_object_set_data(G_OBJECT(view_column), "xxwidgets-column", GINT_TO_POINTER(column));
+                g_signal_connect(view_column, "clicked", G_CALLBACK(browser_sort_clicked), widget);
+                gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
+            }
+            g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed", G_CALLBACK(browser_selected), widget);
+            g_signal_connect(native, "row-activated", G_CALLBACK(browser_activated), widget);
+            g_signal_connect(native, "key-press-event", G_CALLBACK(browser_key), widget);
+            g_signal_connect(native, "button-press-event", G_CALLBACK(browser_button_press), widget);
+            g_signal_connect(native, "popup-menu", G_CALLBACK(browser_popup_menu), widget);
+            g_signal_connect(state->browser_up, "clicked", G_CALLBACK(browser_up_clicked), widget);
+            gtk_widget_show_all(state->root);
+            break;
+        }
+        default:
+            free(state);
+            widget->platform = NULL;
+            return XXWIDGETS_INVALID_ARGUMENT;
     }
     switch (widget->kind) {
-    case XXWIDGETS_BUTTON: case XXWIDGETS_EDIT: case XXWIDGETS_CHECKBOX:
-    case XXWIDGETS_COMBOBOX: case XXWIDGETS_CHECKCOMBOBOX:
-        cell_control(native);
-        break;
-    default:
-        break;
+        case XXWIDGETS_BUTTON:
+        case XXWIDGETS_EDIT:
+        case XXWIDGETS_CHECKBOX:
+        case XXWIDGETS_COMBOBOX:
+        case XXWIDGETS_CHECKCOMBOBOX: cell_control(native); break;
+        default: break;
     }
     g_object_ref_sink(native);
     widget->native = native;
@@ -1553,8 +1518,7 @@ static void gtk_destroy_backend(xxwidgets_widget *widget)
         g_signal_handlers_disconnect_by_data(state->browser_up, widget);
     }
     if (widget->kind == XXWIDGETS_LISTBOX && state->root && GTK_IS_SCROLLED_WINDOW(state->root))
-        g_signal_handlers_disconnect_by_data(
-            gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(state->root)), widget);
+        g_signal_handlers_disconnect_by_data(gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(state->root)), widget);
     if (state->content) g_object_remove_weak_pointer(G_OBJECT(state->content), (gpointer *)&state->content);
     if (state->root) {
         gtk_widget_destroy(state->root);
@@ -1582,13 +1546,11 @@ static void apply_geometry(xxwidgets_widget *widget, int x, int y, int width, in
         /* Only a position the program changed: a new size keeps the place the
          * user or the window manager gave the window (configure-event never
          * writes the position back into rect). */
-        if (!state->has_rect || widget->rect.x != state->applied_rect.x || widget->rect.y != state->applied_rect.y)
-            gtk_window_move(GTK_WINDOW(widget->native), x, y);
+        if (!state->has_rect || widget->rect.x != state->applied_rect.x || widget->rect.y != state->applied_rect.y) gtk_window_move(GTK_WINDOW(widget->native), x, y);
     } else {
         gtk_widget_state *parent_state = widget->parent->platform;
-        int one_row = widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT ||
-            widget->kind == XXWIDGETS_CHECKBOX || widget->kind == XXWIDGETS_COMBOBOX ||
-            widget->kind == XXWIDGETS_CHECKCOMBOBOX;
+        int one_row = widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_CHECKBOX || widget->kind == XXWIDGETS_COMBOBOX ||
+                      widget->kind == XXWIDGETS_CHECKCOMBOBOX;
         if (one_row && widget->rect.height > 1) {
             /* A button given two rows stays button-sized, centred in them. */
             int minimum = 0, shown = gtk_widget_get_visible(state->root);
@@ -1629,8 +1591,7 @@ static gboolean grid_fit(gpointer data)
     for (widget = app->widgets; widget; widget = widget->next) {
         gtk_widget_state *control = widget->platform;
         int natural = 0, cells = widget->rect.width, per_cell;
-        if (!widget->parent || !control || !widget->visible || cells <= 0 ||
-            (widget->kind != XXWIDGETS_BUTTON && widget->kind != XXWIDGETS_CHECKBOX)) continue;
+        if (!widget->parent || !control || !widget->visible || cells <= 0 || (widget->kind != XXWIDGETS_BUTTON && widget->kind != XXWIDGETS_CHECKBOX)) continue;
         gtk_widget_get_preferred_width(control->root, NULL, &natural);
         per_cell = (natural + cells - 1) / cells;
         if (per_cell > needed) needed = per_cell;
@@ -1640,8 +1601,7 @@ static gboolean grid_fit(gpointer data)
         state->cell_width = needed;
         for (widget = app->widgets; widget; widget = widget->next) {
             int x, y, width, height;
-            if (widget->platform && pixel_rect(widget, &x, &y, &width, &height))
-                apply_geometry(widget, x, y, width, height);
+            if (widget->platform && pixel_rect(widget, &x, &y, &width, &height)) apply_geometry(widget, x, y, width, height);
         }
         for (widget = app->widgets; widget; widget = widget->next)
             if (widget->kind == XXWIDGETS_WINDOW && widget->platform) window_update_minimum(widget);
@@ -1656,167 +1616,157 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
     gtk_app_state *app_state = widget->app->platform;
     int x, y, width, height;
     size_t i;
-    if (!g_utf8_validate(widget->text, -1, NULL) ||
-        !pixel_rect(widget, &x, &y, &width, &height)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!g_utf8_validate(widget->text, -1, NULL) || !pixel_rect(widget, &x, &y, &width, &height)) return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; i < widget->item_count; ++i)
         if (!g_utf8_validate(widget->items[i], -1, NULL)) return XXWIDGETS_INVALID_ARGUMENT;
-    if (!state->has_rect || !rect_equal(state->applied_rect, widget->rect))
-        apply_geometry(widget, x, y, width, height);
+    if (!state->has_rect || !rect_equal(state->applied_rect, widget->rect)) apply_geometry(widget, x, y, width, height);
     switch (widget->kind) {
-    case XXWIDGETS_WINDOW:
-        if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(native)), widget->text))
-            gtk_window_set_title(GTK_WINDOW(native), widget->text);
-        window_update_minimum(widget);
-        /* Runs before GTK's resize and redraw idles, once the application
-         * has created and placed the window's controls. */
-        if (!app_state->fitted && !app_state->fit_source && widget->visible)
-            app_state->fit_source = g_idle_add_full(G_PRIORITY_HIGH_IDLE, grid_fit, widget->app, NULL);
-        break;
-    case XXWIDGETS_LABEL:
-        if (strcmp(gtk_label_get_text(GTK_LABEL(native)), widget->text))
-            gtk_label_set_text(GTK_LABEL(native), widget->text);
-        break;
-    case XXWIDGETS_COMBOBOX:
-        if (!state->combo_initialized || state->combo_revision != widget->combo_revision) {
-            size_t index;
-            gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(native));
-            for (index = 0; index < widget->item_count; ++index)
-                gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(native), widget->items[index]);
-            state->combo_initialized = 1; state->combo_revision = widget->combo_revision;
-        }
-        gtk_combo_box_set_active(GTK_COMBO_BOX(native), widget->value);
-        break;
-    case XXWIDGETS_CHECKCOMBOBOX: {
-        GList *rows, *row;
-        size_t index = 0;
-        char *caption = g_strconcat(xxwidgets_combobox_caption(widget), " \xe2\x96\xbe", NULL);
-        gtk_button_set_label(GTK_BUTTON(native), caption); g_free(caption);
-        ellipsize_control_label(native);
-        if (!state->combo_initialized || state->combo_revision != widget->combo_revision) {
+        case XXWIDGETS_WINDOW:
+            if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(native)), widget->text)) gtk_window_set_title(GTK_WINDOW(native), widget->text);
+            window_update_minimum(widget);
+            /* Runs before GTK's resize and redraw idles, once the application
+             * has created and placed the window's controls. */
+            if (!app_state->fitted && !app_state->fit_source && widget->visible)
+                app_state->fit_source = g_idle_add_full(G_PRIORITY_HIGH_IDLE, grid_fit, widget->app, NULL);
+            break;
+        case XXWIDGETS_LABEL:
+            if (strcmp(gtk_label_get_text(GTK_LABEL(native)), widget->text)) gtk_label_set_text(GTK_LABEL(native), widget->text);
+            break;
+        case XXWIDGETS_COMBOBOX:
+            if (!state->combo_initialized || state->combo_revision != widget->combo_revision) {
+                size_t index;
+                gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(native));
+                for (index = 0; index < widget->item_count; ++index) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(native), widget->items[index]);
+                state->combo_initialized = 1;
+                state->combo_revision = widget->combo_revision;
+            }
+            gtk_combo_box_set_active(GTK_COMBO_BOX(native), widget->value);
+            break;
+        case XXWIDGETS_CHECKCOMBOBOX: {
+            GList *rows, *row;
+            size_t index = 0;
+            char *caption = g_strconcat(xxwidgets_combobox_caption(widget), " \xe2\x96\xbe", NULL);
+            gtk_button_set_label(GTK_BUTTON(native), caption);
+            g_free(caption);
+            ellipsize_control_label(native);
+            if (!state->combo_initialized || state->combo_revision != widget->combo_revision) {
+                rows = gtk_container_get_children(GTK_CONTAINER(state->combo_box));
+                for (row = rows; row; row = row->next) gtk_widget_destroy(GTK_WIDGET(row->data));
+                g_list_free(rows);
+                for (index = 0; index < widget->item_count; ++index) {
+                    GtkWidget *check = gtk_check_button_new_with_label(widget->items[index]);
+                    g_object_set_data(G_OBJECT(check), "xxwidgets-index", GUINT_TO_POINTER((guint)index));
+                    g_signal_connect(check, "toggled", G_CALLBACK(combo_checked), widget);
+                    gtk_box_pack_start(GTK_BOX(state->combo_box), check, FALSE, FALSE, 0);
+                    gtk_widget_show(check);
+                }
+                state->combo_initialized = 1;
+                state->combo_revision = widget->combo_revision;
+            }
             rows = gtk_container_get_children(GTK_CONTAINER(state->combo_box));
-            for (row = rows; row; row = row->next) gtk_widget_destroy(GTK_WIDGET(row->data));
+            index = 0;
+            for (row = rows; row; row = row->next, ++index) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(row->data), xxwidgets_checkcombobox_checked(widget, index));
             g_list_free(rows);
-            for (index = 0; index < widget->item_count; ++index) {
-                GtkWidget *check = gtk_check_button_new_with_label(widget->items[index]);
-                g_object_set_data(G_OBJECT(check), "xxwidgets-index", GUINT_TO_POINTER((guint)index));
-                g_signal_connect(check, "toggled", G_CALLBACK(combo_checked), widget);
-                gtk_box_pack_start(GTK_BOX(state->combo_box), check, FALSE, FALSE, 0);
-                gtk_widget_show(check);
+            gtk_widget_set_size_request(state->combo_scroll, 24 * ((gtk_app_state *)widget->app->platform)->cell_width,
+                                        (int)(widget->item_count < 10 ? widget->item_count : 10) * ((gtk_app_state *)widget->app->platform)->cell_height + 8);
+            if (!widget->visible || !widget->enabled || !widget->parent->enabled || !widget->item_count)
+                gtk_widget_hide(GTK_WIDGET(gtk_menu_button_get_popover(GTK_MENU_BUTTON(native))));
+            break;
+        }
+        case XXWIDGETS_BUTTON:
+            if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), widget->text)) {
+                gtk_button_set_label(GTK_BUTTON(native), widget->text);
+                ellipsize_control_label(native);
             }
-            state->combo_initialized = 1; state->combo_revision = widget->combo_revision;
-        }
-        rows = gtk_container_get_children(GTK_CONTAINER(state->combo_box)); index = 0;
-        for (row = rows; row; row = row->next, ++index)
-            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(row->data), xxwidgets_checkcombobox_checked(widget, index));
-        g_list_free(rows);
-        gtk_widget_set_size_request(state->combo_scroll,
-            24 * ((gtk_app_state *)widget->app->platform)->cell_width,
-            (int)(widget->item_count < 10 ? widget->item_count : 10) * ((gtk_app_state *)widget->app->platform)->cell_height + 8);
-        if (!widget->visible || !widget->enabled || !widget->parent->enabled || !widget->item_count)
-            gtk_widget_hide(GTK_WIDGET(gtk_menu_button_get_popover(GTK_MENU_BUTTON(native))));
-        break;
-    }
-    case XXWIDGETS_BUTTON:
-        if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), widget->text)) {
-            gtk_button_set_label(GTK_BUTTON(native), widget->text);
-            ellipsize_control_label(native);
-        }
-        break;
-    case XXWIDGETS_EDIT:
-        /* Setting identical text still moves the caret in many native controls. */
-        if (strcmp(gtk_entry_get_text(GTK_ENTRY(native)), widget->text)) {
-            /* Show a long path's end, where the file name is. In the focused
-             * field the caret keeps its place around a small change, as when
-             * a '~' is expanded with the caret anywhere in the path. */
-            int position = -1;
-            if (gtk_widget_is_focus(native)) {
-                const char *old = gtk_entry_get_text(GTK_ENTRY(native));
-                const char *at = g_utf8_offset_to_pointer(old, gtk_editable_get_position(GTK_EDITABLE(native)));
-                size_t caret = xxwidgets_edit_caret(old, (size_t)(at - old), widget->text);
-                if (caret != SIZE_MAX) position = (int)g_utf8_pointer_to_offset(widget->text, widget->text + caret);
+            break;
+        case XXWIDGETS_EDIT:
+            /* Setting identical text still moves the caret in many native controls. */
+            if (strcmp(gtk_entry_get_text(GTK_ENTRY(native)), widget->text)) {
+                /* Show a long path's end, where the file name is. In the focused
+                 * field the caret keeps its place around a small change, as when
+                 * a '~' is expanded with the caret anywhere in the path. */
+                int position = -1;
+                if (gtk_widget_is_focus(native)) {
+                    const char *old = gtk_entry_get_text(GTK_ENTRY(native));
+                    const char *at = g_utf8_offset_to_pointer(old, gtk_editable_get_position(GTK_EDITABLE(native)));
+                    size_t caret = xxwidgets_edit_caret(old, (size_t)(at - old), widget->text);
+                    if (caret != SIZE_MAX) position = (int)g_utf8_pointer_to_offset(widget->text, widget->text + caret);
+                }
+                gtk_entry_set_text(GTK_ENTRY(native), widget->text);
+                gtk_editable_set_position(GTK_EDITABLE(native), position);
             }
-            gtk_entry_set_text(GTK_ENTRY(native), widget->text);
-            gtk_editable_set_position(GTK_EDITABLE(native), position);
-        }
-        break;
-    case XXWIDGETS_CHECKBOX:
-        if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), widget->text)) {
-            gtk_button_set_label(GTK_BUTTON(native), widget->text);
-            ellipsize_control_label(native);
-        }
-        if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(native)) != (widget->value != 0))
-            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(native), widget->value != 0);
-        break;
-    case XXWIDGETS_LISTBOX:
-    case XXWIDGETS_ARCHIVEVIEW:
-    case XXWIDGETS_HEXVIEW:
-        if (state->rendered_items > widget->item_count ||
-            (xxwidgets_formatted_rows(widget) &&
-             state->rendered_hex_revision != xxwidgets_row_revision(widget))) {
-            GList *rows = gtk_container_get_children(GTK_CONTAINER(native));
-            GList *row;
-            for (row = rows; row; row = row->next) gtk_widget_destroy(GTK_WIDGET(row->data));
-            g_list_free(rows);
-            state->rendered_items = 0;
-            state->rendered_hex_revision = xxwidgets_row_revision(widget);
-            state->scroll_selection = widget->value >= 0;
-        }
-        while (state->rendered_items < widget->item_count) {
-            GtkWidget *label = gtk_label_new(widget->items[state->rendered_items]);
-            gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
-            if (xxwidgets_formatted_rows(widget)) {
-                row_font_attributes(widget, label);
-                gtk_label_set_single_line_mode(GTK_LABEL(label), TRUE);
-            } else {
-                gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
-                gtk_widget_set_has_tooltip(label, TRUE);
-                g_signal_connect(label, "query-tooltip", G_CALLBACK(ellipsis_tooltip), NULL);
+            break;
+        case XXWIDGETS_CHECKBOX:
+            if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), widget->text)) {
+                gtk_button_set_label(GTK_BUTTON(native), widget->text);
+                ellipsize_control_label(native);
             }
-            gtk_widget_set_margin_start(label, 4);
-            gtk_widget_set_margin_end(label, 4);
-            gtk_container_add(GTK_CONTAINER(native), label);
-            gtk_widget_show_all(label);
-            /* The GtkListBox wraps the child in a row, which must also be shown. */
-            gtk_widget_show(gtk_widget_get_parent(label));
-            ++state->rendered_items;
-        }
-        {
-            GtkListBoxRow *row = gtk_list_box_get_selected_row(GTK_LIST_BOX(native));
-            int selected = row ? gtk_list_box_row_get_index(row) : -1;
-            if (selected != widget->value) {
-                gtk_list_box_select_row(GTK_LIST_BOX(native), widget->value < 0 ? NULL :
-                    gtk_list_box_get_row_at_index(GTK_LIST_BOX(native), widget->value));
+            if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(native)) != (widget->value != 0))
+                gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(native), widget->value != 0);
+            break;
+        case XXWIDGETS_LISTBOX:
+        case XXWIDGETS_ARCHIVEVIEW:
+        case XXWIDGETS_HEXVIEW:
+            if (state->rendered_items > widget->item_count || (xxwidgets_formatted_rows(widget) && state->rendered_hex_revision != xxwidgets_row_revision(widget))) {
+                GList *rows = gtk_container_get_children(GTK_CONTAINER(native));
+                GList *row;
+                for (row = rows; row; row = row->next) gtk_widget_destroy(GTK_WIDGET(row->data));
+                g_list_free(rows);
+                state->rendered_items = 0;
+                state->rendered_hex_revision = xxwidgets_row_revision(widget);
                 state->scroll_selection = widget->value >= 0;
-                gtk_widget_queue_resize(native);
             }
+            while (state->rendered_items < widget->item_count) {
+                GtkWidget *label = gtk_label_new(widget->items[state->rendered_items]);
+                gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+                if (xxwidgets_formatted_rows(widget)) {
+                    row_font_attributes(widget, label);
+                    gtk_label_set_single_line_mode(GTK_LABEL(label), TRUE);
+                } else {
+                    gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+                    gtk_widget_set_has_tooltip(label, TRUE);
+                    g_signal_connect(label, "query-tooltip", G_CALLBACK(ellipsis_tooltip), NULL);
+                }
+                gtk_widget_set_margin_start(label, 4);
+                gtk_widget_set_margin_end(label, 4);
+                gtk_container_add(GTK_CONTAINER(native), label);
+                gtk_widget_show_all(label);
+                /* The GtkListBox wraps the child in a row, which must also be shown. */
+                gtk_widget_show(gtk_widget_get_parent(label));
+                ++state->rendered_items;
+            }
+            {
+                GtkListBoxRow *row = gtk_list_box_get_selected_row(GTK_LIST_BOX(native));
+                int selected = row ? gtk_list_box_row_get_index(row) : -1;
+                if (selected != widget->value) {
+                    gtk_list_box_select_row(GTK_LIST_BOX(native), widget->value < 0 ? NULL : gtk_list_box_get_row_at_index(GTK_LIST_BOX(native), widget->value));
+                    state->scroll_selection = widget->value >= 0;
+                    gtk_widget_queue_resize(native);
+                }
+            }
+            atk_object_set_name(gtk_widget_get_accessible(native), widget->text);
+            /* An empty list is no Tab stop either. */
+            gtk_widget_set_can_focus(native, widget->item_count > 0);
+            break;
+        case XXWIDGETS_PROGRESS: {
+            /* An unchanged fraction still notifies, and each notify reaches
+             * assistive technology as a value change: the progress dialog
+             * re-syncs its bars on every pass of its loop. */
+            GtkProgressBar *bar = GTK_PROGRESS_BAR(native);
+            double fraction = CLAMP(widget->value / 100.0, 0.0, 1.0);
+            gboolean show = widget->text[0] != '\0';
+            if (gtk_progress_bar_get_fraction(bar) != fraction) gtk_progress_bar_set_fraction(bar, fraction);
+            if (g_strcmp0(gtk_progress_bar_get_text(bar), widget->text)) gtk_progress_bar_set_text(bar, widget->text);
+            if (gtk_progress_bar_get_show_text(bar) != show) gtk_progress_bar_set_show_text(bar, show);
+            break;
         }
-        atk_object_set_name(gtk_widget_get_accessible(native), widget->text);
-        /* An empty list is no Tab stop either. */
-        gtk_widget_set_can_focus(native, widget->item_count > 0);
-        break;
-    case XXWIDGETS_PROGRESS: {
-        /* An unchanged fraction still notifies, and each notify reaches
-         * assistive technology as a value change: the progress dialog
-         * re-syncs its bars on every pass of its loop. */
-        GtkProgressBar *bar = GTK_PROGRESS_BAR(native);
-        double fraction = CLAMP(widget->value / 100.0, 0.0, 1.0);
-        gboolean show = widget->text[0] != '\0';
-        if (gtk_progress_bar_get_fraction(bar) != fraction) gtk_progress_bar_set_fraction(bar, fraction);
-        if (g_strcmp0(gtk_progress_bar_get_text(bar), widget->text)) gtk_progress_bar_set_text(bar, widget->text);
-        if (gtk_progress_bar_get_show_text(bar) != show) gtk_progress_bar_set_show_text(bar, show);
-        break;
-    }
-    case XXWIDGETS_ARCHIVEBROWSER:
-        browser_sync(widget);
-        break;
-    case XXWIDGETS_SCANRESULTS:
-        scanresults_sync(widget);
-        break;
-    case XXWIDGETS_TREEVIEW: {
-        xxwidgets_status status = treeview_sync(widget);
-        if (status != XXWIDGETS_OK) return status;
-        break;
-    }
+        case XXWIDGETS_ARCHIVEBROWSER: browser_sync(widget); break;
+        case XXWIDGETS_SCANRESULTS: scanresults_sync(widget); break;
+        case XXWIDGETS_TREEVIEW: {
+            xxwidgets_status status = treeview_sync(widget);
+            if (status != XXWIDGETS_OK) return status;
+            break;
+        }
     }
     gtk_widget_set_sensitive(state->root, widget->enabled != 0);
     if (widget->kind == XXWIDGETS_WINDOW && (!widget->enabled || !widget->visible)) {
@@ -1838,13 +1788,13 @@ static xxwidgets_status gtk_read_text_backend(xxwidgets_widget *widget)
     GtkWidget *native = widget->native;
     const char *text;
     switch (widget->kind) {
-    case XXWIDGETS_WINDOW: text = gtk_window_get_title(GTK_WINDOW(native)); break;
-    case XXWIDGETS_LABEL: text = gtk_label_get_text(GTK_LABEL(native)); break;
-    case XXWIDGETS_BUTTON:
-    case XXWIDGETS_CHECKBOX: text = gtk_button_get_label(GTK_BUTTON(native)); break;
-    case XXWIDGETS_EDIT: text = gtk_entry_get_text(GTK_ENTRY(native)); break;
-    case XXWIDGETS_PROGRESS: text = gtk_progress_bar_get_text(GTK_PROGRESS_BAR(native)); break;
-    default: return XXWIDGETS_OK;
+        case XXWIDGETS_WINDOW: text = gtk_window_get_title(GTK_WINDOW(native)); break;
+        case XXWIDGETS_LABEL: text = gtk_label_get_text(GTK_LABEL(native)); break;
+        case XXWIDGETS_BUTTON:
+        case XXWIDGETS_CHECKBOX: text = gtk_button_get_label(GTK_BUTTON(native)); break;
+        case XXWIDGETS_EDIT: text = gtk_entry_get_text(GTK_ENTRY(native)); break;
+        case XXWIDGETS_PROGRESS: text = gtk_progress_bar_get_text(GTK_PROGRESS_BAR(native)); break;
+        default: return XXWIDGETS_OK;
     }
     return xxwidgets_store_text(widget, text ? text : "");
 }
@@ -1852,10 +1802,8 @@ static xxwidgets_status gtk_read_text_backend(xxwidgets_widget *widget)
 static xxwidgets_status gtk_read_value_backend(xxwidgets_widget *widget)
 {
     GtkWidget *native = widget->native;
-    if (widget->kind == XXWIDGETS_COMBOBOX)
-        widget->value = gtk_combo_box_get_active(GTK_COMBO_BOX(native));
-    else if (widget->kind == XXWIDGETS_CHECKBOX)
-        widget->value = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(native)) ? 1 : 0;
+    if (widget->kind == XXWIDGETS_COMBOBOX) widget->value = gtk_combo_box_get_active(GTK_COMBO_BOX(native));
+    else if (widget->kind == XXWIDGETS_CHECKBOX) widget->value = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(native)) ? 1 : 0;
     else if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
         browser_selection_read(widget, 0);
     } else if (widget->kind == XXWIDGETS_SCANRESULTS) {
@@ -1865,8 +1813,7 @@ static xxwidgets_status gtk_read_value_backend(xxwidgets_widget *widget)
     } else if (xxwidgets_list_kind(widget)) {
         GtkListBoxRow *row = gtk_list_box_get_selected_row(GTK_LIST_BOX(native));
         widget->value = row ? gtk_list_box_row_get_index(row) : -1;
-    } else if (widget->kind == XXWIDGETS_PROGRESS)
-        widget->value = (int)(gtk_progress_bar_get_fraction(GTK_PROGRESS_BAR(native)) * 100.0 + 0.5);
+    } else if (widget->kind == XXWIDGETS_PROGRESS) widget->value = (int)(gtk_progress_bar_get_fraction(GTK_PROGRESS_BAR(native)) * 100.0 + 0.5);
     return XXWIDGETS_OK;
 }
 
@@ -1901,9 +1848,13 @@ static gboolean options_key(GtkWidget *native, GdkEventKey *key, gpointer user)
 {
     xxwidgets_widget *dialog = user;
     (void)native;
-    if (key->keyval == GDK_KEY_Escape) { xxwidgets_emit(dialog, XXWIDGETS_EVENT_CLOSE, 0); return TRUE; }
+    if (key->keyval == GDK_KEY_Escape) {
+        xxwidgets_emit(dialog, XXWIDGETS_EVENT_CLOSE, 0);
+        return TRUE;
+    }
     if ((key->keyval == GDK_KEY_Return || key->keyval == GDK_KEY_KP_Enter) && dialog->app->modal_default) {
-        xxwidgets_emit(dialog->app->modal_default, XXWIDGETS_EVENT_CLICK, 0); return TRUE;
+        xxwidgets_emit(dialog->app->modal_default, XXWIDGETS_EVENT_CLICK, 0);
+        return TRUE;
     }
     return FALSE;
 }
@@ -1918,8 +1869,7 @@ static xxwidgets_status gtk_modal_owner(xxwidgets_widget *dialog, xxwidgets_widg
         gtk_window_set_position(window, GTK_WIN_POS_CENTER_ON_PARENT);
         g_signal_connect(window, "key-press-event", G_CALLBACK(options_key), dialog);
         for (widget = dialog->app->widgets; widget; widget = widget->next)
-            if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON &&
-                (widget == dialog->app->modal_default || !strcmp(widget->text, "OK"))) {
+            if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON && (widget == dialog->app->modal_default || !strcmp(widget->text, "OK"))) {
                 gtk_widget_set_can_default(GTK_WIDGET(widget->native), TRUE);
                 gtk_widget_grab_default(GTK_WIDGET(widget->native));
             }
@@ -1928,8 +1878,7 @@ static xxwidgets_status gtk_modal_owner(xxwidgets_widget *dialog, xxwidgets_widg
     return XXWIDGETS_OK;
 }
 
-static xxwidgets_status gtk_about_content(xxwidgets_widget *window,
-    const xxwidgets_about_dialog *about, const char *body)
+static xxwidgets_status gtk_about_content(xxwidgets_widget *window, const xxwidgets_about_dialog *about, const char *body)
 {
     gtk_app_state *app = window->app->platform;
     gtk_widget_state *state = window->platform;
@@ -1943,8 +1892,7 @@ static xxwidgets_status gtk_about_content(xxwidgets_widget *window,
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(text), FALSE);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(text), GTK_WRAP_WORD_CHAR);
     gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), body, -1);
-    gtk_widget_set_size_request(scroll, window->rect.width * app->cell_width - text_x - padding,
-                               17 * app->cell_height);
+    gtk_widget_set_size_request(scroll, window->rect.width * app->cell_width - text_x - padding, 17 * app->cell_height);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_container_add(GTK_CONTAINER(scroll), text);
     gtk_layout_put(GTK_LAYOUT(state->content), scroll, text_x, app->cell_height);
@@ -1952,21 +1900,18 @@ static xxwidgets_status gtk_about_content(xxwidgets_widget *window,
     font_attach(text, app->font_css[XXWIDGETS_FONT_TEXT_EDITS], GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     gtk_widget_show_all(scroll);
     if (about->image) {
-        GdkPixbuf *pixels = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8,
-                                         (int)about->image_width, (int)about->image_height);
+        GdkPixbuf *pixels = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, (int)about->image_width, (int)about->image_height);
         GdkPixbuf *scaled;
         GtkWidget *image;
         unsigned int row;
         int width = image_box, height = image_box;
         if (!pixels) return XXWIDGETS_OUT_OF_MEMORY;
         for (row = 0; row < about->image_height; ++row)
-            memcpy(gdk_pixbuf_get_pixels(pixels) + (size_t)row * gdk_pixbuf_get_rowstride(pixels),
-                   about->image + (size_t)row * about->image_width * 4, (size_t)about->image_width * 4);
-        if (about->image_width > about->image_height)
-            height = (int)((uint64_t)image_box * about->image_height / about->image_width);
+            memcpy(gdk_pixbuf_get_pixels(pixels) + (size_t)row * gdk_pixbuf_get_rowstride(pixels), about->image + (size_t)row * about->image_width * 4,
+                   (size_t)about->image_width * 4);
+        if (about->image_width > about->image_height) height = (int)((uint64_t)image_box * about->image_height / about->image_width);
         else width = (int)((uint64_t)image_box * about->image_width / about->image_height);
-        scaled = gdk_pixbuf_scale_simple(pixels, width > 0 ? width : 1, height > 0 ? height : 1,
-                                        GDK_INTERP_BILINEAR);
+        scaled = gdk_pixbuf_scale_simple(pixels, width > 0 ? width : 1, height > 0 ? height : 1, GDK_INTERP_BILINEAR);
         g_object_unref(pixels);
         if (!scaled) return XXWIDGETS_OUT_OF_MEMORY;
         image = gtk_image_new_from_pixbuf(scaled);
@@ -2026,8 +1971,7 @@ static void choose_file_start(GtkFileChooser *chooser, const char *initial, int 
             folder = g_get_current_dir();
         }
         gtk_file_chooser_set_current_folder(chooser, folder);
-        if (save && name[0] && strcmp(name, ".") && strcmp(name, G_DIR_SEPARATOR_S))
-            gtk_file_chooser_set_current_name(chooser, name);
+        if (save && name[0] && strcmp(name, ".") && strcmp(name, G_DIR_SEPARATOR_S)) gtk_file_chooser_set_current_name(chooser, name);
         g_free(folder);
         g_free(name);
     }
@@ -2051,20 +1995,18 @@ static void chooser_mapped(GtkWidget *dialog, gpointer data)
     if (width > max_width) width = max_width;
     if (height > max_height) height = max_height;
     gtk_window_resize(GTK_WINDOW(dialog), width, height);
-    gtk_window_move(GTK_WINDOW(dialog), area.x + (area.width - frame_width - width) / 2,
-        area.y + (area.height - frame_height - height) / 2);
+    gtk_window_move(GTK_WINDOW(dialog), area.x + (area.width - frame_width - width) / 2, area.y + (area.height - frame_height - height) / 2);
 }
 
-static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_dialog_mode mode,
-    const char *title, const char *initial, char **path, int *accepted)
+static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_dialog_mode mode, const char *title, const char *initial, char **path, int *accepted)
 {
     int save = mode == XXWIDGETS_FILE_DIALOG_SAVE;
     GtkWidget *dialog;
     GtkFileChooser *chooser;
     xxwidgets_status status = XXWIDGETS_OK;
-    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title : (save ? "Save File" : "Open File"),
-        GTK_WINDOW(owner->native), save ? GTK_FILE_CHOOSER_ACTION_SAVE : GTK_FILE_CHOOSER_ACTION_OPEN,
-        "_Cancel", GTK_RESPONSE_CANCEL, save ? "_Save" : "_Open", GTK_RESPONSE_ACCEPT, NULL);
+    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title : (save ? "Save File" : "Open File"), GTK_WINDOW(owner->native),
+                                         save ? GTK_FILE_CHOOSER_ACTION_SAVE : GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", GTK_RESPONSE_CANCEL, save ? "_Save" : "_Open",
+                                         GTK_RESPONSE_ACCEPT, NULL);
     if (!dialog) return XXWIDGETS_PLATFORM_ERROR;
     /* Destroying the window from outside during gtk_dialog_run must not free
      * the dialog under us. */
@@ -2094,9 +2036,23 @@ static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_
     return status;
 }
 
-const xxwidgets_backend_ops xxwidgets_native_ops = {
-    "GTK3", gtk_init_backend, gtk_shutdown_backend, gtk_poll_backend,
-    gtk_create_backend, gtk_destroy_backend, gtk_sync_backend,
-    gtk_read_text_backend, gtk_read_value_backend, gtk_focus_backend, gtk_modal_owner, gtk_about_content, gtk_copy_text,
-    gtk_apply_fonts, NULL, gtk_preview_font, NULL, NULL, gtk_choose_file, gtk_has_focus
-};
+const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
+                                                    gtk_init_backend,
+                                                    gtk_shutdown_backend,
+                                                    gtk_poll_backend,
+                                                    gtk_create_backend,
+                                                    gtk_destroy_backend,
+                                                    gtk_sync_backend,
+                                                    gtk_read_text_backend,
+                                                    gtk_read_value_backend,
+                                                    gtk_focus_backend,
+                                                    gtk_modal_owner,
+                                                    gtk_about_content,
+                                                    gtk_copy_text,
+                                                    gtk_apply_fonts,
+                                                    NULL,
+                                                    gtk_preview_font,
+                                                    NULL,
+                                                    NULL,
+                                                    gtk_choose_file,
+                                                    gtk_has_focus};

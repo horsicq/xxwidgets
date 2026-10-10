@@ -29,11 +29,9 @@ typedef struct xxwidgets_context_config {
  * verbs are never modified. Configuration strings are borrowed for each call.
  * Other platforms return UNAVAILABLE. Native errors set Win32 GetLastError.
  */
-XXWIDGETS_API xxwidgets_status xxwidgets_context_is_registered(
-    const xxwidgets_context_config *config, int *registered);
+XXWIDGETS_API xxwidgets_status xxwidgets_context_is_registered(const xxwidgets_context_config *config, int *registered);
 XXWIDGETS_API xxwidgets_status xxwidgets_context_register(const xxwidgets_context_config *config);
-XXWIDGETS_API xxwidgets_status xxwidgets_context_set_enabled(
-    const xxwidgets_context_config *config, int enabled);
+XXWIDGETS_API xxwidgets_status xxwidgets_context_set_enabled(const xxwidgets_context_config *config, int enabled);
 
 /* An embeddable options form. It owns copied configuration and a checkbox,
  * Apply button and status label; bounds use text cells (width >= 36, height >= 6).
@@ -49,12 +47,10 @@ typedef enum xxwidgets_context_options_control_id {
     XXWIDGETS_CONTEXT_OPTIONS_STATUS,
     XXWIDGETS_CONTEXT_OPTIONS_CONTROL_COUNT
 } xxwidgets_context_options_control_id;
-XXWIDGETS_API xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner,
-    xxwidgets_rect bounds, const xxwidgets_context_config *config,
-    xxwidgets_context_options **out_options);
+XXWIDGETS_API xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidgets_context_config *config,
+                                                                xxwidgets_context_options **out_options);
 XXWIDGETS_API xxwidgets_status xxwidgets_context_options_destroy(xxwidgets_context_options *options);
-XXWIDGETS_API xxwidgets_widget *xxwidgets_context_options_control(
-    const xxwidgets_context_options *options, xxwidgets_context_options_control_id control);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_context_options_control(const xxwidgets_context_options *options, xxwidgets_context_options_control_id control);
 XXWIDGETS_API xxwidgets_status xxwidgets_context_options_refresh(xxwidgets_context_options *options);
 XXWIDGETS_API xxwidgets_status xxwidgets_context_options_apply(xxwidgets_context_options *options);
 
@@ -62,8 +58,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_context_options_apply(xxwidgets_context
  * Cancel performs no registry writes. accepted becomes 1 only after successful
  * application, and remains 0 on Cancel/error. Call outside callbacks/polling.
  */
-XXWIDGETS_API xxwidgets_status xxwidgets_context_options_dialog(xxwidgets_widget *owner,
-    const char *title, const xxwidgets_context_config *config, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_context_options_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_context_config *config, int *accepted);
 
 #ifdef __cplusplus
 }

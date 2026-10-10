@@ -41,18 +41,15 @@ enum {
  * its owner/app; borrowed control handles must not be destroyed separately.
  * BUTTON clicks are handled by the application; call show_report after polling.
  */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner,
-    xxwidgets_rect bounds, xxwidgets_scan_panel **out_panel);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_panel **out_panel);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_destroy(xxwidgets_scan_panel *panel);
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_rect(xxwidgets_scan_panel *panel,
-    xxwidgets_rect bounds);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_rect(xxwidgets_scan_panel *panel, xxwidgets_rect bounds);
 /* Borrowed handles also allow an application to place controls using pixels.
  * FILE_TYPE is a normal COMBOBOX initially containing selected "Automatic"
  * with UINT64 value 0. Replace its records using xxwidgets_combobox_set_records
  * and handle its SELECT event in the application to rescan the current file.
  * Labels and values use the regular combo ownership and selection contract. */
-XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_panel_control(
-    const xxwidgets_scan_panel *panel, xxwidgets_scan_panel_control_id control);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_panel_control(const xxwidgets_scan_panel *panel, xxwidgets_scan_panel_control_id control);
 
 /* Flags use the six bits above. Database checks select Extra and Custom; the
  * main database is always used. Setters emit no input events. Defaults are
@@ -68,14 +65,12 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_databases(const xxwidget
  * expansion/selection, and emits no input events. Complete report text is
  * copied separately so nested engine output need not be parsed or flattened.
  */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_results(xxwidgets_scan_panel *panel,
-    const char *file_label, const xxwidgets_scan_result *results, size_t count,
-    const char *report);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_results(xxwidgets_scan_panel *panel, const char *file_label, const xxwidgets_scan_result *results, size_t count,
+                                                                const char *report);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_clear(xxwidgets_scan_panel *panel);
 XXWIDGETS_API size_t xxwidgets_scan_panel_count(const xxwidgets_scan_panel *panel);
 /* required includes NUL; short output remains valid UTF-8. */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_report(const xxwidgets_scan_panel *panel,
-    char *buffer, size_t capacity, size_t *required);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_report(const xxwidgets_scan_panel *panel, char *buffer, size_t capacity, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_show_report(xxwidgets_scan_panel *panel);
 
 #ifdef __cplusplus

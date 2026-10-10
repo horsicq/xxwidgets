@@ -37,14 +37,12 @@ static void process_event(xxwidgets_app *app, const xxwidgets_event *event, void
 {
     process_state *state = (process_state *)user;
     (void)app;
-    if ((event->type == XXWIDGETS_EVENT_CLOSE &&
-            (event->widget == state->window || event->widget == state->owner)) ||
+    if ((event->type == XXWIDGETS_EVENT_CLOSE && (event->widget == state->window || event->widget == state->owner)) ||
         (event->type == XXWIDGETS_EVENT_CLICK && event->widget == state->cancel))
         state->stop_requested = 1;
 }
 
-static xxwidgets_status process_update(xxwidgets_app *app, process_state *state,
-    xx_pd_struct *progress, xxwidgets_process_update_fn update, void *user, int *finished)
+static xxwidgets_status process_update(xxwidgets_app *app, process_state *state, xx_pd_struct *progress, xxwidgets_process_update_fn update, void *user, int *finished)
 {
     xxwidgets_status status;
     state->stop_requested |= progress->is_stop != 0;
@@ -67,8 +65,7 @@ static int process_percent(uint64_t current, uint64_t total)
      * overflow or rounding 99.999... up to 100 on platforms with 64-bit double. */
     while (high - low > 1) {
         int middle = (low + high) / 2;
-        uint64_t threshold = (total / 100) * (unsigned int)middle +
-            ((total % 100) * (unsigned int)middle + 99) / 100;
+        uint64_t threshold = (total / 100) * (unsigned int)middle + ((total % 100) * (unsigned int)middle + 99) / 100;
         if (current >= threshold) low = middle;
         else high = middle;
     }
@@ -102,8 +99,7 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
         int busy = record->is_busy != 0;
         if (busy) {
             process_status(label, record->status, sizeof(record->status));
-            if (record->total)
-                snprintf(text, sizeof(text), "[%" PRIu64 "/%" PRIu64 "] %s", record->current, record->total, label);
+            if (record->total) snprintf(text, sizeof(text), "[%" PRIu64 "/%" PRIu64 "] %s", record->current, record->total, label);
             else snprintf(text, sizeof(text), "[%" PRIu64 "/?] %s", record->current, label);
             status = xxwidgets_widget_set_text(state->labels[i], text);
             if (status != XXWIDGETS_OK) return status;
@@ -131,10 +127,13 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
         if (status != XXWIDGETS_OK) return status;
         snprintf(state->elapsed_text, sizeof(state->elapsed_text), "%s", text);
     }
-    rect.y = row * 3 + 1; rect.width = columns - 22;
+    rect.y = row * 3 + 1;
+    rect.width = columns - 22;
     status = xxwidgets_widget_set_rect(state->elapsed, rect);
     if (status != XXWIDGETS_OK) return status;
-    rect.x = columns - 16; rect.width = 14; rect.height = 2;
+    rect.x = columns - 16;
+    rect.width = 14;
+    rect.height = 2;
     status = xxwidgets_widget_set_rect(state->cancel, rect);
     if (status != XXWIDGETS_OK) return status;
     if (state->stop_requested) {
@@ -146,7 +145,8 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
     /* The window is asked for its height only when that changes. Asking on
      * every pass fought the size a user, the window manager or a small screen
      * gave it, and each answer started the next pass at once. */
-    rect = state->window->rect; rect.height = row * 3 + 5;
+    rect = state->window->rect;
+    rect.height = row * 3 + 5;
     if (rect.height == state->minimum_rows) return XXWIDGETS_OK;
     /* The 64 columns as a minimum, which the backend fits to the screen:
      * a width clamped on a small screen grows back when the screen does. */
@@ -180,14 +180,15 @@ static xxwidgets_status process_create(xxwidgets_app *app, process_state *state)
     }
     status = xxwidgets_widget_create(app, state->window, XXWIDGETS_LABEL, "", rect, &state->elapsed);
     if (status != XXWIDGETS_OK) return status;
-    rect.x = 48; rect.width = 14; rect.height = 2;
+    rect.x = 48;
+    rect.width = 14;
+    rect.height = 2;
     status = xxwidgets_widget_create(app, state->window, XXWIDGETS_BUTTON, "Cancel", rect, &state->cancel);
     if (status == XXWIDGETS_OK) app->modal_default = state->cancel;
     return status;
 }
 
-xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *title,
-    xx_pd_struct *progress, xxwidgets_process_update_fn update, void *user)
+xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *title, xx_pd_struct *progress, xxwidgets_process_update_fn update, void *user)
 {
     process_state state = {0};
     xxwidgets_app *app;
@@ -198,19 +199,22 @@ xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *t
     xxwidgets_status status, cleanup;
     uint64_t started, now;
     int owner_enabled, modal_attached = 0, finished = 0, updated = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !progress || !update)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !progress || !update) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit)
-        return XXWIDGETS_BUSY;
+    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     status = xxwidgets_process_clock(&started);
     if (status != XXWIDGETS_OK) return status;
     state.owner = owner;
-    previous_event = app->on_event; previous_user = app->user_data;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
     owner_enabled = owner->enabled;
     for (widget = app->widgets; widget; widget = widget->next)
-        if (widget->parent == owner && xxwidgets_focusable(widget)) { previous_focus = widget; break; }
-    app->on_event = process_event; app->user_data = &state;
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            previous_focus = widget;
+            break;
+        }
+    app->on_event = process_event;
+    app->user_data = &state;
     status = xxwidgets_widget_set_enabled(owner, 0);
     while (status == XXWIDGETS_OK && !app->quit) {
         updated = 1;
@@ -220,7 +224,8 @@ xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *t
         if (status != XXWIDGETS_OK) break;
         if (!state.window && now - started > 1000) {
             rect = owner->rect;
-            rect.width = 64; rect.height = 20;
+            rect.width = 64;
+            rect.height = 20;
             if (app->backend == XXWIDGETS_BACKEND_TUI) {
                 if (owner->rect.width > rect.width) rect.x += (owner->rect.width - rect.width) / 2;
                 if (owner->rect.height > rect.height) rect.y += (owner->rect.height - rect.height) / 2;
@@ -264,8 +269,10 @@ xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *t
         cleanup = xxwidgets_widget_destroy(state.window);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    app->modal_window = NULL; app->modal_default = NULL;
-    app->on_event = previous_event; app->user_data = previous_user;
+    app->modal_window = NULL;
+    app->modal_default = NULL;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
     if (previous_focus) xxwidgets_widget_focus(previous_focus);
     return status;
 }
