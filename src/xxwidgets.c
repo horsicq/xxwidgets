@@ -234,6 +234,11 @@ void xxwidgets_app_quit(xxwidgets_app *app, int exit_code)
     }
 }
 
+void xxwidgets_app_set_create_hidden(xxwidgets_app* app, int hidden)
+{
+  if (app) app->create_hidden = hidden != 0;
+}
+
 const char *xxwidgets_status_string(xxwidgets_status status)
 {
     switch (status) {
@@ -270,7 +275,7 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     widget->parent = parent;
     widget->kind = kind;
     widget->rect = rect;
-    widget->visible = 1;
+    widget->visible = (kind == XXWIDGETS_WINDOW && app->create_hidden) ? 0 : 1;
     widget->enabled = 1;
     widget->value = (xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget)) ? -1 : 0;
     widget->hex_columns = 16;

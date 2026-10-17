@@ -451,6 +451,8 @@ XXWIDGETS_API size_t xxwidgets_archivebrowser_column_count(const xxwidgets_widge
 XXWIDGETS_API const char *xxwidgets_archivebrowser_column_title(const xxwidgets_widget *widget, size_t column);
 XXWIDGETS_API const char *xxwidgets_archivebrowser_cell(const xxwidgets_widget *widget, size_t row, xxwidgets_archive_column column);
 
+XXWIDGETS_API void xxwidgets_app_set_create_hidden(xxwidgets_app* app, int hidden);
+
 #ifdef __cplusplus
 }
 #endif
