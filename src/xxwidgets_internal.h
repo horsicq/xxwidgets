@@ -46,6 +46,7 @@ struct xxwidgets_app {
     int dispatch_depth;
     int syncing; /* Backend signal handlers suppress programmatic notifications. */
     int polling;
+    int create_hidden;
     xxwidgets_widget *modal_window;
     xxwidgets_widget *modal_default;
     xxwidgets_font_options font_options;
