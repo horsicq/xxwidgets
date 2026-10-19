@@ -1,3 +1,24 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #include "xxwidgets_internal.h"
 
 #include <limits.h>
@@ -7,10 +28,19 @@
 static const size_t minimum_widths[4] = {12, 24, 12, 4};
 static const size_t maximum_widths[3] = {24, 48, 24};
 
+void xxwidgets_scanresults_init(xxwidgets_widget *widget)
+{
+    size_t column;
+    for (column = 0; column < 4; ++column) widget->scan_column_width[column] = minimum_widths[column];
+}
+
 static int scan_widget(const xxwidgets_widget *widget)
 {
     return widget && widget->kind == XXWIDGETS_SCANRESULTS;
 }
+
+static int scan_table_widget(const xxwidgets_widget *widget)
+{ return scan_widget(widget) || (widget && widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER); }
 
 static const char *stored_field(const xxwidgets_scan_result *result, size_t column)
 {
@@ -111,21 +141,21 @@ static size_t prefix_bytes(const char *text, size_t columns)
     return (size_t)(source - (const unsigned char *)text);
 }
 
-static xxwidgets_status format_row(char **cells, const size_t widths[4], char **out, size_t *out_columns)
+static xxwidgets_status format_row(char **cells, const size_t widths[4], size_t count, char **out, size_t *out_columns)
 {
-    size_t column, length = 6, columns = 6, position = 0;
+    size_t column, length = (count - 1) * 2, columns = (count - 1) * 2, position = 0;
     char *row;
-    for (column = 0; column < 4; ++column) {
+    for (column = 0; column < count; ++column) {
         size_t bytes = strlen(cells[column]);
         if (bytes > SIZE_MAX - length - 1 || widths[column] > SIZE_MAX - length - bytes - 1) return XXWIDGETS_INVALID_ARGUMENT;
         length += bytes + widths[column];
     }
     row = (char *)malloc(length + 1);
     if (!row) return XXWIDGETS_OUT_OF_MEMORY;
-    for (column = 0; column < 4; ++column) {
+    for (column = 0; column < count; ++column) {
         const char *cell = cells[column];
         size_t width = utf8_columns(cell), bytes = strlen(cell), displayed = width;
-        int clipped = column < 3 && width > widths[column];
+        int clipped = column + 1 < count && width > widths[column];
         if (clipped) {
             displayed = widths[column];
             bytes = prefix_bytes(cell, displayed - 3);
@@ -136,7 +166,7 @@ static xxwidgets_status format_row(char **cells, const size_t widths[4], char **
             memcpy(row + position, "...", 3);
             position += 3;
         }
-        if (column < 3) {
+        if (column + 1 < count) {
             size_t padding = widths[column] > displayed ? widths[column] - displayed : 0;
             memset(row + position, ' ', padding + 2);
             position += padding + 2;
@@ -158,7 +188,7 @@ static xxwidgets_status sync_scan(xxwidgets_widget *widget)
     return status;
 }
 
-xxwidgets_status xxwidgets_scanresults_set_results(xxwidgets_widget *widget, const xxwidgets_scan_result *results, size_t count)
+xxwidgets_status xxwidgets_scanresults_set_table_results(xxwidgets_widget *widget, const xxwidgets_scan_result *results, size_t count)
 {
     xxwidgets_scan_result *copies = NULL, *previous_results;
     char **cells = NULL, **rows = NULL, **previous_cells, **previous_rows;
@@ -167,12 +197,13 @@ xxwidgets_status xxwidgets_scanresults_set_results(xxwidgets_widget *widget, con
     uint64_t previous_revision;
     int previous_value;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!scan_widget(widget) || (!results && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*copies) || count > SIZE_MAX / (4 * sizeof(*cells)))
+    if (!scan_table_widget(widget) || (!results && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*copies) || count > SIZE_MAX / (4 * sizeof(*cells)))
         return XXWIDGETS_INVALID_ARGUMENT;
     for (row = 0; row < count; ++row)
         for (column = 0; column < 4; ++column)
             if (!xxwidgets_valid_utf8(result_field(&results[row], column))) return XXWIDGETS_INVALID_ARGUMENT;
     memcpy(widths, minimum_widths, sizeof(widths));
+    if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) { widths[0] = 32; widths[1] = 12; }
     if (count) {
         copies = (xxwidgets_scan_result *)calloc(count, sizeof(*copies));
         cells = (char **)calloc(count * 4, sizeof(*cells));
@@ -193,12 +224,15 @@ xxwidgets_status xxwidgets_scanresults_set_results(xxwidgets_widget *widget, con
             set_field(&copies[row], column, copy);
             status = escape_cell(copy, &cells[row * 4 + column], &width);
             if (status != XXWIDGETS_OK) goto failed;
-            if (column < 3 && width > maximum_widths[column]) width = maximum_widths[column];
+            if (column < 3) {
+                size_t maximum = widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER && column == 0 ? 64 : maximum_widths[column];
+                if (width > maximum) width = maximum;
+            }
             if (width > widths[column]) widths[column] = width;
         }
     for (row = 0; row < count; ++row) {
         size_t row_columns;
-        status = format_row(&cells[row * 4], widths, &rows[row], &row_columns);
+        status = format_row(&cells[row * 4], widths, widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ? 2 : 4, &rows[row], &row_columns);
         if (status != XXWIDGETS_OK) goto failed;
         if (row_columns > columns) columns = row_columns;
     }
@@ -217,6 +251,8 @@ xxwidgets_status xxwidgets_scanresults_set_results(xxwidgets_widget *widget, con
     widget->archive_columns = columns;
     widget->scan_revision = previous_revision + 1;
     widget->value = count ? 0 : -1;
+    if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER && widget->process_selection >= 0 && (size_t)widget->process_selection < count)
+        widget->value = widget->process_selection;
     memcpy(widget->scan_column_width, widths, sizeof(widths));
     status = sync_scan(widget);
     if (status != XXWIDGETS_OK) {
@@ -238,6 +274,12 @@ failed:
     free_results(copies, cells, count);
     free_rows(rows, count);
     return status;
+}
+
+xxwidgets_status xxwidgets_scanresults_set_results(xxwidgets_widget *widget, const xxwidgets_scan_result *results, size_t count)
+{
+    if (!scan_widget(widget)) return XXWIDGETS_INVALID_ARGUMENT;
+    return xxwidgets_scanresults_set_table_results(widget, results, count);
 }
 
 xxwidgets_status xxwidgets_scanresults_clear(xxwidgets_widget *widget)
@@ -276,12 +318,12 @@ xxwidgets_status xxwidgets_scanresults_get_selection(xxwidgets_widget *widget, s
 
 const char *xxwidgets_scanresults_cell(const xxwidgets_widget *widget, size_t row, size_t column)
 {
-    return scan_widget(widget) && row < widget->item_count && column < 4 ? widget->scan_cells[row * 4 + column] : "";
+    return scan_table_widget(widget) && row < widget->item_count && column < 4 ? widget->scan_cells[row * 4 + column] : "";
 }
 
 size_t xxwidgets_scanresults_column_width(const xxwidgets_widget *widget, size_t column)
 {
-    return scan_widget(widget) && column < 4 ? widget->scan_column_width[column] : 0;
+    return scan_table_widget(widget) && column < 4 ? widget->scan_column_width[column] : 0;
 }
 
 static void report_append(char *buffer, size_t capacity, size_t *position, int *full, const char *text)

@@ -1,8 +1,31 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef XXWIDGETS_INTERNAL_H
 #define XXWIDGETS_INTERNAL_H
 
 #include "xxwidgets/xxwidgets.h"
 #include "xxwidgets/xxwidgets_font_options.h"
+#include "xxwidgets/xxwidgets_canvas.h"
+#include "xxwidgets/xxwidget_systemprocessesviewer.h"
 
 typedef struct xxwidgets_backend_ops {
     const char *name;
@@ -25,6 +48,9 @@ typedef struct xxwidgets_backend_ops {
     xxwidgets_status (*optimization_options_layout)(xxwidgets_widget *dialog, int refresh);
     xxwidgets_status (*choose_file)(xxwidgets_widget *owner, xxwidgets_file_dialog_mode mode, const char *title, const char *initial, char **path, int *accepted);
     int (*has_focus)(const xxwidgets_widget *widget);
+    xxwidgets_status (*accept_file_drops)(xxwidgets_widget *window, int accept);
+    size_t (*hexview_page_rows)(const xxwidgets_widget *widget);
+    xxwidgets_status (*paste_text)(xxwidgets_widget *, char *, size_t, size_t *);
 } xxwidgets_backend_ops;
 
 struct xxwidgets_about_dialog {
@@ -66,6 +92,39 @@ struct xxwidgets_widget {
     uint64_t hex_base;
     unsigned int hex_columns;
     uint64_t hex_revision;
+    xxwidgets_hex_display hex_display;
+    size_t hex_widths[3];
+    char hex_cell[1024], hex_title[1024]; /* Backend scratch, valid until next cell/title request. */
+    unsigned int hex_header, hex_menu_index;
+    int hex_menu_open;
+    int hex_editable;
+    size_t hex_anchor, hex_anchor_bytes, hex_selection, hex_selection_length;
+    xxwidgets_hexview_source_read_fn hex_source_read;
+    xxwidgets_hexview_source_seek_fn hex_source_seek;
+    void *hex_source_user;
+    uint64_t hex_source_size, hex_source_anchor, hex_source_anchor_bytes;
+    uint64_t hex_source_selection, hex_source_length;
+    xxwidgets_hexview_copy_fn hex_copy_handler;
+    void *hex_copy_user;
+    xxwidgets_hexview_dump_fn hex_dump_handler;
+    void *hex_dump_user;
+    xxwidgets_hexview_input_fn hex_input_handler;
+    void *hex_input_user;
+    xxwidgets_hexview_highlight *hex_highlights;
+    size_t hex_highlight_count;
+    int hex_source_seeking;
+    int hex_dragging, hex_pending_dump;
+    size_t hex_cursor;
+    unsigned int hex_nibble, hex_pending_surrogate;
+    /* Keep a vertical or row-edge move's byte column and requested row even
+     * when the selected scalar starts before that slot or on the preceding row. */
+    size_t hex_vertical_column, hex_vertical_row;
+    uint64_t hex_source_vertical_row; /* Absolute file row for attached sources. */
+    int hex_vertical_active;
+    /* Transient hints valid only while the backend syncs a HexView update. */
+    int hex_sync_full;
+    size_t hex_sync_dirty_count;
+    size_t hex_sync_dirty_rows[3];
     xxwidgets_archive_entry *archive_entries;
     uint64_t archive_revision;
     size_t archive_columns; /* Longest formatted row in Unicode scalars. */
@@ -74,25 +133,51 @@ struct xxwidgets_widget {
     struct xxwidgets_combo_state *combo;
     uint64_t combo_revision;
     xxwidgets_scan_result *scan_results;
+    xxwidgets_process_info *processes; /* Names/paths borrow scan_results strings. */
+    struct xxwidgets_binaryviewer_state *binaryviewer;
+    uint64_t binary_revision;
+    int process_selection; /* Transactional replacement selection hint. */
     char **scan_cells; /* Escaped cells, row * 4 + column. */
     size_t scan_column_width[4];
     uint64_t scan_revision;
+    struct xxwidgets_data_struct_field *data_struct_fields;
+    char **data_struct_cells; /* Escaped cells, row * 9 + column. */
+    size_t data_struct_column_width[9];
+    uint64_t data_struct_revision;
     struct xxwidgets_tree_state *tree;
     uint64_t tree_revision;
     uint64_t tree_content_revision;
     struct xxwidgets_shortcut_binding *shortcuts;
     size_t shortcut_count;
+    xxwidgets_shortcut_filter_fn shortcut_filter; void *shortcut_filter_user;
     /* WINDOW: xxwidgets_window_set_minimum_size; backends without a resize
      * limit ignore it. */
     int min_columns, min_rows, has_minimum;
+    int accept_file_drops;
+    struct xxwidgets_entropy *entropy; /* Borrowed composite owner. */
+    struct xxwidgets_entropy_sample *entropy_plot_samples; /* Owned standalone plot data. */
+    size_t entropy_plot_count;
+    uint64_t entropy_plot_base, entropy_plot_size;
+    char **entropy_cells;
+    uint64_t entropy_revision;
+    uint32_t *canvas_pixels; unsigned int canvas_width,canvas_height; uint64_t canvas_revision;
+    xxwidgets_canvas_label *canvas_labels;size_t canvas_label_count;
     int value;
     int visible;
     int enabled;
+    int keep_end; /* LABEL: a text too long for it loses its middle, not its end (a path). */
     void *user_data;
     void *native;
     void *platform; /* Optional backend-specific auxiliary state. */
 };
 
+void xxwidgets_canvas_dispose(xxwidgets_widget *);
+void xxwidgets_canvas_fit(const xxwidgets_widget *,double,double,double *,double *,double *,double *);
+void xxwidgets_canvas_input(xxwidgets_widget *,double,double,double,double);
+int xxwidgets_canvas_key(xxwidgets_widget *,int);
+void xxwidgets_splitter_input(xxwidgets_widget *,double,double,double,double);
+int xxwidgets_splitter_key(xxwidgets_widget *,int);
+void xxwidgets_emit_point(xxwidgets_widget *,xxwidgets_event_type,int,int,int);
 char *xxwidgets_strdup(const char *text);
 int xxwidgets_valid_utf8(const char *text);
 /* Backend input helpers update cached state before dispatch. */
@@ -101,13 +186,15 @@ xxwidgets_status xxwidgets_store_text(xxwidgets_widget *widget, const char *text
  * offset into now, or SIZE_MAX for the end. caret is a byte offset into old. */
 size_t xxwidgets_edit_caret(const char *old, size_t caret, const char *now);
 void xxwidgets_emit(xxwidgets_widget *widget, xxwidgets_event_type type, int value);
+int xxwidgets_can_drop_files(const xxwidgets_widget *window);
+int xxwidgets_emit_drop_files(xxwidgets_widget *window, const char *const *paths, size_t count);
 enum {
     XXWIDGETS_MOD_CTRL = 1,
     XXWIDGETS_MOD_ALT = 2,
     XXWIDGETS_MOD_SHIFT = 4,
     XXWIDGETS_MOD_META = 8,
-    XXWIDGETS_KEY_F1 = 0x100,
-    XXWIDGETS_KEY_ESCAPE = 0x200,
+    XXWIDGETS_KEY_F1 = 0x110000,
+    XXWIDGETS_KEY_ESCAPE = 0x110100,
     XXWIDGETS_KEY_ENTER,
     XXWIDGETS_KEY_TAB,
     XXWIDGETS_KEY_BACKSPACE,
@@ -124,6 +211,7 @@ enum {
 };
 /* Return 1 when consumed. No references into the list survive the callback. */
 int xxwidgets_shortcut_dispatch(xxwidgets_widget *window, unsigned int key, unsigned int modifiers);
+void xxwidgets_shortcuts_dispose(xxwidgets_widget *widget);
 /* Native context-menu request coordinates are pixels relative to the widget's
  * container. The event exists only for the duration of the callback. */
 void xxwidgets_emit_context(xxwidgets_widget *widget, int value, int x, int y);
@@ -140,10 +228,23 @@ int xxwidgets_checkcombobox_checked(const xxwidgets_widget *widget, size_t index
 xxwidgets_status xxwidgets_checkcombobox_user_toggle(xxwidgets_widget *widget, size_t index);
 xxwidgets_status xxwidgets_checkcombobox_set_mask(xxwidgets_widget *widget, unsigned int mask, size_t count);
 
+static inline int xxwidgets_entropy_table(const xxwidgets_widget *widget)
+{ return widget && (widget->kind == XXWIDGETS_ENTROPY_REGIONS || widget->kind == XXWIDGETS_ENTROPY_BYTES); }
+static inline int xxwidgets_binaryviewer_kind(const xxwidgets_widget *widget)
+{ return widget && widget->kind >= XXWIDGET_RESOURCESVIEWER && widget->kind <= XXWIDGET_SYMBOLSVIEWER; }
+static inline int xxwidgets_tabular_kind(const xxwidgets_widget *widget)
+{ return widget && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget)); }
+/* Plot primitives use top-left coordinates, RGB colors, and borrowed text.
+ * kind: 0=line, 1=filled rectangle, 2=text. */
+typedef void (*xxwidgets_plot_draw_fn)(void *user, int kind, double x, double y, double x2, double y2, uint32_t rgb, const char *text);
+void xxwidgets_entropy_draw(const xxwidgets_widget *widget, double width, double height, double cell_x, double cell_y, xxwidgets_plot_draw_fn draw, void *user);
+void xxwidgets_entropy_plot_input(xxwidgets_widget *widget, double x, double width, double cell_x);
+void xxwidgets_entropy_table_dispose(xxwidgets_widget *widget);
+const char *xxwidgets_entropy_cell(const xxwidgets_widget *widget, size_t row, size_t column);
 static inline int xxwidgets_formatted_rows(const xxwidgets_widget *widget)
 {
     return widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGETS_ARCHIVEBROWSER ||
-           widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGETS_TREEVIEW;
+           widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_TREEVIEW || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget);
 }
 static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 {
@@ -151,14 +252,58 @@ static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 }
 static inline uint64_t xxwidgets_row_revision(const xxwidgets_widget *widget)
 {
-    return widget->kind == XXWIDGETS_TREEVIEW         ? widget->tree_revision
-           : widget->kind == XXWIDGETS_SCANRESULTS    ? widget->scan_revision
+    return xxwidgets_binaryviewer_kind(widget) ? widget->binary_revision
+           : xxwidgets_entropy_table(widget) ? widget->entropy_revision
+           : widget->kind == XXWIDGETS_TREEVIEW         ? widget->tree_revision
+           : (widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) ? widget->scan_revision
+           : widget->kind == XXWIDGETS_DATA_STRUCT_TABLE ? widget->data_struct_revision
            : widget->kind == XXWIDGETS_ARCHIVEBROWSER ? widget->browser_revision
            : widget->kind == XXWIDGETS_ARCHIVEVIEW    ? widget->archive_revision
                                                       : widget->hex_revision;
 }
 
+/* Backend input helpers. selection_input refreshes the cursor marker but does
+ * not emit SELECT; the backend emits it after success. key_input accepts ASCII
+ * hexadecimal digits plus XXWIDGETS_KEY_* navigation values and emits the
+ * corresponding CHANGE/SELECT events after a successful transactional sync. */
+typedef struct xxwidgets_hex_menu_item {
+    const char *group, *title;
+    int checked, disabled;
+} xxwidgets_hex_menu_item;
+size_t xxwidgets_hexview_menu_count(unsigned int column);
+xxwidgets_hex_menu_item xxwidgets_hexview_menu_item(const xxwidgets_widget *, unsigned int column, size_t index);
+xxwidgets_status xxwidgets_hexview_menu_apply(xxwidgets_widget *, unsigned int column, size_t index);
+const char *xxwidgets_hexview_cell(const xxwidgets_widget *, size_t row, size_t column);
+const char *xxwidgets_hexview_title(const xxwidgets_widget *, size_t column);
+size_t xxwidgets_hexview_cursor_column(const xxwidgets_widget *);
+typedef struct xxwidgets_hex_span {
+    size_t start, length, offset, bytes;
+} xxwidgets_hex_span;
+/* Text ranges are UTF-8 byte indices, shared by hit testing and all renderers. */
+int xxwidgets_hexview_highlight_span(const xxwidgets_widget *, size_t offset, size_t length, uint32_t *color);
+size_t xxwidgets_hexview_spans(const xxwidgets_widget *, size_t row, size_t column, xxwidgets_hex_span spans[64]);
+/* Clip a complete source symbol to the byte slots visible on this row.
+ * A continuation-only row span has length zero and retains its source owner. */
+void xxwidgets_hexview_symbol_layout(const xxwidgets_widget *, size_t row, const xxwidgets_hex_span *, size_t *cell, size_t *cells);
+size_t xxwidgets_hexview_selection_spans(const xxwidgets_widget *, size_t row, size_t column, xxwidgets_hex_span spans[64]);
+size_t xxwidgets_hexview_hit(const xxwidgets_widget *, size_t row, size_t column, size_t text_index);
+/* Symbols use byte-cell positions; other columns use their text positions.
+ * The hit retains the complete source byte range of a decoded symbol. */
+int xxwidgets_hexview_hit_span(const xxwidgets_widget *, size_t row, size_t column, size_t cell_index, xxwidgets_hex_span *out);
+int xxwidgets_hexview_contains(const xxwidgets_widget *, size_t offset, size_t length);
+xxwidgets_status xxwidgets_hexview_pointer(xxwidgets_widget *, size_t offset, int extend);
+xxwidgets_status xxwidgets_hexview_pointer_span(xxwidgets_widget *, size_t offset, size_t bytes, int extend);
+xxwidgets_status xxwidgets_hexview_body_action(xxwidgets_widget *, size_t index);
+void xxwidgets_hexview_deferred(xxwidgets_app *);
+void xxwidgets_hexview_init(xxwidgets_widget *widget);
+void xxwidgets_hexview_dispose(xxwidgets_widget *widget);
+xxwidgets_status xxwidgets_hexview_selection_input(xxwidgets_widget *widget, int row);
+xxwidgets_status xxwidgets_hexview_key_input(xxwidgets_widget *widget, unsigned int key, unsigned int modifiers, int *handled);
+void xxwidgets_hexview_activate_column(xxwidgets_widget *widget, unsigned int column);
+
 void xxwidgets_scanresults_dispose(xxwidgets_widget *widget);
+void xxwidgets_scanresults_init(xxwidgets_widget *widget);
+xxwidgets_status xxwidgets_scanresults_set_table_results(xxwidgets_widget *, const xxwidgets_scan_result *, size_t);
 void xxwidgets_treeview_dispose(xxwidgets_widget *widget);
 size_t xxwidgets_treeview_node_at_row(const xxwidgets_widget *widget, size_t row);
 size_t xxwidgets_treeview_row_of_node(const xxwidgets_widget *widget, size_t index);
@@ -172,8 +317,25 @@ xxwidgets_status xxwidgets_treeview_user_expand(xxwidgets_widget *widget, size_t
 xxwidgets_status xxwidgets_treeview_expansion_input(xxwidgets_widget *widget, size_t index, int expanded);
 const char *xxwidgets_scanresults_cell(const xxwidgets_widget *widget, size_t row, size_t column);
 size_t xxwidgets_scanresults_column_width(const xxwidgets_widget *widget, size_t column);
+void xxwidgets_data_struct_table_dispose(xxwidgets_widget *widget);
+void xxwidgets_data_struct_table_init(xxwidgets_widget *widget);
+const char *xxwidgets_data_struct_table_cell(const xxwidgets_widget *widget, size_t row, size_t column);
+size_t xxwidgets_data_struct_table_column_width(const xxwidgets_widget *widget, size_t column);
+const char *xxwidgets_tabular_cell(const xxwidgets_widget *widget, size_t row, size_t column);
+size_t xxwidgets_tabular_column_width(const xxwidgets_widget *widget, size_t column);
+size_t xxwidgets_tabular_column_count(const xxwidgets_widget *widget);
+const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_t column);
+xxwidgets_status xxwidgets_binaryviewer_set_records(xxwidgets_widget *, xxwidgets_kind, const void *, size_t);
+xxwidgets_status xxwidgets_binaryviewer_get_record(const xxwidgets_widget *, xxwidgets_kind, size_t, void *);
+xxwidgets_status xxwidgets_binaryviewer_get_selection(xxwidgets_widget *, xxwidgets_kind, size_t *, void *);
+void xxwidgets_binaryviewer_dispose(xxwidgets_widget *);
+size_t xxwidgets_binaryviewer_column_count(const xxwidgets_widget *);
+const char *xxwidgets_binaryviewer_column_title(const xxwidgets_widget *, size_t);
+const char *xxwidgets_binaryviewer_cell(const xxwidgets_widget *, size_t, size_t);
+size_t xxwidgets_binaryviewer_column_width(const xxwidgets_widget *, size_t);
 
 void xxwidgets_archivebrowser_dispose(xxwidgets_widget *widget);
+void xxwidgets_archiveview_dispose(xxwidgets_widget *widget);
 const char *xxwidgets_archivebrowser_name(const xxwidgets_widget *widget, size_t row);
 const char *xxwidgets_archivebrowser_cell(const xxwidgets_widget *widget, size_t row, xxwidgets_archive_column column);
 size_t xxwidgets_archivebrowser_name_columns(const xxwidgets_widget *widget);

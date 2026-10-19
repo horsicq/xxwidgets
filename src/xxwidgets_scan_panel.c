@@ -1,4 +1,26 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #include "xxwidgets_internal.h"
+#include "xxfclib/scan/xx_scan_color.h"
 #include "xxwidgets/xxwidgets_scan_panel.h"
 #include "xxwidgets/xxwidgets_combobox.h"
 
@@ -232,79 +254,79 @@ static void free_nodes(xxwidgets_tree_node *nodes, size_t count)
     free(nodes);
 }
 
+/* Presentation markers are added by the panel caller. All category rules and
+ * palettes live in xxfclib/src/scan, ported from XScanEngine. */
+xxwidgets_tree_color xxwidgets_scan_result_color(const char *type)
+{
+    xx_scan_color_record light, dark;
+    if (type && !strncmp(type, "(Heur) ", 7)) type += 7;
+    else if (type && !strncmp(type, "(A-Heur) ", 9)) type += 9;
+    light = xx_scan_default_color(type, 0);
+    dark = xx_scan_default_color(type, 1);
+    return (xxwidgets_tree_color){light.foreground, light.background, dark.foreground, dark.background};
+}
+
+xxwidgets_status xxwidgets_scan_panel_set_tree(xxwidgets_scan_panel *panel, const xxwidgets_tree_node *nodes,
+    const xxwidgets_tree_color *colors, size_t node_count, size_t detection_count, const char *report)
+{
+    char *copy;
+    int previous_enabled;
+    xxwidgets_status status;
+    if (!report) report = "";
+    if (!panel || !xxwidgets_valid_utf8(report)) return XXWIDGETS_INVALID_ARGUMENT;
+    copy = xxwidgets_strdup(report);
+    if (!copy) return XXWIDGETS_OUT_OF_MEMORY;
+    previous_enabled = panel->controls[XXWIDGETS_SCAN_PANEL_REPORT]->enabled;
+    status = xxwidgets_widget_set_enabled(panel->controls[XXWIDGETS_SCAN_PANEL_REPORT], report[0] != 0);
+    if (status == XXWIDGETS_OK) {
+        status = xxwidgets_treeview_set_colored_nodes(panel->controls[XXWIDGETS_SCAN_PANEL_RESULTS], nodes, colors, node_count);
+        if (status != XXWIDGETS_OK) recover_enabled(panel->controls[XXWIDGETS_SCAN_PANEL_REPORT], previous_enabled);
+    }
+    if (status != XXWIDGETS_OK) { free(copy); return status; }
+    free(panel->report);
+    panel->report = copy;
+    panel->count = detection_count;
+    return XXWIDGETS_OK;
+}
+
 xxwidgets_status xxwidgets_scan_panel_set_results(xxwidgets_scan_panel *panel, const char *file_label, const xxwidgets_scan_result *results, size_t count,
                                                   const char *report)
 {
-    static const char *const field_names[4] = {"Type: ", "Name: ", "Version: ", "Info: "};
     xxwidgets_tree_node *nodes;
-    char *new_report;
+    xxwidgets_tree_color *colors;
     size_t i, j, node_count;
-    int previous_enabled;
     xxwidgets_status status;
     if (!file_label) file_label = "";
-    if (!report) report = "";
-    if (!panel || (!results && count) || count > (INT_MAX - 1u) / 5u || !xxwidgets_valid_utf8(file_label) || !xxwidgets_valid_utf8(report))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!panel || (!results && count) || count > INT_MAX - 1u || !xxwidgets_valid_utf8(file_label)) return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; i < count; ++i) {
         const char *fields[4] = {results[i].type, results[i].name, results[i].version, results[i].info};
         for (j = 0; j < 4; ++j)
             if (fields[j] && !xxwidgets_valid_utf8(fields[j])) return XXWIDGETS_INVALID_ARGUMENT;
     }
-    node_count = count ? 1 + count * 5 : 2;
+    node_count = count + 1;
     if (node_count > SIZE_MAX / sizeof(*nodes)) return XXWIDGETS_INVALID_ARGUMENT;
-    new_report = xxwidgets_strdup(report);
     nodes = (xxwidgets_tree_node *)calloc(node_count, sizeof(*nodes));
-    if (!new_report || !nodes) {
-        free(new_report);
-        free(nodes);
-        return XXWIDGETS_OUT_OF_MEMORY;
-    }
-    {
-        const char *parts[2] = {file_label[0] ? "File: " : "", file_label[0] ? file_label : "Scan results"};
-        nodes[0].text = join_text(parts, 2);
-        nodes[0].parent = SIZE_MAX;
-        nodes[0].expanded = 1;
-    }
-    if (!count) {
-        nodes[1].text = xxwidgets_strdup("No detections");
-        nodes[1].parent = 0;
-    }
+    colors = (xxwidgets_tree_color *)malloc(node_count * sizeof(*colors));
+    if (!nodes || !colors) { free(nodes); free(colors); return XXWIDGETS_OUT_OF_MEMORY; }
+    nodes[0].text = xxwidgets_strdup(file_label[0] ? file_label : "Unknown");
+    nodes[0].parent = SIZE_MAX;
+    nodes[0].expanded = 1;
+    colors[0] = xxwidgets_scan_result_color(NULL);
     for (i = 0; i < count; ++i) {
-        size_t detection = 1 + i * 5;
-        const char *fields[4] = {results[i].type ? results[i].type : "", results[i].name ? results[i].name : "", results[i].version ? results[i].version : "",
-                                 results[i].info ? results[i].info : ""};
-        const char *parts[6] = {
-            fields[0][0] ? fields[0] : "Detection", ": ", fields[1][0] ? fields[1] : "Unknown", fields[2][0] ? " [" : "", fields[2], fields[2][0] ? "]" : ""};
-        nodes[detection].text = join_text(parts, 6);
-        nodes[detection].parent = 0;
-        nodes[detection].expanded = 1;
-        for (j = 0; j < 4; ++j) {
-            const char *detail[2] = {field_names[j], fields[j]};
-            nodes[detection + 1 + j].text = join_text(detail, 2);
-            nodes[detection + 1 + j].parent = detection;
-        }
+        const char *fields[4] = {results[i].type ? results[i].type : "", results[i].name ? results[i].name : "",
+            results[i].version ? results[i].version : "", results[i].info ? results[i].info : ""};
+        const char *parts[] = {fields[0][0] ? fields[0] : "Detection", ": ", fields[1][0] ? fields[1] : "Unknown",
+            fields[2][0] ? " (" : "", fields[2], fields[2][0] ? ")" : "",
+            fields[3][0] ? " [" : "", fields[3], fields[3][0] ? "]" : ""};
+        nodes[i + 1].text = join_text(parts, 9);
+        nodes[i + 1].parent = 0;
+        colors[i + 1] = xxwidgets_scan_result_color(fields[0]);
     }
     for (i = 0; i < node_count; ++i)
-        if (!nodes[i].text) {
-            free_nodes(nodes, node_count);
-            free(new_report);
-            return XXWIDGETS_OUT_OF_MEMORY;
-        }
-    previous_enabled = panel->controls[XXWIDGETS_SCAN_PANEL_REPORT]->enabled;
-    status = xxwidgets_widget_set_enabled(panel->controls[XXWIDGETS_SCAN_PANEL_REPORT], report[0] != 0);
-    if (status == XXWIDGETS_OK) {
-        status = xxwidgets_treeview_set_nodes(panel->controls[XXWIDGETS_SCAN_PANEL_RESULTS], nodes, node_count);
-        if (status != XXWIDGETS_OK) recover_enabled(panel->controls[XXWIDGETS_SCAN_PANEL_REPORT], previous_enabled);
-    }
-    free_nodes(nodes, node_count);
-    if (status != XXWIDGETS_OK) {
-        free(new_report);
-        return status;
-    }
-    free(panel->report);
-    panel->report = new_report;
-    panel->count = count;
-    return XXWIDGETS_OK;
+        if (!nodes[i].text) { free_nodes(nodes, node_count); free(colors); return XXWIDGETS_OUT_OF_MEMORY; }
+    status = xxwidgets_scan_panel_set_tree(panel, nodes, colors, node_count, count, report);
+    free_nodes(nodes, node_count); free(colors);
+    return status;
 }
 
 xxwidgets_status xxwidgets_scan_panel_clear(xxwidgets_scan_panel *panel)

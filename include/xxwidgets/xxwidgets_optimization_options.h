@@ -1,3 +1,24 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef XXWIDGETS_OPTIMIZATION_OPTIONS_H
 #define XXWIDGETS_OPTIMIZATION_OPTIONS_H
 
@@ -12,12 +33,30 @@ typedef struct xxwidgets_optimization_options {
     size_t file_buffer_size;
     int use_sse2;
     int use_avx2;
+    int use_sse42;
+    int use_aes;
+    int use_sha;
+    int use_vpclmulqdq;
+    int use_neon;
+    int use_arm_crc32;
+    int use_arm_crypto;
+    int use_arm_dotprod;
+    int use_arm_pmull;
 } xxwidgets_optimization_options;
 
 /* The host supplies CPU and OS support, independently of the chosen settings. */
 typedef struct xxwidgets_optimization_capabilities {
     int sse2;
     int avx2;
+    int sse42;
+    int aes;
+    int sha;
+    int vpclmulqdq;
+    int neon;
+    int arm_crc32;
+    int arm_crypto;
+    int arm_dotprod;
+    int arm_pmull;
 } xxwidgets_optimization_capabilities;
 
 typedef struct xxwidgets_optimization_options_widget xxwidgets_optimization_options_widget;
@@ -27,21 +66,34 @@ typedef enum xxwidgets_optimization_options_control_id {
     XXWIDGETS_OPTIMIZATION_OPTIONS_FILE_BUFFER_SIZE,
     XXWIDGETS_OPTIMIZATION_OPTIONS_SSE2,
     XXWIDGETS_OPTIMIZATION_OPTIONS_AVX2,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_SSE42,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_AES,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_SHA,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_VPCLMULQDQ,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_NEON,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_ARM_CRC32,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_ARM_CRYPTO,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_ARM_DOTPROD,
+    XXWIDGETS_OPTIMIZATION_OPTIONS_ARM_PMULL,
     XXWIDGETS_OPTIMIZATION_OPTIONS_BUFFER_LABEL,
     XXWIDGETS_OPTIMIZATION_OPTIONS_FILE_BUFFER_LABEL,
     XXWIDGETS_OPTIMIZATION_OPTIONS_SIMD_LABEL,
     XXWIDGETS_OPTIMIZATION_OPTIONS_CONTROL_COUNT
 } xxwidgets_optimization_options_control_id;
 
-/* Defaults are 64 KiB for both buffers, with both acceleration choices on. */
+/* Defaults are 64 KiB for both buffers, with all acceleration choices on. */
 XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_init(xxwidgets_optimization_options *options);
 
 /* Embedded form: two normal combo boxes and acceleration checkboxes. Bounds
- * use text cells and require at least 60 x 9. Capabilities must be 0/1 and are
- * copied. Unsupported features are unchecked and disabled; supported features
- * remain editable even when the user turns them off. Children belong to owner
- * and use its app callback. Destroy the form before its owner/app; borrowed
- * controls must not be destroyed separately. */
+ * use text cells and require at least 60 x 9 on Arm targets, 60 x 10 on
+ * x86/x64 targets, and 60 x 12 on other targets. Arm targets hide the six x86
+ * controls; x86/x64 targets hide the five Arm controls. On an unknown target,
+ * Arm-only capabilities retain the compact 60 x 9 Arm layout; otherwise both
+ * families remain visible.
+ * Capabilities must be 0/1 and are copied. Other unsupported features are
+ * unchecked and disabled; supported features remain editable even when the user
+ * turns them off. Children belong to owner and use its app callback. Destroy the
+ * form before its owner/app; borrowed controls must not be destroyed separately. */
 XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
                                                                             const xxwidgets_optimization_capabilities *capabilities,
                                                                             xxwidgets_optimization_options_widget **out_widget);
@@ -57,9 +109,11 @@ XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_get(const x
 XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_set(xxwidgets_optimization_options_widget *widget, const xxwidgets_optimization_options *options);
 XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_set_rect(xxwidgets_optimization_options_widget *widget, xxwidgets_rect bounds);
 
-/* Successful OK commits normalized settings. Cancel, Escape, closing, and
- * errors preserve the supplied settings, including unsupported-feature flags.
- * Invoke after returning from event callbacks/polling. */
+/* The Defaults button resets both buffers to 64 KiB and enables every supported feature
+ * without closing the dialog. Successful OK commits the displayed normalized
+ * settings. Cancel, Escape, closing, and errors preserve the supplied settings,
+ * including unsupported-feature flags. Invoke after returning from event
+ * callbacks/polling. */
 XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_optimization_capabilities *capabilities,
                                                                      xxwidgets_optimization_options *options, int *accepted);
 

@@ -23,14 +23,19 @@ appearance, keyboard behavior, accessibility, and input methods.
 - Normal and checkbox comboboxes with typed `xx_meta_string` records
 - Modal application options forms with checkboxes, OK and Cancel
 - Reusable About dialogs with application-defined text and RGBA images
-- Read-only HexView with addresses, hexadecimal bytes, ASCII, and row selection
+- HexView with copied editable bytes, 64-bit addresses, hexadecimal and ASCII views, resizable columns and header menus, byte-range selection and context menus, a nibble cursor, and read-only mode
 - Read-only ArchiveView with UTF-8 paths, directory markers, byte sizes, and entry selection
 - ArchiveBrowser with an address bar, folder navigation, icons, and sortable metadata columns
 - ScanResults with copied Type/Name/Version/Info metadata, row selection, and report export
+- ResourcesViewer, ImportsViewer, ExportsViewer and SymbolsViewer with typed xxfclib records and native/TUI tables
+- A two-panel data-structure browser and a nine-column structure-field table
 - TreeView with copied hierarchy nodes, expansion, and stable node selection
 - A complete ScanPanel with a result tree, file-type combo, Flags/Databases checkbox combos, and Scan/Report buttons
 - UTF-8 text, visibility, enablement, focus, application/widget user data
 - Click, change, list selection, close, resize, activation, and context-menu request events
+- Native file drag-and-drop on Windows, macOS and GTK, including drops over child controls
+- Native Open/Save file choosers on Windows, macOS and GTK
+- Entropy/byte analysis with region tables, curves, histograms and CSV/SVG export
 - A shared demo that runs with either native controls or TUI
 - A HexView demo with sample bytes or file loading
 - An ArchiveView demo with copied archive-entry metadata
@@ -40,7 +45,7 @@ appearance, keyboard behavior, accessibility, and input methods.
 
 This is an initial common control set. Menus as a public API, nested containers,
 automatic layout, multiline/rich text, editable table models, drawing surfaces,
-file dialogs, and mobile backends are outside the current API.
+and mobile backends are outside the current API.
 
 `xxwidgets_options_dialog(owner, title, options, count, &accepted)` presents
 up to 16 application-defined boolean options. It disables the owner while open
@@ -48,6 +53,16 @@ and applies values only on OK. Cancel, Escape, or closing the dialog leaves the
 supplied values unchanged. Invoke it on the UI thread after returning from an
 event callback, for example through a pending menu action in the main loop.
 The same form works with the native and terminal backends.
+
+Enable file drops with `xxwidgets_window_set_accept_file_drops(window, 1)`.
+The callback receives `XXWIDGETS_EVENT_DROP_FILES` on that window, with
+`event->paths` and `event->path_count` containing local UTF-8 paths in source
+order. Paths are borrowed for the callback; copy any that need to be retained.
+Queue scanning/loading work for the main loop. Multiple paths and directories
+are delivered so the application can choose its own handling. No source files
+are moved or deleted. Hidden/disabled windows and owners blocked by modal
+dialogs reject drops. Pass `0` to disable support. Enabling it on the TUI
+backend returns `XXWIDGETS_UNAVAILABLE`; terminal paste remains text input.
 
 Create `XXWIDGETS_SCANRESULTS` to show application scan records. Supply an array
 of `xxwidgets_scan_result` to `xxwidgets_scanresults_set_results`; every UTF-8
@@ -66,6 +81,23 @@ and zero capacity query the required size including NUL.
 returns `XXWIDGETS_UNAVAILABLE` on TUI. The widget has no scan-engine dependency.
 `xxwidgets_scanresults_demo --native` or `--tui` demonstrates the control.
 
+Include `<xxwidgets/xxwidgets_data_struct_view.h>` for a reusable two-panel
+data-structure browser. The left list shows every supplied structure. Selecting
+an item updates the right panel: `XX_DATA_STRUCT_TYPE_STRUCT` uses the dedicated
+`XXWIDGETS_DATA_STRUCT_TABLE`, while other types show their ID, offsets,
+address, sizes, and count. Pass application events to
+`xxwidgets_data_struct_view_handle_event()` from the normal event callback so a
+left-list selection updates the detail panel.
+
+The view deep-copies `xxwidgets_data_struct_item` records, names, fields, and
+field text. The structure table has Name, Type, Relative offset, File offset,
+Size, Role, Raw, Value, and Comment columns on every native and TUI backend.
+Raw contains the provider-supplied hexadecimal representation. A zero
+field property appears as `data`; `XX_DATA_STRUCT_RECORD_PROPERTY_SIGNATURE`
+appears as `signature`; combined and unknown property bits remain visible. Use
+`xxwidgets_data_struct_view_control()` when the host needs a child handle for
+focus, event comparison, or custom behavior. Destroy the view before its owner.
+
 Create `XXWIDGETS_TREEVIEW` for a general tree. `xxwidgets_treeview_set_nodes`
 copies an array of `xxwidgets_tree_node` records: `parent` is `SIZE_MAX` for
 a root or the index of an earlier node, `text` is UTF-8, and `expanded` is 0/1.
@@ -75,6 +107,11 @@ the current selection would become hidden. Programmatic changes emit no input
 events. Native controls provide tree branches and keyboard expansion. TUI uses
 Up/Down to select visible nodes and Left/Right to collapse/expand or move to a
 parent/child; Shift+Left/Right pans long text horizontally.
+`xxwidgets_treeview_set_colored_nodes` also copies optional light/dark
+foreground and background colors for each node (`0xRRGGBB`, or `UINT32_MAX`
+for the system color). Native backends select the current appearance; TUI
+maps the dark palette to terminal colors. Selection uses the backend's
+selection colors.
 
 Include `<xxwidgets/xxwidgets_scan_panel.h>` for the complete reusable scan UI.
 `xxwidgets_scan_panel_create(owner, bounds, &panel)` creates a labeled file-type
@@ -82,8 +119,17 @@ combo box, Flags and Databases checkbox combo boxes, Scan and Report push
 buttons, and a TreeView.
 The main database is always used; optional databases and the six scan flags
 are exposed as bitmasks. Setters synchronize the controls without input events.
-`xxwidgets_scan_panel_set_results` copies results into a File -> detection ->
-Type/Name/Version/Info hierarchy and retains a copied full engine report.
+`xxwidgets_scan_panel_set_results` takes the detected format as its root label
+and copies each detection into one `Type: Name (Version) [Info]` child row.
+Empty version/info fields are omitted. `xxwidgets_scan_result_color` delegates
+to `xxfclib/src/scan/xx_scan_color.c`, the C port of XScanEngine's category
+rules and light/dark palettes, including protection aliases and malware
+background colors. The build compiles that standalone module without linking
+the scan engine. Operating systems are olive in light mode, languages teal,
+and protection dark red, matching XScanEngine's defaults.
+Use `xxwidgets_scan_panel_set_tree` to supply nested scan nodes, such as an
+overlay with offset/size and its own detections. Both setters retain a copied
+full engine report. The same hierarchy is used by Cocoa, Win32, GTK and TUI.
 NULL fields are empty; replacing invalid input preserves the previous results.
 The application handles the panel's Scan button event and supplies results from
 its engine. Handle Report after returning from polling with
@@ -119,9 +165,18 @@ Include `<xxwidgets/xxwidgets_optimization_options.h>` for embedded or modal
 optimization settings. General and file buffer sizes use xxwidgets comboboxes
 with byte values: Default, then powers of two from 1 KiB through 1 GiB. Custom
 existing sizes round-trip without being replaced by a preset. Get/set APIs
-expose both sizes and the Use SSE2/Use AVX2 switches. The host supplies CPU and
-OS capabilities; unsupported switches stay unchecked and disabled, while a
-supported switch can be turned off and on. Only OK commits modal changes.
+expose both sizes and the Use SSE2/Use SSE4.2/Use AVX2/Use AES/Use SHA/
+Use VPCLMULQDQ/Use Arm NEON/Use Arm CRC32/Use Arm AES/SHA/Use Arm Dot Product
+switches. SHA acceleration applies to SHA-1 and SHA-256, while VPCLMULQDQ
+accelerates CRC64 in xxfclib. The host supplies CPU and OS
+capabilities. Arm targets hide the six x86 switches and compact the Arm choices
+into two rows. x86/x64 targets hide the four Arm switches and show the x86
+choices in three rows. On unknown targets, Arm-only capabilities retain the
+compact Arm layout; otherwise both families remain visible. Visible unsupported
+switches stay unchecked and disabled, while a supported switch can be turned off
+and on. The modal Defaults button restores both buffers to 64 KiB and turns on
+every supported feature without closing. Only OK commits modal changes; Cancel,
+Escape, and closing preserve the caller's settings.
 The widget stores preferences; the host applies accepted values to its engine.
 
 Include `<xxwidgets/xxwidgets_context_options.h>` for Explorer context-menu
@@ -268,7 +323,8 @@ terminal at a time. Normal destruction restores the console/terminal state.
 | `XXWIDGETS_BUILD_EXAMPLES` | Top-level builds: `ON` | Build demos for every control and the common dialogs |
 | `XXWIDGETS_BUILD_TESTS` | Top-level builds: `ON` | Build deterministic API tests and available platform tests |
 | `XXWIDGETS_BUILD_SETTINGS` | `OFF` | Build the optional xxfclib settings adapter |
-| `XXWIDGETS_XXFCLIB_DIR` | `../xxfclib` | xxfclib source directory for the settings subset |
+| `XXWIDGETS_BUILD_INSPECTORS` | Top-level builds: `ON` | Build `xxwidgets::inspect` for executable-file loading and the binary viewer demos |
+| `XXWIDGETS_XXFCLIB_DIR` | `../xxfclib` | xxfclib headers and optional settings/inspection adapter sources |
 
 `auto` chooses WinAPI on Windows, AppKit on macOS, GTK on other Unix systems.
 Missing native development dependencies cause configuration to fail; select
@@ -284,8 +340,27 @@ covered widgets, and native/TUI usage. Enable `XXWIDGETS_BUILD_SETTINGS=ON`
 to include the xxfclib-backed persistent-options demo. The existing combined
 `xxwidgets_demo` remains available alongside dedicated examples for Window,
 Label, Button, Edit, Checkbox, ListBox, Progress, the data views, comboboxes,
-Options and About. Windows native demo smoke checks run automatically through
-CTest when examples and tests are enabled.
+Options and About. Windows and macOS native demo smoke checks run automatically
+through CTest when examples and tests are enabled. The macOS suite exercises
+AppKit control creation and actions, Unicode editing, selection,
+structure/entropy views, modal OK/Cancel, and native control sizing. Native
+macOS tests share a CTest resource lock so parallel runs do not compete for
+focus. Explorer context options are Windows-only and are excluded on macOS.
+
+For a macOS run that also includes the optional settings dialog:
+
+```sh
+cmake -S . -B build-macos -DXXWIDGETS_NATIVE_BACKEND=cocoa \
+  -DXXWIDGETS_BUILD_EXAMPLES=ON -DXXWIDGETS_BUILD_TESTS=ON \
+  -DXXWIDGETS_BUILD_SETTINGS=ON -DBUILD_TESTING=ON
+cmake --build build-macos --parallel
+ctest --test-dir build-macos --output-on-failure
+```
+
+Run native tests in a logged-in macOS desktop session. The settings smoke test
+uses an in-memory store. For a visual check, run the demos with `--native` and
+inspect them with the screen unlocked. Native buttons and dropdowns use
+AppKit alignment insets, keeping their bezels and text intact in one-cell rows.
 
 ## Integration
 
@@ -321,8 +396,10 @@ UTF-8, widget/value combinations, parents, and rectangles return a status.
 Rectangles use integer text-cell units. Native backends scale them using
 system font metrics; TUI uses terminal columns and rows. Window dimensions
 describe the client area. Child coordinates start at the window's client
-origin. Coordinates must be 0–32767, dimensions 1–32767. Desktop window
-placement is advisory because the window manager can choose its position.
+origin. Coordinates must be 0–32767, dimensions 1–32767; a window's own
+position may also be negative, down to -32767 (a desktop monitor left of or
+above the primary one, or a maximized frame). Desktop window placement is
+advisory because the window manager can choose its position.
 TUI clips windows and children to the screen.
 
 Users can resize desktop windows; `XXWIDGETS_EVENT_RESIZE` reports the new
@@ -365,25 +442,142 @@ See `examples/widgets_demo.c` for the complete common application.
 
 Create a control with `XXWIDGETS_HEXVIEW`, then call
 `xxwidgets_hexview_set_data(widget, bytes, size)`. The data is copied; NULL
-with size 0 clears the view. Each row shows a 16-digit hexadecimal address,
-hexadecimal bytes, and printable ASCII (other bytes display as `.`). The
-partial final row is padded for alignment. Desktop backends use native
-scrolling list/table controls with monospace fonts; TUI uses the same rows.
+with size 0 clears the view. Three independently resizable columns show the
+location, elements, and decoded symbols. Desktop headers open a context menu
+on a click; drag their separators to resize. The location menu selects base
+10/16 and address/file offset. Elements offer hexadecimal groups or signed and
+unsigned 8/16/32/64-bit numbers (little endian), plus the row width. Symbols
+selects one of the portable xxfclib codepages. ASCII is the default; malformed,
+nonprinting, and truncated input characters display as dots. A partial
+numeric group displays `?`.
+
+Multibyte symbols appear at the first of their byte positions. Remaining byte
+positions show gray `·` continuation markers. Selecting either the symbol or
+its markers selects the full encoded byte range: one to four bytes for UTF-8,
+two for a UTF-16 code unit (four for a surrogate pair), and four for UTF-32 in
+either byte order. A Unicode character crossing a row boundary appears once on
+its starting row, with grey continuation markers on the next row; selecting
+either fragment selects the whole character. Native backends fit wide glyphs into the first
+position; a wide terminal glyph occupies two cells, with markers in any remaining
+continuation cells.
+
+`xxwidgets_hexview_set_display`/`get_display` expose those display settings.
+`xxwidgets_hexview_set_column_width(widget, column, cells)` sets a column width
+in character cells (0 restores automatic sizing); explicit widths survive data
+and layout changes. `get_layout` returns the current base and row width. Header
+menu actions emit `XXWIDGETS_EVENT_VIEW_CHANGE` with the column index. Setters
+remain silent. In TUI, F6 selects the header, F10 opens its menu,
+Left/Right switches menus, arrows select an item, Enter applies, and Escape
+closes the menu. `+`/`-` resizes the selected column.
+
+Desktop backends use native scrolling controls with monospace fonts; TUI
+clips each column separately. The widget
+owns its copy: editing it never changes the caller's input buffer or writes a
+loaded file. `xxwidgets_hexview_get_data` copies the current bytes out. Pass
+NULL with capacity 0 to query the required byte count; a short buffer returns
+`XXWIDGETS_BUFFER_TOO_SMALL` without a partial copy.
 
 `xxwidgets_hexview_set_layout(widget, base_address, bytes_per_row)` accepts
-8, 16, or 32 bytes per row. Addresses are 64-bit and overflow is rejected.
+8, 16, 24, 32, 48, or 64 bytes per row. Addresses are 64-bit and overflow is rejected.
 Changing the layout keeps the row containing the previously selected byte;
-setting new data selects the first row. Both operations suppress input events.
+setting new data selects the first byte. Both operations suppress input events.
 Rows are formatted eagerly and the copied bytes and formatted rows remain
-owned by the widget, so memory usage grows with data size.
+owned by the widget, so memory usage grows with data size. Cursor movement and
+editing refresh only the affected rows; replacing data or changing layout
+rebuilds the complete view.
 
-`XXWIDGETS_EVENT_SELECT` reports the selected row in `event.value`.
-`xxwidgets_widget_set_value` / `get_value` also use row indices (-1 clears
-selection). `xxwidgets_hexview_get_selection` returns that row's byte offset
-and length, including a short final row; no selection returns `SIZE_MAX, 0`.
-Offsets refer to the supplied buffer; add the base address for display.
-`xxwidgets_hexview_size` returns the copied buffer size. HexView is read-only,
-with selection of whole rows rather than individual bytes.
+HexView starts read-only. `xxwidgets_hexview_set_editable(widget, 1)` enables
+hexadecimal editing and `xxwidgets_hexview_get_editable` reports the current
+mode. The editable cursor identifies a byte offset and its high (0) or low (1)
+nibble. Use `xxwidgets_hexview_set_cursor` and
+`xxwidgets_hexview_get_cursor` to change or inspect it. Empty data reports
+`SIZE_MAX, 0`. Setting new data places the cursor on the first byte's high
+nibble; changing the layout preserves the exact byte and nibble. The active
+byte is bracketed as `[HH]` without changing the formatted row width.
+
+In editable mode, `0`-`9`, `A`-`F`, and `a`-`f` replace the active nibble.
+Typing a high nibble moves to the low nibble; typing a low nibble moves to the
+next byte's high nibble and stops at the final byte. Left/Right move one
+nibble, Up/Down move by one row while keeping the byte column, and Home/End
+move to the first/high or last/low nibble of the current row. Accepted edits
+emit `XXWIDGETS_EVENT_CHANGE` after the copied data has changed. Its
+`event.value` is the row containing the edited byte; query the cursor for the
+full `size_t` byte offset after the edit. Cursor, mode, layout, and data
+setters do not emit input events.
+
+Click or drag in Elements or Symbols to select bytes, including ranges spanning
+rows. Shift+click and Shift+arrows extend from the selection anchor. Both columns
+highlight the same byte range; grouped numbers and multibyte symbols map back to
+the underlying bytes. Clicking a column activates it; F6 cycles the active column.
+In Symbols, Left/Right move by decoded symbol, and Shift+Left/Right select whole
+symbols including every encoded byte. In Elements, Left/Right retain byte
+navigation (or nibble navigation when editing). In Symbols, Up/Down preserve the
+preferred byte column in the previous/next row and select the whole symbol at
+that position. The preferred column survives snapping to a multibyte symbol or
+clamping in a short final row; Shift+Up/Down includes complete endpoint symbols.
+PageUp/PageDown move by one visible page of rows at the same preferred byte
+column and land on a whole symbol. Shift+PageUp/PageDown includes every encoded
+byte of both endpoint symbols. Paging and Up/Down share the preferred column.
+Home/End select the complete symbol owning the first/last byte position of the
+current row, including a symbol continuing across a row boundary. Shift+Home/End
+extend through every byte of that symbol; Ctrl/Meta+Home/End use the buffer
+boundaries with complete endpoints. Subsequent vertical movement starts at the
+selected symbol's leading visible position. Other navigation or a click starts
+a new preferred-column run. In Elements, Up/Down move by row,
+Home/End within the row, and Ctrl+Home/End to the buffer boundaries. PageUp/Down
+move by a page; Shift extends any of these movements. Alt+Left/Right pans in TUI.
+
+For a file supplied in windows, `xxwidgets_hexview_set_source` attaches borrowed
+read and seek callbacks plus the complete file size. The widget's base address
+is the window's absolute file offset. In Symbols, Ctrl/Meta+Home/End then reaches
+the file endpoints, and Ctrl/Meta+Shift+Home/End preserves an absolute whole-symbol
+anchor across window changes. The seek callback supplies the endpoint window,
+including the complete endpoint symbol if it begins before a block boundary.
+`xxwidgets_hexview_get_source_selection` returns the complete absolute range;
+`get_selection` returns its intersection with the current window. Copy reads
+the complete selected range; dump streams it through the read callback. Ordinary
+data or cursor setters start a new selection outside a source seek callback.
+Passing NULL callbacks detaches the source. Callback user data remains caller-owned.
+In Symbols, Ctrl+A / Cmd+A selects the entire attached source, with every byte
+of its first and last symbols included. Copy and dump use that complete range.
+
+Right-click the body, or press Shift+F10, for the byte context menu. Right-clicking
+inside a selection preserves it. The menu provides:
+
+- Dump to file (Ctrl+D, also Cmd+D on macOS), writing exactly the selected bytes.
+- Go to beginning/end or selection start/end.
+- Select all (Ctrl+A / Cmd+A), current row, or clear.
+- Copy hex, decoded text, C array, or offset. Ctrl+C / Cmd+C copies decoded
+  text when Symbols is active and hex bytes when Elements is active.
+
+Native export uses the platform save dialog. TUI export asks for an output path;
+replacement of existing files requires its Replace checkbox. Clipboard copying
+uses the system clipboard on desktops and Windows TUI, and OSC 52 on POSIX
+terminals that support it. Text copying uses the selected codepage and substitutes
+dots for invalid sequences and control characters.
+
+`xxwidgets_hexview_set_selection(widget, offset, length)` selects the half-open
+range `[offset, offset + length)`; zero length clears it.
+`xxwidgets_hexview_get_selection` returns the exact range, or `SIZE_MAX, 0` when
+empty. Offsets refer to the supplied buffer; add the base address for display.
+`xxwidgets_hexview_copy_selection` and `xxwidgets_hexview_save_selection` expose
+the copy/export actions to applications. The save API replaces an existing file.
+`xxwidgets_hexview_size` returns the copied buffer size.
+
+`XXWIDGETS_EVENT_SELECT` carries the cursor's row in `event.value`; query the range
+for exact byte offsets, including changes within a row. Programmatic setters are
+silent. Legacy `xxwidgets_widget_set_value` still selects a whole row (-1 clears);
+`get_value` reports the cursor's row. Layout and codepage changes preserve the
+range, while replacing the data resets it.
+
+`xxwidgets_hex_options.h` provides a reusable embedded options form for a
+HexView. `xxwidgets_hex_options_widget_create` creates an 8/16/24/32/48/64-byte row
+selector and an Editable checkbox. Read the passive form with
+`xxwidgets_hex_options_widget_get`, then apply its values with
+`xxwidgets_hexview_set_layout` and `xxwidgets_hexview_set_editable`.
+`xxwidgets_hex_options_init` supplies the HexView defaults of 16 bytes per row
+and read-only mode. The form owns its child controls and must be destroyed
+before its owner window.
 
 The separate `xxwidgets_hexview_demo` accepts:
 
@@ -393,12 +587,13 @@ xxwidgets_hexview_demo [--native|--tui] [--cols 8|16|32] [--base address] [file]
 
 Without a file it shows built-in sample data, including nonprintable bytes and
 a partial final row. File loading has a 16 MiB demo limit. The default is 16
-bytes per row on desktop and 8 in TUI; buttons switch layouts. `--base` accepts
-decimal or `0x` hexadecimal addresses. Selection updates the status line.
-On TUI, Up/Down, PageUp/PageDown, and Home/End navigate rows; Left/Right pan
-horizontally when the line exceeds the available width. Tab reaches the
-layout buttons and Quit. Native list/table controls provide their platform
-scrollbars and keyboard navigation.
+bytes per row on desktop and 8 in TUI; the options selector switches layouts. `--base` accepts
+decimal or `0x` hexadecimal addresses. The demo enables editing explicitly;
+the Editable checkbox can return to read-only mode. The status line reports
+the selected range, length, or cursor address and nibble. Edits change only the
+widget-owned copy; Dump to file exports a selection. In TUI, Alt+Left/Right pans a wide row while plain
+arrows move the editable cursor. Tab reaches the layout selector, Editable, and
+Quit. Native controls provide their platform scrollbars and keyboard input.
 
 ## ArchiveView
 
@@ -512,10 +707,12 @@ folder navigation, sorting, and activation with copied sample metadata.
 
 Tab / Shift+Tab move focus. Enter activates a button; Enter / Space toggle a
 checkbox. Text fields support typing, left/right, Home/End, Backspace/Delete.
-Up/down, PageUp/PageDown, and Home/End select list/HexView/archive rows. Left/Right
-pan HexView and archive controls horizontally. ArchiveBrowser Enter opens the
-selected folder or activates the file; Backspace goes up, and `1`–`5` sort
-columns. Escape requests window close.
+Up/down, PageUp/PageDown, and Home/End select list/archive rows. Left/Right pan
+archive controls horizontally. HexView provides byte navigation and Shift-selection.
+For an editable HexView, hex digits replace nibbles, arrows and Home/End move
+the cursor, and Alt+Left/Right pans. ArchiveBrowser Enter opens the selected
+folder or activates the file; Backspace goes up, and `1`–`5` sort columns.
+Escape requests window close.
 
 Text storage is UTF-8. The initial terminal renderer treats each Unicode
 scalar as one cell; wide and combining characters can have imperfect
@@ -529,24 +726,149 @@ behavior. Unhandled process termination can bypass terminal restoration.
 `xxwidgets_core_tests` exercises argument validation, UTF-8, ownership,
 callback reentrancy, suppression of programmatic notifications, and rollback
 after backend failures through a deterministic backend. HexView tests cover
-copied data, formatting, layouts, final rows, address overflow, and rollback.
+copied input and output, formatting, layouts, final rows, address overflow,
+editable/read-only modes, nibble cursor movement, change events, and rollback.
 Windows native tests
 exercise actual WinAPI controls, UTF-8 round trips, user notifications,
 selection, close handling, and cleanup. Linux GTK and macOS AppKit require
 compilation and runtime validation on their respective platforms. Windows TUI
 tests use a private hidden console to exercise rendering, Unicode editing,
 navigation, repeated key events, callback setters, and terminal restoration.
-Both native and TUI tests exercise HexView and archive control refresh,
-scrolling, and selection. ArchiveView core tests cover entry ownership,
+Both native and TUI tests exercise HexView editing, cursor navigation,
+read-only input suppression, refresh, scrolling, and selection. ArchiveView core tests cover entry ownership,
 invalid metadata, full 64-bit sizes, control-character escaping, transactional
 rollback, and clearing. ArchiveBrowser tests cover inferred directory
 navigation, file activation with original source indexes, and numeric size
 sorting. Windows integration tests also exercise unchanged-count refresh
 and Unicode horizontal navigation.
-`tests/package` is a separate `find_package` consumer for verifying installed
-static and shared packages.
+Data-structure tests cover copied field metadata, role formatting (including
+unknown bits), transactional replacement and rollback, two-panel selection,
+native nine-column controls, and TUI headers, panning, and navigation.
+An install-tree `find_package` consumer verifies the exported target and public
+header dependency closure.
 
 License: MIT, matching the sibling library projects.
+
+## SystemProcessesViewer
+
+Include `xxwidgets/xxwidget_systemprocessesviewer.h` and create
+`XXWIDGET_SYSTEMPROCESSESVIEWER` with `xxwidgets_widget_create`. It displays Name and
+PID columns using native Win32, GTK and AppKit tables or selectable TUI rows.
+`xxwidget_systemprocessesviewer_refresh` enumerates the local process list using
+Toolhelp32 on Windows, `/proc` on Linux, or libproc on macOS. Applications can
+also supply copied snapshots using `xxwidget_systemprocessesviewer_set_processes`.
+Replacement preserves selection by PID plus process start identity. Executable
+paths can be empty for protected processes; UTF-8 display text escapes control
+characters. PIDs retain all 64 bits.
+
+Right-click selects a native row and emits `XXWIDGETS_EVENT_CONTEXT_MENU`;
+Shift+F10/Menu and TUI F10 request the same actions. Enter or double-click emits
+`ACTIVATE`. Queue those requests in the application event callback and call
+`xxwidget_systemprocessesviewer_show_actions` after `xxwidgets_app_poll` returns. The
+shared menu offers Open executable location, Copy PID (native clipboard),
+Refresh, and Kill process with a separate confirmation. Termination rechecks
+the start identity and refuses the current process and PID 0/1. POSIX uses
+SIGTERM by default; the standalone kill API also supports SIGKILL. Windows
+uses TerminateProcess. OS permissions can deny either operation.
+
+The source is `src/xxwidget_systemprocessesviewer.c`, with OS adapters in
+`src/xxwidget_systemprocessesviewer_platform.c`. The independent example is
+`examples/systemprocessesviewer_demo.c`:
+
+```sh
+cmake --build build --target xxwidget_systemprocessesviewer_demo
+build/xxwidget_systemprocessesviewer_demo --native
+build/xxwidget_systemprocessesviewer_demo --tui
+```
+
+The example refreshes every three seconds, preserves the selected identity,
+and supports F5 (refresh), F10 (actions), and window resizing. The separate
+`xxwidgets_process_dialog` below is a progress dialog for running operations.
+
+## Binary metadata viewers
+
+ResourcesViewer, ImportsViewer, ExportsViewer and SymbolsViewer display typed
+xxfclib metadata in resizable Win32, GTK and AppKit tables and aligned,
+selectable TUI rows. Include the corresponding public header and create its
+kind with `xxwidgets_widget_create`:
+
+| Public header under `xxwidgets/` | Widget kind | Record type | Columns |
+| --- | --- | --- | --- |
+| `xxwidget_resourcesviewer.h` | `XXWIDGET_RESOURCESVIEWER` | `xx_resource_record` | Type, Name, Language, Size, Offset |
+| `xxwidget_importsviewer.h` | `XXWIDGET_IMPORTSVIEWER` | `xx_import_record` | Library, Name, Ordinal, Address, Kind |
+| `xxwidget_exportsviewer.h` | `XXWIDGET_EXPORTSVIEWER` | `xx_export_record` | Name, Ordinal, Address, Forwarder |
+| `xxwidget_symbolsviewer.h` | `XXWIDGET_SYMBOLSVIEWER` | `xx_symbol_record` | Name, Value, Size, Type, Binding |
+
+Each family provides `xxwidget_<name>viewer_set_records`, `clear`, `count`,
+`get_record` and `get_selection`; for example,
+`xxwidget_importsviewer_set_records(imports, records, count)`. The base
+`xxwidgets::xxwidgets` target supplies these models. Setters deep-copy records
+and their strings, so callers may release their input after the call. Display
+text escapes control characters and shortens long fields; getters retain the
+complete metadata and numeric values. Successful replacement selects the
+first row, or clears selection for an empty table, without emitting input
+events. A failed validation, allocation or backend update preserves the
+previous records and selection.
+
+Getter strings are borrowed until successful replacement, clear or widget
+destruction; do not free them. An empty `get_selection` succeeds with an index
+of `SIZE_MAX` and a zeroed record. Record offsets and addresses keep xxfclib's
+conventions: offsets are file positions, `-1` means an unavailable offset, and
+`UINT64_MAX` means an unavailable address. Native selection emits `SELECT`;
+Enter or double-click emits `ACTIVATE`. TUI uses arrows, Home/End and
+PageUp/PageDown to select rows, Left/Right to pan, and Enter to activate.
+All viewer APIs run on the UI thread.
+
+Enable `XXWIDGETS_BUILD_INSPECTORS` and link `xxwidgets::inspect` to load files
+directly through xxfclib. The option defaults to `ON` for a standalone
+xxwidgets build and `OFF` when included as a subdirectory. If no
+`xxfclib::xxfclib` target exists, the build adds `XXWIDGETS_XXFCLIB_DIR` with
+xxfclib's `formats` profile by default. For a subdirectory consumer:
+
+```cmake
+set(XXWIDGETS_BUILD_INSPECTORS ON CACHE BOOL "Build executable inspection")
+add_subdirectory(path/to/xxwidgets)
+target_link_libraries(my_app PRIVATE xxwidgets::inspect)
+```
+
+The adapter supplies `xxwidget_<name>viewer_load_file(widget, path)` and the
+kind-dispatching `xxwidget_binaryviewer_load_file(widget, path)` declared in
+`xxwidget_binaryviewer.h`. These synchronous reads support PE, ELF, Mach-O
+and the first architecture slice in a universal Mach-O file. File offsets in
+a universal file refer to the containing file, including the slice offset.
+Tables absent from a supported file load successfully as empty tables;
+unrecognized formats return `XXWIDGETS_UNAVAILABLE`. Read or parse failures
+preserve the previous table. Queue file loading after an input callback
+returns so parsing does not run inside event dispatch. ELF imports have no
+library association in the current records, and show an empty Library field.
+
+With an existing application and window, a file-loading ImportsViewer uses:
+
+```c
+#include <xxwidgets/xxwidget_importsviewer.h>
+
+xxwidgets_widget *imports = NULL;
+xxwidgets_status status = xxwidgets_widget_create(app, window,
+    XXWIDGET_IMPORTSVIEWER, "Imports", (xxwidgets_rect){1, 1, 100, 18}, &imports);
+if (status == XXWIDGETS_OK)
+    status = xxwidget_importsviewer_load_file(imports, "application.exe");
+```
+
+Enable `XXWIDGETS_BUILD_EXAMPLES` as well to build
+`xxwidgets_binaryviewer_demo` and `xxwidget_resourcesviewer_demo`,
+`xxwidget_importsviewer_demo`, `xxwidget_exportsviewer_demo` and
+`xxwidget_symbolsviewer_demo`. Each executable can switch among all four
+views; its name selects the initial view. Use a local executable or library:
+
+```sh
+cmake --build build --target xxwidgets_binaryviewer_demo xxwidget_importsviewer_demo
+build/xxwidgets_binaryviewer_demo --native --file /path/to/program
+build/xxwidget_importsviewer_demo --tui --file /path/to/program
+```
+
+The demo provides a path field, Load/F5, a native Browse button, four view
+buttons, row counts and resizing. Details are in the
+[demo catalog](examples/README.md#binary-metadata-viewers).
 
 ## Process dialog
 
@@ -556,9 +878,16 @@ input callback. It consumes xxfclib's `xx_pd_struct` without linking format
 engines. The owner is disabled while the operation runs. No dialog is created
 for a completed job; unfinished work opens the modal form only after more than
 1,000 ms. Each of its five bars and count/status labels follows the corresponding
-`xx_pd_record.is_busy`. Inactive rows disappear, and active rows pack together.
+`xx_pd_record.is_busy`: a row appears once its level has been busy for 200 ms
+and goes once it has been idle as long (the first view shows the busy ones at
+once), so a level that flashes by does not resize the dialog. Inactive rows
+disappear, and active rows pack together.
 Counts retain their full 64-bit values. A zero total is displayed as `?` with
-zero percent. Elapsed time and a Cancel button appear below the bars.
+zero percent. Elapsed time and a Cancel button appear below the bars. A label
+too long for the dialog keeps its count and the end of its status behind `…`;
+`xxwidgets_process_status_tail(status, size, text)` cuts a longer text into a
+fixed `xx_pd_record.status` buffer the same way, so the end of a long path (the
+file name) is what remains.
 
 The short update callback receives `(context, stop_requested, progress,
 finished)` on the UI thread, immediately and between event polls with a 30 ms timeout.
@@ -613,3 +942,48 @@ The optional `xxwidgets::settings` adapter provides
 `xxwidgets_settings_install_shortcuts(window, loaded, actions, count)` to map
 the named list from `xx_shortcuts_load()` into numeric application actions.
 Unknown names are ignored; recognized bindings use the same validation rules.
+
+## Entropy widget
+
+`xxwidgets_entropy` follows the XEntropyWidget layout: file type and range,
+block count/reload, total Shannon entropy and packed percentage, a regions
+table above a red entropy curve, and a Bytes view with 256 byte counts,
+percentages and a blue histogram. It includes a region-name filter, grid,
+selected-region shading and click-to-inspect sample values. Native backends
+use AppKit, Win32/GDI and GTK/Cairo; TUI draws a colored text graph.
+
+Include `xxwidgets/xxwidgets_entropy.h`, create the composite inside a window,
+and pass application events to `xxwidgets_entropy_handle_event`. Bounds must
+be at least 88 × 27 text cells. Destroy the composite before its owner window.
+The child handles returned by `xxwidgets_entropy_control` remain borrowed.
+
+`xxwidgets_entropy_set_data` copies the bytes, display base, file-type label
+and optional named regions. Region offsets are relative to that buffer; a
+nonzero display base is added exactly once. Format detection and memory-map
+construction belong to the caller's parser. With no region list, the widget
+shows Whole file. The map selector switches between supplied regions and the
+whole buffer. The demo includes a PNG chunk adapter; other files use Binary.
+
+The default block count is `clamp(size / 512, 1, 100)`, like XEntropyWidget.
+Reload accepts 1–1000 blocks. The final block includes remaining bytes; empty
+inputs have zero entropy and no samples. The packed threshold is 6.5 bits/byte,
+matching XBinary. A high entropy value is a heuristic, not proof of packing.
+
+Save buttons expose ordinary click events. The owner chooses a destination
+and calls `xxwidgets_entropy_export_csv` or `xxwidgets_entropy_export_svg`.
+CSV contains the current table (including the region filter); SVG preserves
+the current graph, grid and selected-region shading. Both APIs can first
+query the required buffer size and never write files themselves. The demo
+uses the shared native file chooser; terminal users can export with command
+line arguments.
+
+Build `xxwidgets_entropy_demo`, then run it with `--native` or `--tui` and
+optionally `--file PATH`. It supports file drops, path entry, resizing, Save
+and Save diagram. On macOS the executable is in
+`xxwidgets_entropy_demo.app/Contents/MacOS/xxwidgets_entropy_demo`.
+
+```sh
+xxwidgets_entropy_demo --native --file sample.png
+xxwidgets_entropy_demo --tui --file sample.bin
+xxwidgets_entropy_demo --native --smoke-test --file sample.png --csv entropy.csv --svg entropy.svg
+```

@@ -1,3 +1,24 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #include "xxwidgets_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -130,7 +151,10 @@ static void about_event(xxwidgets_app *app, const xxwidgets_event *event, void *
     }
 }
 
-/* Wrap at Unicode scalar boundaries for the terminal's scrolling text list. */
+/* Wrap for the terminal's scrolling text list (67 text cells after the row
+ * marker): at the last space that fits, or within a longer word at a Unicode
+ * scalar boundary. A scalar from U+1000 on is taken as two columns (East
+ * Asian wide ones are). */
 static xxwidgets_status about_text_content(xxwidgets_widget *window, const char *body)
 {
     xxwidgets_widget *list;
@@ -139,15 +163,24 @@ static xxwidgets_status about_text_content(xxwidgets_widget *window, const char 
     const char *cursor = body;
     if (status != XXWIDGETS_OK) return status;
     while (*cursor) {
-        const char *start = cursor;
+        const char *start = cursor, *space = NULL, *end;
         size_t columns = 0, bytes;
         char *line;
-        while (*cursor && *cursor != '\n' && columns < 64) {
+        while (*cursor && *cursor != '\n') {
+            size_t width = (unsigned char)*cursor >= 0xe1 ? 2 : 1;
+            if (columns + width > 66) break;
+            if (*cursor == ' ' && cursor > start) space = cursor;
             ++cursor;
             while (((unsigned char)*cursor & 0xc0) == 0x80) ++cursor;
-            ++columns;
+            columns += width;
         }
-        bytes = (size_t)(cursor - start);
+        end = cursor;
+        if (*cursor == ' ') ++cursor;
+        else if (*cursor && *cursor != '\n' && space) {
+            end = space;
+            cursor = space + 1;
+        }
+        bytes = (size_t)(end - start);
         line = (char *)malloc(bytes + 1);
         if (!line) return XXWIDGETS_OUT_OF_MEMORY;
         memcpy(line, start, bytes);

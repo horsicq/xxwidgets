@@ -1,3 +1,24 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef XXWIDGETS_SCAN_PANEL_H
 #define XXWIDGETS_SCAN_PANEL_H
 
@@ -60,11 +81,13 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_flags(const xxwidgets_sc
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_databases(xxwidgets_scan_panel *panel, unsigned int databases);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_databases(const xxwidgets_scan_panel *panel, unsigned int *databases);
 
-/* Copies UTF-8 into a File -> detection -> Type/Name/Version/Info tree. NULL
- * fields/file/report mean empty strings. Replacement is transactional, resets
- * expansion/selection, and emits no input events. Complete report text is
- * copied separately so nested engine output need not be parsed or flattened.
- */
+/* Compact format root -> Type: Name (Version) [Info] leaves. file_label is
+ * the detected format, e.g. PE32. NULL fields are empty. For nested scans use
+ * set_tree with explicit parent indexes; the full text report stays separate. */
+/* Uses xxfclib's XScanEngine color rules; accepts presentation heuristic prefixes. */
+XXWIDGETS_API xxwidgets_tree_color xxwidgets_scan_result_color(const char *type);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_tree(xxwidgets_scan_panel *panel, const xxwidgets_tree_node *nodes,
+    const xxwidgets_tree_color *colors, size_t node_count, size_t detection_count, const char *report);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_results(xxwidgets_scan_panel *panel, const char *file_label, const xxwidgets_scan_result *results, size_t count,
                                                                 const char *report);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_clear(xxwidgets_scan_panel *panel);

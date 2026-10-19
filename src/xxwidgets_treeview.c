@@ -1,3 +1,24 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #include "xxwidgets_internal.h"
 
 #include <limits.h>
@@ -13,6 +34,7 @@ typedef struct xxwidgets_tree_projection {
 struct xxwidgets_tree_state {
     xxwidgets_tree_node *nodes;
     char **display;
+    xxwidgets_tree_color *colors;
     size_t *first_child, *next_sibling, *depth;
     size_t first_root, count;
     xxwidgets_tree_projection projection;
@@ -43,6 +65,7 @@ static void free_tree(struct xxwidgets_tree_state *tree, int free_rows)
         if (tree->display) free(tree->display[i]);
     }
     free(tree->nodes);
+    free(tree->colors);
     free(tree->display);
     free(tree->first_child);
     free(tree->next_sibling);
@@ -155,6 +178,17 @@ static xxwidgets_status sync_tree(xxwidgets_widget *widget)
 
 xxwidgets_status xxwidgets_treeview_set_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes, size_t count)
 {
+    return xxwidgets_treeview_set_colored_nodes(widget, nodes, NULL, count);
+}
+
+xxwidgets_tree_color xxwidgets_treeview_node_color(const xxwidgets_widget *widget, size_t index)
+{
+    return tree_widget(widget) && widget->tree && index < widget->tree->count && widget->tree->colors
+        ? widget->tree->colors[index] : (xxwidgets_tree_color){UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX};
+}
+
+xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes, const xxwidgets_tree_color *colors, size_t count)
+{
     struct xxwidgets_tree_state *tree, *previous;
     size_t *last_child = NULL, last_root = SIZE_MAX, i;
     int previous_value;
@@ -165,6 +199,11 @@ xxwidgets_status xxwidgets_treeview_set_nodes(xxwidgets_widget *widget, const xx
     for (i = 0; i < count; ++i)
         if ((nodes[i].parent != SIZE_MAX && nodes[i].parent >= i) || !xxwidgets_valid_utf8(nodes[i].text) || (nodes[i].expanded != 0 && nodes[i].expanded != 1))
             return XXWIDGETS_INVALID_ARGUMENT;
+    for (i = 0; colors && i < count; ++i)
+        if ((colors[i].foreground != UINT32_MAX && colors[i].foreground > 0xffffffu) ||
+            (colors[i].background != UINT32_MAX && colors[i].background > 0xffffffu) ||
+            (colors[i].dark_foreground != UINT32_MAX && colors[i].dark_foreground > 0xffffffu) ||
+            (colors[i].dark_background != UINT32_MAX && colors[i].dark_background > 0xffffffu)) return XXWIDGETS_INVALID_ARGUMENT;
     tree = (struct xxwidgets_tree_state *)calloc(1, sizeof(*tree));
     if (!tree) return XXWIDGETS_OUT_OF_MEMORY;
     tree->count = count;
@@ -180,6 +219,11 @@ xxwidgets_status xxwidgets_treeview_set_nodes(xxwidgets_widget *widget, const xx
             status = XXWIDGETS_OUT_OF_MEMORY;
             goto failed;
         }
+    }
+    if (colors && count) {
+        tree->colors = (xxwidgets_tree_color *)malloc(count * sizeof(*colors));
+        if (!tree->colors) { status = XXWIDGETS_OUT_OF_MEMORY; goto failed; }
+        memcpy(tree->colors, colors, count * sizeof(*colors));
     }
     for (i = 0; i < count; ++i) {
         size_t parent = nodes[i].parent;

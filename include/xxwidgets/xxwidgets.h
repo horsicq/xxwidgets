@@ -1,3 +1,24 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef XXWIDGETS_XXWIDGETS_H
 #define XXWIDGETS_XXWIDGETS_H
 
@@ -55,7 +76,19 @@ typedef enum xxwidgets_kind {
     XXWIDGETS_COMBOBOX,
     XXWIDGETS_CHECKCOMBOBOX,
     XXWIDGETS_SCANRESULTS,
-    XXWIDGETS_TREEVIEW
+    XXWIDGETS_TREEVIEW,
+    XXWIDGETS_DATA_STRUCT_TABLE,
+    /* Children created by xxwidgets_entropy_create. */
+    XXWIDGETS_ENTROPY_REGIONS,
+    XXWIDGETS_ENTROPY_BYTES,
+    XXWIDGETS_ENTROPY_PLOT,
+    XXWIDGETS_CANVAS,
+    XXWIDGETS_SPLITTER,
+    XXWIDGET_SYSTEMPROCESSESVIEWER,
+    XXWIDGET_RESOURCESVIEWER,
+    XXWIDGET_IMPORTSVIEWER,
+    XXWIDGET_EXPORTSVIEWER,
+    XXWIDGET_SYMBOLSVIEWER
 } xxwidgets_kind;
 
 typedef enum xxwidgets_event_type {
@@ -66,7 +99,10 @@ typedef enum xxwidgets_event_type {
     XXWIDGETS_EVENT_RESIZE,
     XXWIDGETS_EVENT_ACTIVATE,
     XXWIDGETS_EVENT_CONTEXT_MENU,
-    XXWIDGETS_EVENT_SHORTCUT
+    XXWIDGETS_EVENT_SHORTCUT,
+    XXWIDGETS_EVENT_DROP_FILES,
+    XXWIDGETS_EVENT_VIEW_CHANGE, /* Hex header menu applied; value is column 0..2. */
+    XXWIDGETS_EVENT_DRAG /* Splitter: absolute parent text-cell coordinates. */
 } xxwidgets_event_type;
 
 /* Logical text-cell units: native controls scale these to font-sized pixels.
@@ -84,6 +120,10 @@ typedef struct xxwidgets_event {
      * use container pixels; TUI uses text cells. Other types use 0, 0.
      * ArchiveBrowser context value is the selected visible row, or -1. */
     int x, y;
+    /* DROP_FILES only: local UTF-8 paths in source order, borrowed until the
+     * callback returns. Copy paths that must be kept. Other events use NULL/0. */
+    const char *const *paths;
+    size_t path_count;
 } xxwidgets_event;
 
 typedef void (*xxwidgets_event_fn)(xxwidgets_app *app, const xxwidgets_event *event, void *user_data);
@@ -123,6 +163,20 @@ typedef struct xxwidgets_shortcut {
  * Ctrl/Control, Alt/Option, Shift, Meta/Cmd/Command/Win modifiers, any case. */
 XXWIDGETS_API xxwidgets_status xxwidgets_window_set_shortcuts(xxwidgets_widget *window, const xxwidgets_shortcut *shortcuts, size_t count);
 XXWIDGETS_API size_t xxwidgets_window_shortcut_count(const xxwidgets_widget *window);
+/* Optional contextual filter for a matching binding. Returning zero lets the
+ * focused control handle the key normally, without emitting SHORTCUT. Called
+ * during input dispatch; do not destroy the window or pump events here.
+ * Handler/user data are borrowed. NULL removes the filter. */
+typedef int (*xxwidgets_shortcut_filter_fn)(xxwidgets_widget *window, int action, void *user_data);
+XXWIDGETS_API xxwidgets_status xxwidgets_window_set_shortcut_filter(xxwidgets_widget *, xxwidgets_shortcut_filter_fn, void *);
+
+
+/* Opt in to file drops anywhere in the window, including over its controls.
+ * Emits DROP_FILES on the window. Disabled by default; hidden/disabled windows
+ * and owners blocked by a modal dialog do not receive drops. Native backends
+ * support local file/directory paths; enabling on TUI returns UNAVAILABLE.
+ * This copies no files and does not delete/move the source. */
+XXWIDGETS_API xxwidgets_status xxwidgets_window_set_accept_file_drops(xxwidgets_widget *window, int accept);
 
 /* UTF-8 text is copied. A control must have a WINDOW parent in the same app.
  * Widgets start visible and enabled. Destroying a window destroys its children. */
@@ -158,6 +212,13 @@ XXWIDGETS_API int xxwidgets_widget_has_focus(const xxwidgets_widget *widget);
  * Programmatic changes do not emit user-input events. */
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_value(xxwidgets_widget *widget, int value);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_value(xxwidgets_widget *widget, int *value);
+/* Publish already prepared UTF-8 text on the UI thread. owner must be a WINDOW.
+ * No input events are emitted. Invalid text is rejected before touching the
+ * clipboard; UNAVAILABLE means the backend has no clipboard support. */
+XXWIDGETS_API xxwidgets_status xxwidgets_clipboard_set_text(xxwidgets_widget *owner, const char *text);
+/* UTF-8 clipboard text, including terminating NUL in required. Query with
+ * NULL/0; short buffers are untouched. POSIX terminals return UNAVAILABLE. */
+XXWIDGETS_API xxwidgets_status xxwidgets_clipboard_get_text(xxwidgets_widget *owner, char *text, size_t capacity, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_listbox_add(xxwidgets_widget *widget, const char *text);
 XXWIDGETS_API xxwidgets_status xxwidgets_listbox_clear(xxwidgets_widget *widget);
 XXWIDGETS_API size_t xxwidgets_listbox_count(const xxwidgets_widget *widget);
@@ -178,6 +239,15 @@ typedef struct xxwidgets_tree_node {
  * ACTIVATE event values refer to original input indexes, never visible rows.
  * User expansion emits CHANGE; Enter activates the selected node. */
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes, size_t count);
+/* Per-node light/dark RGB pairs. UINT32_MAX retains the system color.
+ * Native backends select the current appearance; TUI uses the dark palette. */
+typedef struct xxwidgets_tree_color {
+    uint32_t foreground, background, dark_foreground, dark_background;
+} xxwidgets_tree_color;
+/* NULL colors preserves the ordinary tree behavior. Copied transactionally. */
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes,
+                                                                  const xxwidgets_tree_color *colors, size_t count);
+XXWIDGETS_API xxwidgets_tree_color xxwidgets_treeview_node_color(const xxwidgets_widget *widget, size_t index);
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_clear(xxwidgets_widget *widget);
 XXWIDGETS_API size_t xxwidgets_treeview_count(const xxwidgets_widget *widget);
 XXWIDGETS_API size_t xxwidgets_treeview_visible_count(const xxwidgets_widget *widget);
@@ -257,8 +327,11 @@ XXWIDGETS_API xxwidgets_status xxwidgets_options_dialog(xxwidgets_widget *owner,
 typedef xxwidgets_status (*xxwidgets_process_update_fn)(void *user_data, int stop_requested, xx_pd_struct *progress, int *finished);
 
 /* Modal progress for all five xx_pd_record slots. A bar and its status/count
- * label are visible exactly while is_busy is true. Percentages are clamped;
- * total == 0 displays zero percent with an unknown-total count.
+ * label follow is_busy: a change shows once it has lasted 200 ms (the first
+ * view shows the busy slots at once), so a slot that flashes by does not
+ * resize the dialog; an idle slot still shown keeps its last text.
+ * Percentages are clamped; total == 0 displays zero percent with an
+ * unknown-total count.
  * The dialog is created only if unfinished after MORE than 1,000 ms, measured
  * from entry with a monotonic clock. The owner is disabled throughout the wait
  * and restored on return. Cancel/Escape/close request is_stop, then keep waiting
@@ -272,6 +345,16 @@ typedef xxwidgets_status (*xxwidgets_process_update_fn)(void *user_data, int sto
  * Call outside input callbacks/polling. No xxfclib runtime linkage is needed. */
 XXWIDGETS_API xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *title, xx_pd_struct *progress, xxwidgets_process_update_fn update,
                                                         void *user_data);
+
+/* Copies text into a status buffer of size bytes (an xx_pd_record status).
+ * A longer text keeps its end, behind a leading '...' (U+2026), cut where a
+ * whole character starts: not before a combining mark, not inside a '\xNN'
+ * escape. The dialog fits its labels the same way, so the end of a long
+ * path, which names the member, stays visible. A NULL text is empty; a
+ * text too long for a buffer of fewer than 4 bytes (no room for the
+ * ellipsis) gives ""; a NULL status or a size of 0 writes nothing. Safe on
+ * any thread. */
+XXWIDGETS_API void xxwidgets_process_status_tail(char *status, size_t size, const char *text);
 
 typedef enum xxwidgets_about_text {
     XXWIDGETS_ABOUT_TITLE = 0,
@@ -328,17 +411,160 @@ XXWIDGETS_API xxwidgets_status xxwidgets_file_dialog(xxwidgets_widget *owner, xx
                                                      int *accepted);
 XXWIDGETS_API int xxwidgets_file_dialog_available(const xxwidgets_app *app);
 
-/* Read-only HexView: 64-bit addresses, hex bytes and printable ASCII. Data is
- * copied and rendered as selectable rows. Defaults: base 0, 16 bytes per row.
- * set_data resets selection to the first row, or -1 for empty data. Data and
- * layout changes are transactional and do not emit input events. */
+/* HexView: 64-bit addresses, hex bytes and printable ASCII. Data is copied and
+ * rendered as selectable rows. It is read-only by default. Defaults: base 0,
+ * 16 bytes per row. set_data resets selection and the byte cursor to the first
+ * byte/high nibble, or -1 and SIZE_MAX/0 for empty data. Data, layout, editing
+ * mode and cursor changes are transactional and do not emit input events. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_data(xxwidgets_widget *widget, const void *data, size_t size);
-/* bytes_per_row must be 8, 16 or 32. The final displayed address must fit uint64_t. */
+/* Copied absolute byte ranges. Highest priority wins; equal priority uses the
+ * last supplied range. Selection colors take precedence; symbol continuation
+ * markers retain disabled foreground colors. Zero lengths are ignored. */
+typedef struct xxwidgets_hexview_highlight {
+    uint64_t offset, length;
+    uint32_t color; /* 0xRRGGBB background */
+    int priority;
+} xxwidgets_hexview_highlight;
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_highlights(xxwidgets_widget *, const xxwidgets_hexview_highlight *, size_t count);
+/* Returns 1 when a range covers the absolute byte, zero otherwise. */
+XXWIDGETS_API int xxwidgets_hexview_highlight_at(const xxwidgets_widget *, uint64_t absolute_offset, uint32_t *color);
+/* Optional read-only, windowed source. Source offsets are absolute and the
+ * displayed window starts at the layout base. read must fill exactly length
+ * bytes; seek must load a window containing the requested byte and its whole
+ * encoded symbol using the ordinary data/layout setters. Callbacks and user
+ * data are borrowed. Passing NULL callbacks and size 0 detaches the source.
+ * Attaching to an editable view or enabling editing while attached is invalid.
+ * Control/Meta+Home/End in Symbols use source boundaries. Selection can span
+ * windows; navigation and saving use bounded windows/chunks. Copying allocates
+ * the selected bytes and their clipboard representation, with overflow checks. */
+typedef xxwidgets_status (*xxwidgets_hexview_source_read_fn)(void *user_data, uint64_t offset, void *data, size_t length);
+typedef xxwidgets_status (*xxwidgets_hexview_source_seek_fn)(xxwidgets_widget *widget, uint64_t offset, void *user_data);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_source(xxwidgets_widget *, uint64_t size, xxwidgets_hexview_source_read_fn,
+                                                         xxwidgets_hexview_source_seek_fn, void *user_data);
+/* Absolute source range, or base plus the ordinary selection without a source.
+ * Empty selection returns UINT64_MAX/0. get_selection remains window-relative
+ * and returns only the visible intersection of a source selection. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_source_selection(const xxwidgets_widget *, uint64_t *offset, uint64_t *length);
+/* bytes_per_row must be 8, 16, 24, 32, 48 or 64. The final displayed address must fit uint64_t. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_layout(xxwidgets_widget *widget, uint64_t base_address, unsigned int bytes_per_row);
+/* Three independently resizable columns: location (0), elements (1), symbols (2).
+ * Symbols start in the first cell for their encoded bytes; continuation cells
+ * show disabled-color dots. UTF-8 scalars occupy one to four cells, UTF-16 code
+ * units two (surrogate pairs four), and UTF-32 scalars four. Unicode symbols
+ * crossing rows retain the same full byte range on their continuation row.
+ * Clicking or dragging either a symbol or a continuation cell selects
+ * their complete encoded byte ranges. Hex column input remains byte-based.
+ * In the active Symbols column, Left/Right move by decoded symbol and Shift
+ * extends by whole symbols. Up/Down preserve a preferred byte column across
+ * rows and land on complete symbols; Shift also extends to complete symbols.
+ * PageUp/PageDown do the same across one visible page of rows.
+ * Home/End select the complete first/last symbol in the row; Shift extends
+ * through the complete endpoint. Control/Meta use the buffer boundaries, or
+ * the complete file boundaries when a windowed source is attached.
+ * Control/Meta+A selects all symbols and bytes in the buffer or attached file.
+ * Control/Meta+C copies decoded text in Symbols and hex bytes in Elements.
+ * Clicking a column or pressing F6 activates it.
+ * Widths are character cells; zero restores automatic sizing. */
+typedef enum xxwidgets_hex_mode {
+    XXWIDGETS_HEX_HEX, XXWIDGETS_HEX_BYTE, XXWIDGETS_HEX_WORD, XXWIDGETS_HEX_DWORD, XXWIDGETS_HEX_QWORD,
+    XXWIDGETS_HEX_UINT8, XXWIDGETS_HEX_INT8, XXWIDGETS_HEX_UINT16, XXWIDGETS_HEX_INT16,
+    XXWIDGETS_HEX_UINT32, XXWIDGETS_HEX_INT32, XXWIDGETS_HEX_UINT64, XXWIDGETS_HEX_INT64
+} xxwidgets_hex_mode;
+typedef struct xxwidgets_hex_display {
+    unsigned int radix; /* 10 or 16. */
+    int offsets; /* 1: file offsets, 0: base address + offset. */
+    xxwidgets_hex_mode mode; /* Multi-byte numbers use little-endian byte order. */
+    const char *encoding; /* Name from xxfclib codepage registry; copied by setter. */
+} xxwidgets_hex_display;
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_display(xxwidgets_widget *, const xxwidgets_hex_display *);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_display(const xxwidgets_widget *, xxwidgets_hex_display *);
+/* Active keyboard column: Address (0), Elements (1), or Symbols (2). */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_active_column(const xxwidgets_widget *, unsigned int *column);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_active_column(xxwidgets_widget *, unsigned int column);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_column_width(xxwidgets_widget *, size_t column, size_t cells);
+XXWIDGETS_API size_t xxwidgets_hexview_column_width(const xxwidgets_widget *, size_t column);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_layout(const xxwidgets_widget *, uint64_t *base_address, unsigned int *bytes_per_row);
 XXWIDGETS_API size_t xxwidgets_hexview_size(const xxwidgets_widget *widget);
-/* Reports selected row's byte offset and length. No selection: SIZE_MAX, 0.
- * SELECT event.value is a row index; this API returns its full byte range. */
-XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_selection(xxwidgets_widget *widget, size_t *offset, size_t *length);
+/* Copies the current bytes. required is mandatory and receives the raw byte
+ * count (there is no terminator). NULL/capacity 0 queries the count. A short
+ * buffer returns BUFFER_TOO_SMALL without copying a partial result. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_data(const xxwidgets_widget *widget, void *data, size_t capacity, size_t *required);
+/* Editable input overwrites fixed-size data one hexadecimal nibble at a time.
+ * It never inserts or removes bytes. User edits emit CHANGE with the edited
+ * row in event.value; the copied data can then be obtained with get_data.
+ * Programmatic changes do not emit events. Any nonzero value enables editing. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_editable(xxwidgets_widget *widget, int editable);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_editable(const xxwidgets_widget *widget, int *editable);
+/* Application-owned editing for a windowed source. The view stays read-only;
+ * printable scalar/nibble input, Delete/Backspace and Ctrl/Meta+V are delivered
+ * with absolute cursor/selection coordinates. Queue work in this handler and
+ * refresh source bytes after polling. No bytes/cursor change automatically.
+ * A NULL handler disables application-owned input. */
+typedef enum xxwidgets_hex_input_kind { XXWIDGETS_HEX_INPUT_NIBBLE,
+    XXWIDGETS_HEX_INPUT_SCALAR, XXWIDGETS_HEX_INPUT_PASTE,
+    XXWIDGETS_HEX_INPUT_DELETE, XXWIDGETS_HEX_INPUT_BACKSPACE } xxwidgets_hex_input_kind;
+typedef struct xxwidgets_hex_input {
+    xxwidgets_hex_input_kind kind;
+    uint64_t offset, selection_offset, selection_length;
+    unsigned int column, nibble;
+    uint32_t value; /* 0..15 nibble or Unicode scalar. */
+} xxwidgets_hex_input;
+typedef xxwidgets_status (*xxwidgets_hexview_input_fn)(xxwidgets_widget *, const xxwidgets_hex_input *, void *);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_input_handler(xxwidgets_widget *, xxwidgets_hexview_input_fn, void *);
+
+/* The byte cursor is a zero-based offset and nibble is 0 (high) or 1 (low).
+ * SIZE_MAX/0 clears it and is also returned for an empty view/no selection.
+ * Setting a byte cursor selects that byte. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_cursor(xxwidgets_widget *widget, size_t offset, unsigned int nibble);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_cursor(const xxwidgets_widget *widget, size_t *offset, unsigned int *nibble);
+/* Selects the complete symbol containing a zero-based byte offset in the
+ * current buffer, using the selected encoding. The cursor lands on its first
+ * byte with nibble 0. Invalid/truncated bytes select their single-byte dot.
+ * An offset outside the buffer (including SIZE_MAX) is invalid. A windowed
+ * source must load the target and its symbol context before calling this
+ * setter. The absolute source selection is updated; no events are emitted. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_symbol_cursor(xxwidgets_widget *widget, size_t offset);
+/* Byte range [offset, offset + length). A zero length clears the selection;
+ * get_selection returns SIZE_MAX/0 when empty. Setters do not emit events.
+ * Mouse/keyboard selection emits SELECT, including moves within the same row. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_selection(xxwidgets_widget *, size_t offset, size_t length);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_selection(xxwidgets_widget *, size_t *offset, size_t *length);
+/* Select an absolute byte range in an attached file source. The source seeks
+ * to its first byte if necessary; only the visible intersection is rendered.
+ * Whole-symbol callers must normalize their endpoints before calling. Zero
+ * length clears the selection. No input events are emitted. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_source_selection(xxwidgets_widget *, uint64_t offset, uint64_t length);
+/* As above, with an independent absolute cursor for restoring a saved view. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_source_range(xxwidgets_widget *, uint64_t cursor, uint64_t offset, uint64_t length);
+typedef enum xxwidgets_hex_copy_format {
+    XXWIDGETS_HEX_COPY_HEX, XXWIDGETS_HEX_COPY_TEXT, XXWIDGETS_HEX_COPY_C_ARRAY, XXWIDGETS_HEX_COPY_OFFSET
+} xxwidgets_hex_copy_format;
+/* Optional application override for a nonempty selection. Called synchronously
+ * before source reads or clipboard allocation, including for COPY_OFFSET.
+ * Input-triggered handlers should queue work and return; start modal dialogs
+ * after returning from callbacks/polling. Handler/user_data are borrowed.
+ * Use clipboard_set_text to publish prepared text without invoking the handler
+ * recursively. A handler error leaves the clipboard untouched by xxwidgets. */
+typedef xxwidgets_status (*xxwidgets_hexview_copy_fn)(xxwidgets_widget *widget, xxwidgets_hex_copy_format format, void *user_data);
+/* NULL removes the override and clears its borrowed user_data. Default copying
+ * remains synchronous for controls without a handler. Emits no input events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_copy_handler(xxwidgets_widget *widget, xxwidgets_hexview_copy_fn handler, void *user_data);
+/* Optional override for the nonempty-selection Dump action, including Ctrl+D
+ * and its context menu. Called before a chooser, source read or file write.
+ * Queue work and return from input callbacks; start dialogs/workers after the
+ * input poll. The application can snapshot absolute selection with
+ * get_source_selection. Handler/user_data are borrowed. Errors do not fall
+ * back to the synchronous built-in dump. NULL restores that default. Setting
+ * a handler clears an already deferred built-in dump and emits no events. */
+typedef xxwidgets_status (*xxwidgets_hexview_dump_fn)(xxwidgets_widget *widget, void *user_data);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_dump_handler(xxwidgets_widget *widget,
+    xxwidgets_hexview_dump_fn handler, void *user_data);
+/* Copies the selected range. Text uses the selected codepage, replacing invalid
+ * sequences/control characters with dots. POSIX TUI uses OSC 52 in supporting
+ * terminals; Windows TUI uses the system clipboard. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_copy_selection(xxwidgets_widget *, xxwidgets_hex_copy_format);
+/* Writes exactly the selected bytes. path is UTF-8; an existing file is replaced. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_save_selection(xxwidgets_widget *, const char *path);
 
 /* Read-only archive contents with copied UTF-8 paths, 64-bit uncompressed
  * sizes and directory markers. Entry order is preserved; sizes are in bytes.
