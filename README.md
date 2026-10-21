@@ -24,11 +24,13 @@ appearance, keyboard behavior, accessibility, and input methods.
 - Modal application options forms with checkboxes, OK and Cancel
 - Reusable About dialogs with application-defined text and RGBA images
 - HexView with copied editable bytes, 64-bit addresses, hexadecimal and ASCII views, resizable columns and header menus, byte-range selection and context menus, a nibble cursor, and read-only mode
+- Debugger composite with independent, hideable and replaceable Disassembly, Registers, Hex and Stack panes, architecture-specific snapshots, and an optional xxdebug adapter
 - Read-only ArchiveView with UTF-8 paths, directory markers, byte sizes, and entry selection
 - ArchiveBrowser with an address bar, folder navigation, icons, and sortable metadata columns
 - ScanResults with copied Type/Name/Version/Info metadata, row selection, and report export
 - ResourcesViewer, ImportsViewer, ExportsViewer and SymbolsViewer with typed xxfclib records and native/TUI tables
 - A two-panel data-structure browser and a nine-column structure-field table
+- A strings viewer composite with copied UTF-8 records, offset/byte/character metadata, filtering, selection, clipboard copy and CSV export
 - TreeView with copied hierarchy nodes, expansion, and stable node selection
 - A complete ScanPanel with a result tree, file-type combo, Flags/Databases checkbox combos, and Scan/Report buttons
 - UTF-8 text, visibility, enablement, focus, application/widget user data
@@ -324,6 +326,10 @@ terminal at a time. Normal destruction restores the console/terminal state.
 | `XXWIDGETS_BUILD_TESTS` | Top-level builds: `ON` | Build deterministic API tests and available platform tests |
 | `XXWIDGETS_BUILD_SETTINGS` | `OFF` | Build the optional xxfclib settings adapter |
 | `XXWIDGETS_BUILD_INSPECTORS` | Top-level builds: `ON` | Build `xxwidgets::inspect` for executable-file loading and the binary viewer demos |
+| `XXWIDGETS_BUILD_DEBUGGER` | `OFF` | Build the optional `xxwidgets::debugger` xxdebug session adapter |
+| `XXWIDGETS_BUILD_EMULATOR` | `OFF` | Build the optional `xxwidgets::emulator` direct xxemul session adapter |
+| `XXWIDGETS_XXDEBUG_DIR` | `../xxdebug` | xxdebug sources for the optional debugger adapter |
+| `XXWIDGETS_XXEMUL_DIR` | `../xxemul` | xxemul sources for the optional emulator adapter |
 | `XXWIDGETS_XXFCLIB_DIR` | `../xxfclib` | xxfclib headers and optional settings/inspection adapter sources |
 
 `auto` chooses WinAPI on Windows, AppKit on macOS, GTK on other Unix systems.
@@ -438,7 +444,239 @@ that handle and must not destroy native objects directly.
 
 See `examples/widgets_demo.c` for the complete common application.
 
+## Debugger widget
+
+Include `xxwidgets/xxwidgets_debugger.h` and link `xxwidgets::xxwidgets` for
+the classic four-pane layout:
+
+```text
+Disassembly | Registers
+------------+----------
+Hex         | Stack
+```
+
+Each pane is an independent widget. Use `xxwidgets_debugger_set_panel` to swap
+in an x86 or ARM control, and `xxwidgets_debugger_set_panel_visible` to hide or
+show a pane. Hidden panes release their layout space. The existing hex widget
+can stay installed while architecture-specific panes change. Passing `NULL`
+as a replacement restores that slot's default widget.
+
+The architecture modules in `src/xxwidgets_debugger/` provide x86 16/32/64,
+ARM32, and ARM64 register layouts. Include `xxwidgets/xxwidgets_debugger_arch.h`
+to populate a pane from a typed CPU snapshot. ARM64e uses the ARM64 layout;
+stack formatting supports each architecture's word width and explicit byte
+order. These formatters are part of the base library.
+
+The base API accepts copied snapshots or an abstract `xxwidgets_debugger_session`
+containing a C function table and context pointer. Include
+`xxwidgets/xxwidgets_debugger_session.h` for common CPU/memory/disassembly,
+execution breakpoint, run/step/interrupt, and polling APIs. Enable
+`XXWIDGETS_BUILD_DEBUGGER=ON` for the `xxwidgets::debugger` xxdebug adapter or
+`XXWIDGETS_BUILD_EMULATOR=ON` for the `xxwidgets::emulator` direct xxemul adapter.
+Both borrow existing engines. These optional adapters are source-tree targets;
+the base controls and session API are also available in installed packages.
+
+`xxwidgets_debugger_demo --native` or `--tui` demonstrates separate x86-16,
+x86-32, x86-64, ARM32, and ARM64e register widgets, a shared hex widget, pane visibility, and resizable
+splitters using static example data. See the
+[debugger widget reference](docs/debugger-widget-reference.md) for ownership,
+replacement, snapshot, and session-adapter APIs.
+
+The xxdebug adapter supports x86 and ARM64/ARM64e. The direct xxemul adapter
+also supports live ARM32 and Thumb state. With both adapters enabled,
+`xxwidgets_debugger_session_demo` executes a built-in emulator loop, or launches
+a native target with `--debug PROGRAM [ARG...]`, through the same interface.
+Use `--tui --emulate MACHO64 [ARG...]` to load an ARM64 Mach-O executable into
+xxemul. The demo displays program output and the final exit code. Optional
+`XXWIDGETS_DEBUGGER_MACHO_FIXTURE` enables real ARM64 hello runtime and TUI tests;
+see the debugger reference for commands.
+
 ## HexView
+
+### HexView with `xx_io` devices
+
+`xxwidgets_hexview_set_device` attaches a paged view of an
+`xx_io_device`: a file, process-memory device, subdevice, or another seekable
+device. Include `xxwidgets/xxwidgets.h` and `xxfclib/io/xx_io.h`.
+The static xxwidgets target includes the generic I/O subset. Applications using
+a shared xxwidgets library can link xxfclib to create and manage their devices.
+
+```c
+xx_io_device *file = xx_io_file_open("sample.bin", "rb");
+if (file) {
+    xxwidgets_status status =
+        xxwidgets_hexview_set_device(hex, file, 0, 65536, 1);
+    if (status != XXWIDGETS_OK) xx_io_close(file);
+}
+```
+
+The offset is a device byte offset, or a virtual address for process memory.
+The window size must be 64 through 1,048,576 bytes. HexView copies only the
+current window and preserves the device cursor. Ordinary devices must provide
+read, seek and tell operations; process
+devices use the direct process-memory reader. Known sizes bound navigation;
+devices without a size can report inaccessible addresses when read.
+
+Use these APIs on the UI thread:
+
+- `xxwidgets_hexview_seek_device(hex, offset)` loads a window at an absolute
+  device offset and selects its first byte.
+- `xxwidgets_hexview_refresh_device(hex)` rereads the current window and keeps
+  its selection when still valid.
+- `xxwidgets_hexview_get_device(hex)` returns the attached device as a borrowed
+  pointer, or `NULL` when detached.
+
+`take_ownership == 1` transfers closing responsibility only after a successful
+attachment. Replacement, detachment and widget destruction close owned
+devices. With `0`, keep the device open until after detachment. Detach with
+`xxwidgets_hexview_set_device(hex, NULL, 0, 0, 0)`; the displayed bytes remain
+as a snapshot. Failed attachment, seeking or refresh keeps the previous view.
+Partial or unreadable windows fail without filling missing bytes with zeroes.
+Nibble typing is unavailable while a device is attached. Input navigation that cannot
+read a device emits `XXWIDGETS_EVENT_READ_ERROR` (value is the status) after
+restoring the previous view, allowing both backends to keep browsing.
+Programmatic seek/refresh return their status directly and emit no input event.
+
+Resizable read/write devices also support **Insert bytes…** and
+**Delete selected bytes** in the shared GUI/TUI context menu. Read-only files,
+append-mode files, fixed memory and sources attached with `set_source` leave
+these actions disabled. Deletion requires a selection; in Symbols it removes
+all bytes of the selected characters, including selections across windows.
+Delete/Backspace perform the same selection deletion. Application-owned input
+handlers receive those keys first.
+
+Open a whole file with `xx_io_file_open(path, "r+b")` to enable this feature.
+`xxwidgets_hexview_can_resize(hex)` checks the current capability. For explicit
+UI-thread edits, use `xxwidgets_hexview_insert_bytes(hex, offset, bytes, length)`
+and `xxwidgets_hexview_delete_bytes(hex, offset, length)` with absolute device
+offsets. Insertion accepts EOF and empty files; deletion can remove the entire
+file. Successful calls reload the view, selecting the inserted bytes or the
+nearest remaining symbol/byte. Programmatic calls emit no events; user actions
+emit CHANGE and SELECT.
+
+The affected file suffix is backed up to a temporary device before mutation,
+then transferred in 64 KiB chunks. User actions run storage work on xxfclib
+threads with cancellable process progress. Cancellation and failures attempt to
+restore the original bytes, size, cursor and view; a device that continues to
+fail may also prevent recovery. Keep exclusive access to the device during
+editing. Memory-only policy disables the interactive disk operation.
+
+The HexView demo accepts `--write file.bin` in either `--native` or `--tui`
+mode to exercise these actions on a live file. These edits change that file
+immediately. Its default mode continues to edit a copied snapshot; combining
+`--write` with `--smoke-test` performs read-only checks.
+
+**Ctrl+Z** undoes an insertion, deletion, overwrite, paste or cut and **Ctrl+Y** redoes it in both GUI
+and TUI. The Edit context menu has matching **Undo** and **Redo** actions;
+macOS also accepts Command+Z/Command+Y. They are disabled when no matching
+history exists or the next command's required capability is unavailable.
+Insert/delete require resizing; overwrite only requires writing. Batched key presses are
+replayed in order, including a deletion followed immediately by undo.
+
+Each HexView retains up to 128 successful byte changes, including calls to
+`insert_bytes`, `delete_bytes`, `overwrite_bytes`, `paste_text` and
+`cut_selection`. Device commands save
+their changed bytes in temporary streams. Copied nibble edits retain their
+old/new byte inline, plus the caret and selection; larger copied overwrites
+retain only their changed ranges. Undo and redo
+use the same bounded transfers, worker progress, cancellation and recovery as
+the original edit. Replay restores the corresponding selection, including
+whole symbols with the current encoding. A successful edit after undo discards
+redo; failed, cancelled, zero-length and byte-identical overwrites leave it available.
+
+The Edit menu's **Overwrite bytes…** accepts hexadecimal byte pairs and an
+absolute offset. `xxwidgets_hexview_overwrite_bytes(hex, offset, bytes, length)`
+provides the silent synchronous API; `xxwidgets_hexview_can_overwrite` queries
+availability. Overwrites keep size unchanged and must fit entirely within
+existing bytes. Writable fixed-size memory devices, subdevices and multivolumes
+can overwrite without a resize callback. Read-only and append-mode devices,
+and callback-only sources, leave the action disabled. Only the overwritten
+range is backed up and written; following file bytes are not shifted.
+
+The copied-data nibble editor uses the same xxfclib history. Each changed nibble
+records one undo step, restoring both the byte and its high/low caret position.
+An unchanged nibble advances the caret without adding a command. Copied undo/redo
+runs synchronously, keeping a following typed digit in the correct input order.
+Turning off copied editing preserves undo/redo for the changes already made.
+Device nibble typing stays unavailable; use the explicit overwrite action/API.
+
+**Ctrl+V** (Command+V on macOS) and **Edit → Paste bytes** paste at the
+selection start, or at the caret when no range is selected. In Hex, clipboard
+text must contain complete hexadecimal byte pairs, such as `AA BB 00` or
+`AABB00`; whitespace may separate pairs. In Symbols, clipboard UTF-8 text is
+encoded using the selected codepage, including UTF-8, UTF-16 and UTF-32 in both
+byte orders. Invalid text, characters outside that codepage, and ranges beyond
+the end of the file are rejected before writing. Paste overwrites existing
+bytes and selects the pasted range; it does not change file size. Each changed
+paste is one undo/redo step in the same xxfclib history as other byte edits.
+Empty and byte-identical pastes preserve redo. Clipboard text is limited to
+16 MiB. `xxwidgets_hexview_paste_text(hex, text)` exposes the silent synchronous
+operation using the active column. Application input handlers continue to
+receive paste before the built-in keyboard behavior.
+
+GUI paste reads the native clipboard. TUI paste reads the Windows clipboard,
+uses `pbpaste` on macOS, or `wl-paste`, `xclip` or `xsel` on a Unix desktop.
+Helpers run with bounded output and a timeout. When no clipboard provider is
+available, Ctrl+V opens a Paste bytes form for normal terminal text paste.
+The form accepts up to 65,535 bytes of text and retains the column, encoding
+and destination from the original action. Read-only views disable built-in
+paste; writable fixed-size devices support it without a resize callback.
+
+**Ctrl+Shift+V** (Command+Shift+V on macOS) and **Edit → Insert pasted bytes**
+insert clipboard bytes before the selection start, or at the caret when there
+is no selection. Existing selected bytes move after the inserted data. This
+action is available only for attached writable devices supporting resizing,
+including empty devices and insertion at EOF. Copied buffers, fixed-size and
+read-only devices, callback-only sources and the Address column disable it.
+Hex byte-pair parsing, Symbols encoding, the 16 MiB clipboard limit and the
+manual fallback form match ordinary paste. Each nonempty insertion is one
+xxfclib history command; Ctrl+Z/Ctrl+Y restore or reapply its bytes and selection.
+Empty, invalid, cancelled and failed insertions preserve redo. The public
+`xxwidgets_hexview_can_paste_insert(hex)` query and synchronous, silent
+`xxwidgets_hexview_paste_insert_text(hex, text)` API expose the same behavior.
+Application-owned Ctrl+V handling continues to control ordinary overwrite
+paste; Ctrl+Shift+V uses the built-in resizable-device insertion path.
+
+TUI recognizes distinct modified keys reported through CSI u or xterm
+modifyOtherKeys. Terminals that reserve Ctrl+Shift+V for their own clipboard
+paste can use **Edit → Insert pasted bytes** instead.
+
+**Ctrl+X** (Command+X on macOS) and **Edit → Cut bytes** copy and remove the
+selected bytes. They are enabled only for an attached writable device that
+supports resizing, with a nonempty selection in Hex or Symbols and clipboard
+support. Copied buffers, fixed-size devices and read-only sources disable cut.
+Hex copies byte pairs; Symbols copies decoded text using the selected encoding,
+including complete UTF-8, UTF-16 and UTF-32 symbols across file blocks. Text uses
+the same replacement dots for invalid sequences and controls as ordinary Copy.
+The clipboard write must succeed before deletion starts. Failure or cancellation
+uses the existing deletion rollback; copied text may remain on the clipboard.
+POSIX TUI uses OSC 52 in terminals that support clipboard copying.
+
+Cut is one deletion command in the shared xxfclib history. **Ctrl+Z** restores
+the exact bytes and their selection; **Ctrl+Y** removes them again. Replay
+does not modify the clipboard. `xxwidgets_hexview_can_cut(hex)` queries
+availability, and `xxwidgets_hexview_cut_selection(hex)` provides the silent,
+synchronous operation. Cut publishes directly through the clipboard backend;
+it bypasses the optional application Copy handler because that handler may
+defer copying until after it returns. GUI/TUI keyboard cuts defer until after
+event dispatch and use the existing worker progress and cancellation for
+device deletion. Queued cuts retain their selected range and clipboard format.
+
+The silent synchronous APIs are `xxwidgets_hexview_undo`,
+`xxwidgets_hexview_redo`, `xxwidgets_hexview_can_undo` and
+`xxwidgets_hexview_can_redo`. `xxwidgets_hexview_clear_history` releases retained
+commands without changing file bytes. Paging, layout and encoding changes keep
+history. Successful device/source/data replacement, detachment and explicit
+device refresh release it; failed replacement keeps it. Clear history or refresh
+after external writes. Replay rejects changed device identity, file size or bytes
+it would remove, but cannot detect every external change. History is local to
+the open widget and is not a crash-recovery journal.
+
+The reusable command algorithm lives in xxfclib's `src/history/xx_history.c`.
+It has no widget or file dependency: other editors can provide their own replay
+callbacks and payloads through `xxfclib/history/xx_history.h`.
+
+### Copied data and display
 
 Create a control with `XXWIDGETS_HEXVIEW`, then call
 `xxwidgets_hexview_set_data(widget, bytes, size)`. The data is copied; NULL
@@ -462,6 +700,11 @@ position; a wide terminal glyph occupies two cells, with markers in any remainin
 continuation cells.
 
 `xxwidgets_hexview_set_display`/`get_display` expose those display settings.
+`xxwidgets_hexview_set_bold_nonzero`/`get_bold_nonzero` independently control
+emphasis of non-zero values in the numeric column. The option defaults to off.
+Grouped hexadecimal and integer values become bold when any backing byte is
+non-zero; address and symbol columns keep their normal weight. Native and TUI
+backends preserve selection and highlight colors while changing the weight.
 `xxwidgets_hexview_set_column_width(widget, column, cells)` sets a column width
 in character cells (0 restores automatic sizing); explicit widths survive data
 and layout changes. `get_layout` returns the current base and row width. Header
@@ -541,6 +784,20 @@ Passing NULL callbacks detaches the source. Callback user data remains caller-ow
 In Symbols, Ctrl+A / Cmd+A selects the entire attached source, with every byte
 of its first and last symbols included. Copy and dump use that complete range.
 
+Native HexViews include a vertical file overview between the byte table and
+its scrollbar. The strip represents the complete attached source, or the
+copied buffer from its base address through its final byte. Clicking its top or
+bottom reaches the first or last byte; Symbols selects the complete encoded
+symbol containing the target byte, including across source windows.
+`xxwidgets_hexview_set_overview_markers` copies an array of
+`xxwidgets_hexview_highlight` records to color file areas independently of inline
+byte backgrounds. A zero-length record marks a position such as a bookmark.
+Markers remain at least two pixels high when possible; the highest priority
+wins, and later records break ties. Off-file markers are clipped or hidden.
+Passing NULL and zero clears them. Marker changes are transactional, do not
+emit input events, and survive data paging and font changes. TUI retains the
+marker model without adding a strip to the terminal layout.
+
 Right-click the body, or press Shift+F10, for the byte context menu. Right-clicking
 inside a selection preserves it. The menu provides:
 
@@ -572,12 +829,26 @@ range, while replacing the data resets it.
 
 `xxwidgets_hex_options.h` provides a reusable embedded options form for a
 HexView. `xxwidgets_hex_options_widget_create` creates an 8/16/24/32/48/64-byte row
-selector and an Editable checkbox. Read the passive form with
+selector, Editable and Bold non-zero checkboxes, and Hex font family/point-size
+fields. Bounds require at least 44 by 5 text cells. Read the passive form with
 `xxwidgets_hex_options_widget_get`, then apply its values with
-`xxwidgets_hexview_set_layout` and `xxwidgets_hexview_set_editable`.
+`xxwidgets_hexview_set_layout`, `xxwidgets_hexview_set_editable` and
+`xxwidgets_hexview_set_bold_nonzero` and `xxwidgets_hexview_set_font`.
 `xxwidgets_hex_options_init` supplies the HexView defaults of 16 bytes per row
-and read-only mode. The form owns its child controls and must be destroyed
-before its owner window.
+and read-only mode with non-zero emphasis disabled, using `monospace` at
+automatic size (0). A font descriptor is specific to one HexView; other table
+fonts stay unchanged. Native backends use their system monospace font for this
+default family. TUI saves the descriptor while the terminal controls its font.
+The form owns its child
+controls and must be destroyed before its owner window. The shared
+`xxwidgets_hex_options_dialog(owner, title, &options, show_editable, &accepted)`
+modal embeds the same control. Set `show_editable` to zero to hide Editable while
+preserving that value. Choose opens a native font picker where available, and
+otherwise explains how to edit the portable fields. Default restores monospace
+at automatic size. Font families allow up to 127 UTF-8 bytes without control
+characters; sizes are 4..96 points, or 0 for automatic. Invalid input stays open
+with an explanation. OK commits after cleanup succeeds; Cancel, Escape, close,
+quit and errors leave all input options unchanged.
 
 The separate `xxwidgets_hexview_demo` accepts:
 
@@ -728,6 +999,9 @@ callback reentrancy, suppression of programmatic notifications, and rollback
 after backend failures through a deterministic backend. HexView tests cover
 copied input and output, formatting, layouts, final rows, address overflow,
 editable/read-only modes, nibble cursor movement, change events, and rollback.
+Overview tests cover tiny and empty strips, marker priority and point visibility,
+full 64-bit offset scaling, cross-window UTF-16 selection, and rollback after
+read, seek, and backend failures.
 Windows native tests
 exercise actual WinAPI controls, UTF-8 round trips, user notifications,
 selection, close handling, and cleanup. Linux GTK and macOS AppKit require
@@ -766,13 +1040,56 @@ Shift+F10/Menu and TUI F10 request the same actions. Enter or double-click emits
 `ACTIVATE`. Queue those requests in the application event callback and call
 `xxwidget_systemprocessesviewer_show_actions` after `xxwidgets_app_poll` returns. The
 shared menu offers Open executable location, Copy PID (native clipboard),
-Refresh, and Kill process with a separate confirmation. Termination rechecks
+Refresh, Kill process with a separate confirmation, Dump process memory, and
+Dump executable image and Hex view. Termination rechecks
 the start identity and refuses the current process and PID 0/1. POSIX uses
 SIGTERM by default; the standalone kill API also supports SIGKILL. Windows
-uses TerminateProcess. OS permissions can deny either operation.
+uses TerminateProcess. OS permissions can deny these operations.
+
+### Process memory from the context menu
+
+In the system process viewer, right-click a process row or press F10 in the
+TUI and choose **Hex view**. The dialog starts at a readable mapping, preferring
+the main executable where available. It uses an identity-checked native handle
+and a read-only `xx_io` process device. Process addresses can also be viewed by
+attaching a device from `xx_io_process_open_ro(pid)` to an existing HexView.
+Native access permissions apply; memory changes or process exit can make later
+reads fail. Both the native GUI and TUI use the same device adapter.
+
+The browser provides an address field (decimal or `0x` hexadecimal), Go,
+Refresh/F5 and Close/Esc. `xxwidget_systemprocessesviewer_show_hexview` opens
+the same modal viewer directly after `xxwidgets_app_poll` returns. The usual
+HexView Dump selected bytes action also saves a selected readable range.
+
+Both dump actions offer a native Save chooser or a TUI Output file form. The
+TUI form replaces an existing file only when Replace existing file is checked;
+native choosers confirm replacement. Output is staged beside the destination
+and published on success, so a failed capture preserves any existing file.
+Dump process memory writes a debugger-readable `.dmp` on Windows, an ELF
+`.core` using GNU `gcore` on Linux, or a Mach-O `.core` using `/usr/bin/gcore`
+on macOS. Unix memory dumps require that utility to be installed. Windows
+capture requires a compatible process architecture.
+
+Dump executable image reads the main executable's mapped bytes directly from
+the process through xxfclib's `xx_io_process_*` APIs into a `.bin` file.
+The widget uses borrowed read-only devices for its already-validated native
+handles. The build compiles the standalone `xxprocessio.cmake` subset alongside
+the widgets, with no format-engine runtime dependency. File offset zero corresponds to the image's
+lowest mapped address; unmapped gaps are zero-filled. This is a raw memory
+image and does not rebuild the executable's disk layout. Both modes recheck
+the selected PID's start identity. Raw image capture on Windows and Linux
+reads a running process, so bytes can change during capture; macOS temporarily
+suspends the target while reading its image. Both modes refuse PID 0/1 and
+the viewer's own process, and respect operating-system memory access permissions. Core capture can
+briefly suspend the target. The standalone
+`xxwidget_systemprocessesviewer_dump_process(process, destination, type, overwrite)`
+API is synchronous and can be called from an application worker thread;
+`type` is `XXWIDGETS_PROCESS_DUMP_MEMORY` or `XXWIDGETS_PROCESS_DUMP_IMAGE`.
 
 The source is `src/xxwidget_systemprocessesviewer.c`, with OS adapters in
-`src/xxwidget_systemprocessesviewer_platform.c`. The independent example is
+`src/platform/xxwidget_systemprocessesviewer_platform.c` and the
+`src/platform/xxwidget_systemprocessesviewer_dump_win32.c` /
+`src/platform/xxwidget_systemprocessesviewer_dump_posix.c` dump adapters. The independent example is
 `examples/systemprocessesviewer_demo.c`:
 
 ```sh
@@ -942,6 +1259,15 @@ The optional `xxwidgets::settings` adapter provides
 `xxwidgets_settings_install_shortcuts(window, loaded, actions, count)` to map
 the named list from `xx_shortcuts_load()` into numeric application actions.
 Unknown names are ignored; recognized bindings use the same validation rules.
+
+## Strings viewer
+
+`xxwidgets_strings` presents copied scanner results with 64-bit offsets, byte
+sizes, decoded character counts, encoding names and UTF-8 text. It provides a
+filter, selection metadata, full-text copy and CSV export through native and
+terminal controls. Include `xxwidgets/xxwidgets_strings.h`; see the
+[strings viewer reference](docs/strings-viewer-reference.md) for ownership,
+event routing and integration details. The widget is independent of a scanner.
 
 ## Entropy widget
 

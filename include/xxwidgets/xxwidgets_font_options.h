@@ -54,6 +54,14 @@ XXWIDGETS_API xxwidgets_status xxwidgets_font_options_init(xxwidgets_font_option
  * settings; the terminal host controls its actual font. */
 XXWIDGETS_API xxwidgets_status xxwidgets_app_set_font_options(xxwidgets_app *app, const xxwidgets_font_options *options);
 XXWIDGETS_API xxwidgets_status xxwidgets_app_get_font_options(const xxwidgets_app *app, xxwidgets_font_options *options);
+/* Font override for one HexView, independent of the application's table font.
+ * Empty family or "monospace" selects the backend's fixed-pitch family; size 0
+ * selects its default size. Unconfigured views report monospace/0/regular.
+ * Data, cursor, selection and column widths are preserved. A failed update
+ * leaves the preceding font intact. TUI stores the descriptor; its terminal
+ * host controls the visible font. Programmatic updates emit no input events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_font(xxwidgets_widget *view, const xxwidgets_font *font);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_font(const xxwidgets_widget *view, xxwidgets_font *font);
 /* Modal editable family/size/style rows with Choose, Default, and previews.
  * Only OK changes options; this dialog does not apply them to the application.
  * Call app_set_font_options after acceptance. Cancel and chooser cancellation

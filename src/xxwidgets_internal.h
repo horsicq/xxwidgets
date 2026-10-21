@@ -27,6 +27,9 @@
 #include "xxwidgets/xxwidgets_canvas.h"
 #include "xxwidgets/xxwidget_systemprocessesviewer.h"
 
+/* Atomic copied-data/base-address replacement for debugger memory panes. */
+xxwidgets_status xxwidgets_hexview_replace_snapshot(xxwidgets_widget *, uint64_t, const void *, size_t);
+
 typedef struct xxwidgets_backend_ops {
     const char *name;
     xxwidgets_status (*init)(xxwidgets_app *app);
@@ -51,6 +54,7 @@ typedef struct xxwidgets_backend_ops {
     xxwidgets_status (*accept_file_drops)(xxwidgets_widget *window, int accept);
     size_t (*hexview_page_rows)(const xxwidgets_widget *widget);
     xxwidgets_status (*paste_text)(xxwidgets_widget *, char *, size_t, size_t *);
+    xxwidgets_status (*hexview_font)(xxwidgets_widget *, const xxwidgets_font *);
 } xxwidgets_backend_ops;
 
 struct xxwidgets_about_dialog {
@@ -78,6 +82,17 @@ struct xxwidgets_app {
     xxwidgets_font_options font_options;
 };
 
+struct xxwidgets_hex_pending_action {
+    int action;
+    uint64_t offset, length;
+    unsigned char *data; /* Owned paste bytes, fallback encoding, or cut column/encoding. */
+};
+
+typedef struct xxwidgets_hex_position {
+    size_t cursor, anchor, anchor_bytes, selection, length;
+    unsigned int nibble;
+} xxwidgets_hex_position;
+
 struct xxwidgets_widget {
     xxwidgets_app *app;
     xxwidgets_widget *parent;
@@ -98,10 +113,14 @@ struct xxwidgets_widget {
     unsigned int hex_header, hex_menu_index;
     int hex_menu_open;
     int hex_editable;
+    int hex_bold_nonzero;
+    xxwidgets_font hex_font;
+    int hex_has_font;
     size_t hex_anchor, hex_anchor_bytes, hex_selection, hex_selection_length;
     xxwidgets_hexview_source_read_fn hex_source_read;
     xxwidgets_hexview_source_seek_fn hex_source_seek;
     void *hex_source_user;
+    struct xxwidgets_hex_io_state *hex_io; /* Owned adapter; device ownership is explicit. */
     uint64_t hex_source_size, hex_source_anchor, hex_source_anchor_bytes;
     uint64_t hex_source_selection, hex_source_length;
     xxwidgets_hexview_copy_fn hex_copy_handler;
@@ -112,8 +131,18 @@ struct xxwidgets_widget {
     void *hex_input_user;
     xxwidgets_hexview_highlight *hex_highlights;
     size_t hex_highlight_count;
+    xxwidgets_hexview_highlight *hex_overview_markers;
+    size_t hex_overview_marker_count;
     int hex_source_seeking;
     int hex_dragging, hex_pending_dump;
+    int hex_pending_edit, hex_edit_busy;
+    int hex_cut_busy; /* Confirming clipboard publication and deleting a cut. */
+    int hex_replay_input; /* Applying a queued copied-data key in input order. */
+    uint64_t hex_pending_edit_offset, hex_pending_edit_length;
+    unsigned char *hex_pending_edit_data;
+    struct xx_history *hex_history;
+    struct xxwidgets_hex_pending_action *hex_edit_queue;
+    size_t hex_edit_queue_count, hex_edit_queue_capacity;
     size_t hex_cursor;
     unsigned int hex_nibble, hex_pending_surrogate;
     /* Keep a vertical or row-edge move's byte column and requested row even
@@ -136,6 +165,8 @@ struct xxwidgets_widget {
     xxwidgets_process_info *processes; /* Names/paths borrow scan_results strings. */
     struct xxwidgets_binaryviewer_state *binaryviewer;
     uint64_t binary_revision;
+    struct xxwidgets_debugger_table_state *debugger_table;
+    uint64_t debugger_revision;
     int process_selection; /* Transactional replacement selection hint. */
     char **scan_cells; /* Escaped cells, row * 4 + column. */
     size_t scan_column_width[4];
@@ -218,6 +249,7 @@ void xxwidgets_emit_context(xxwidgets_widget *widget, int value, int x, int y);
 int xxwidgets_focusable(const xxwidgets_widget *widget);
 xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget);
 int xxwidgets_font_valid(const xxwidgets_font *font);
+int xxwidgets_font_is_monospace(const xxwidgets_font *font);
 static inline int xxwidgets_combo_kind(const xxwidgets_widget *widget)
 {
     return widget->kind == XXWIDGETS_COMBOBOX || widget->kind == XXWIDGETS_CHECKCOMBOBOX;
@@ -232,8 +264,10 @@ static inline int xxwidgets_entropy_table(const xxwidgets_widget *widget)
 { return widget && (widget->kind == XXWIDGETS_ENTROPY_REGIONS || widget->kind == XXWIDGETS_ENTROPY_BYTES); }
 static inline int xxwidgets_binaryviewer_kind(const xxwidgets_widget *widget)
 { return widget && widget->kind >= XXWIDGET_RESOURCESVIEWER && widget->kind <= XXWIDGET_SYMBOLSVIEWER; }
+static inline int xxwidgets_debugger_table_kind(const xxwidgets_widget *widget)
+{ return widget && widget->kind >= XXWIDGETS_DEBUGGER_DISASM && widget->kind <= XXWIDGETS_DEBUGGER_STACK; }
 static inline int xxwidgets_tabular_kind(const xxwidgets_widget *widget)
-{ return widget && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget)); }
+{ return widget && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)); }
 /* Plot primitives use top-left coordinates, RGB colors, and borrowed text.
  * kind: 0=line, 1=filled rectangle, 2=text. */
 typedef void (*xxwidgets_plot_draw_fn)(void *user, int kind, double x, double y, double x2, double y2, uint32_t rgb, const char *text);
@@ -244,7 +278,7 @@ const char *xxwidgets_entropy_cell(const xxwidgets_widget *widget, size_t row, s
 static inline int xxwidgets_formatted_rows(const xxwidgets_widget *widget)
 {
     return widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGETS_ARCHIVEBROWSER ||
-           widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_TREEVIEW || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget);
+           widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_TREEVIEW || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget);
 }
 static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 {
@@ -252,7 +286,8 @@ static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 }
 static inline uint64_t xxwidgets_row_revision(const xxwidgets_widget *widget)
 {
-    return xxwidgets_binaryviewer_kind(widget) ? widget->binary_revision
+    return xxwidgets_debugger_table_kind(widget) ? widget->debugger_revision
+           : xxwidgets_binaryviewer_kind(widget) ? widget->binary_revision
            : xxwidgets_entropy_table(widget) ? widget->entropy_revision
            : widget->kind == XXWIDGETS_TREEVIEW         ? widget->tree_revision
            : (widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) ? widget->scan_revision
@@ -281,7 +316,15 @@ typedef struct xxwidgets_hex_span {
 } xxwidgets_hex_span;
 /* Text ranges are UTF-8 byte indices, shared by hit testing and all renderers. */
 int xxwidgets_hexview_highlight_span(const xxwidgets_widget *, size_t offset, size_t length, uint32_t *color);
+/* Overview helpers use absolute file offsets and a top-origin pixel row.
+ * Empty/invalid offset queries return UINT64_MAX. No drawing-time allocation. */
+uint64_t xxwidgets_hexview_overview_size(const xxwidgets_widget *);
+int xxwidgets_hexview_overview_color(const xxwidgets_widget *, size_t row, size_t height, uint32_t *color);
+uint64_t xxwidgets_hexview_overview_offset(const xxwidgets_widget *, size_t row, size_t height);
+xxwidgets_status xxwidgets_hexview_overview_activate(xxwidgets_widget *, size_t row, size_t height);
 size_t xxwidgets_hexview_spans(const xxwidgets_widget *, size_t row, size_t column, xxwidgets_hex_span spans[64]);
+/* Full non-zero display units, with alignment padding omitted. Numeric column only. */
+size_t xxwidgets_hexview_bold_spans(const xxwidgets_widget *, size_t row, size_t column, xxwidgets_hex_span spans[64]);
 /* Clip a complete source symbol to the byte slots visible on this row.
  * A continuation-only row span has length zero and retains its source owner. */
 void xxwidgets_hexview_symbol_layout(const xxwidgets_widget *, size_t row, const xxwidgets_hex_span *, size_t *cell, size_t *cells);
@@ -295,6 +338,23 @@ xxwidgets_status xxwidgets_hexview_pointer(xxwidgets_widget *, size_t offset, in
 xxwidgets_status xxwidgets_hexview_pointer_span(xxwidgets_widget *, size_t offset, size_t bytes, int extend);
 xxwidgets_status xxwidgets_hexview_body_action(xxwidgets_widget *, size_t index);
 void xxwidgets_hexview_deferred(xxwidgets_app *);
+xxwidgets_status xxwidgets_hexview_edit_interactive(xxwidgets_widget *, uint64_t offset,
+                                                   const void *data, size_t insert_length, uint64_t delete_length);
+xxwidgets_status xxwidgets_hexview_history_interactive(xxwidgets_widget *, int redo);
+xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *, size_t offset, const void *, size_t length,
+                                                        const xxwidgets_hex_position *);
+xxwidgets_status xxwidgets_hexview_overwrite_input(xxwidgets_widget *, size_t offset, unsigned char byte,
+                                                 size_t next_cursor, unsigned int next_nibble);
+xxwidgets_status xxwidgets_hexview_overwrite_interactive(xxwidgets_widget *, uint64_t offset, const void *, size_t length);
+xxwidgets_status xxwidgets_hexview_decode_paste(const xxwidgets_widget *, const char *, unsigned char **, size_t *);
+xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *, uint64_t offset, uint64_t length,
+                                                  xxwidgets_hex_copy_format, const char *encoding,
+                                                  char **text, unsigned char **snapshot);
+xxwidgets_status xxwidgets_hexview_cut_range(xxwidgets_widget *, uint64_t offset, uint64_t length,
+                                            unsigned int column, const char *encoding, int interactive);
+void xxwidgets_hexview_history_dispose(xxwidgets_widget *);
+/* Called after polling; also works for a HexView inside the active modal window. */
+xxwidgets_status xxwidgets_hexview_dump_dialog(xxwidgets_widget *);
 void xxwidgets_hexview_init(xxwidgets_widget *widget);
 void xxwidgets_hexview_dispose(xxwidgets_widget *widget);
 xxwidgets_status xxwidgets_hexview_selection_input(xxwidgets_widget *widget, int row);
@@ -329,6 +389,11 @@ xxwidgets_status xxwidgets_binaryviewer_set_records(xxwidgets_widget *, xxwidget
 xxwidgets_status xxwidgets_binaryviewer_get_record(const xxwidgets_widget *, xxwidgets_kind, size_t, void *);
 xxwidgets_status xxwidgets_binaryviewer_get_selection(xxwidgets_widget *, xxwidgets_kind, size_t *, void *);
 void xxwidgets_binaryviewer_dispose(xxwidgets_widget *);
+void xxwidgets_debugger_table_dispose(xxwidgets_widget *);
+size_t xxwidgets_debugger_table_column_count(const xxwidgets_widget *);
+const char *xxwidgets_debugger_table_column_title(const xxwidgets_widget *, size_t);
+const char *xxwidgets_debugger_table_cell(const xxwidgets_widget *, size_t, size_t);
+size_t xxwidgets_debugger_table_column_width(const xxwidgets_widget *, size_t);
 size_t xxwidgets_binaryviewer_column_count(const xxwidgets_widget *);
 const char *xxwidgets_binaryviewer_column_title(const xxwidgets_widget *, size_t);
 const char *xxwidgets_binaryviewer_cell(const xxwidgets_widget *, size_t, size_t);

@@ -39,6 +39,19 @@ int xxwidgets_font_valid(const xxwidgets_font *font)
     return 1;
 }
 
+int xxwidgets_font_is_monospace(const xxwidgets_font *font)
+{
+    static const char generic[] = "monospace";
+    size_t i;
+    if (!font->family[0]) return 1;
+    for (i = 0; i < sizeof(generic); ++i) {
+        unsigned char c = (unsigned char)font->family[i];
+        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+        if (c != (unsigned char)generic[i]) return 0;
+    }
+    return 1;
+}
+
 static int valid_options(const xxwidgets_font_options *options)
 {
     size_t role;
@@ -73,6 +86,37 @@ xxwidgets_status xxwidgets_app_set_font_options(xxwidgets_app *app, const xxwidg
     if (app->ops->apply_fonts) status = app->ops->apply_fonts(app, &copied);
     --app->syncing;
     if (status == XXWIDGETS_OK) app->font_options = copied;
+    return status;
+}
+
+xxwidgets_status xxwidgets_hexview_get_font(const xxwidgets_widget *view, xxwidgets_font *font)
+{
+    if (!view || view->kind != XXWIDGETS_HEXVIEW || !font) return XXWIDGETS_INVALID_ARGUMENT;
+    if (view->hex_has_font) *font = view->hex_font;
+    else {
+        memset(font, 0, sizeof(*font));
+        memcpy(font->family, "monospace", sizeof("monospace"));
+    }
+    return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_hexview_set_font(xxwidgets_widget *view, const xxwidgets_font *font)
+{
+    xxwidgets_status status = XXWIDGETS_OK;
+    xxwidgets_font copied;
+    if (!view || view->kind != XXWIDGETS_HEXVIEW || !xxwidgets_font_valid(font)) return XXWIDGETS_INVALID_ARGUMENT;
+    copied = *font;
+    if (!copied.family[0]) memcpy(copied.family, "monospace", sizeof("monospace"));
+    if (view->hex_has_font && !strcmp(view->hex_font.family, copied.family) && view->hex_font.point_size == copied.point_size &&
+        view->hex_font.bold == copied.bold && view->hex_font.italic == copied.italic) return XXWIDGETS_OK;
+    if (!view->app->ops->hexview_font && view->app->backend != XXWIDGETS_BACKEND_TUI) return XXWIDGETS_UNAVAILABLE;
+    ++view->app->syncing;
+    if (view->app->ops->hexview_font) status = view->app->ops->hexview_font(view, &copied);
+    --view->app->syncing;
+    if (status == XXWIDGETS_OK) {
+        view->hex_font = copied;
+        view->hex_has_font = 1;
+    }
     return status;
 }
 

@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "xxwidgets_internal.h"
+#include "xxwidgets/xxwidgets_forms.h"
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -86,7 +87,7 @@ xxwidgets_status xxwidget_systemprocessesviewer_refresh(xxwidgets_widget *widget
 }
 
 typedef struct process_actions {
-    xxwidgets_widget *window, *buttons[5];
+    xxwidgets_widget *window, *buttons[8];
     size_t count;
     int done, choice;
 } process_actions;
@@ -107,6 +108,7 @@ static xxwidgets_status action_dialog(xxwidgets_widget *viewer, const char *titl
     int owner_enabled = owner->enabled, disabled_owner = 0, attached = 0;
     process_actions state = {0}; xxwidgets_status status = XXWIDGETS_OK, cleanup;
     xxwidgets_rect rect = {owner->rect.x + 2, owner->rect.y + 2, 62, (int)count * 2 + 4}; size_t i;
+    if (!choice || !count || count > sizeof(state.buttons) / sizeof(state.buttons[0])) return XXWIDGETS_INVALID_ARGUMENT;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     state.count = count; state.choice = -1; *choice = -1;
     app->on_event = actions_event; app->user_data = &state;
@@ -145,27 +147,108 @@ done:
     return status;
 }
 
+static xxwidgets_status dump_action(xxwidgets_widget *widget, const xxwidgets_process_info *process, xxwidgets_process_dump_type type)
+{
+    xxwidgets_widget *owner = widget->parent;
+    char name[96], title[128], *path = NULL, *message = NULL;
+    const char *extension = type == XXWIDGETS_PROCESS_DUMP_IMAGE ? "bin" :
+#ifdef _WIN32
+        "dmp";
+#else
+        "core";
+#endif
+    const char *description = type == XXWIDGETS_PROCESS_DUMP_IMAGE ? "executable image" : "process memory";
+    xxwidgets_status status, notice;
+    int accepted = 0, overwrite = 0;
+    snprintf(name, sizeof(name), "process-%" PRIu64 ".%s", process->pid, extension);
+    snprintf(title, sizeof(title), "Dump %s - PID %" PRIu64, description, process->pid);
+    if (xxwidgets_file_dialog_available(widget->app)) {
+        status = xxwidgets_file_dialog(owner, XXWIDGETS_FILE_DIALOG_SAVE, title, name, &path, &accepted);
+        overwrite = accepted; /* The native chooser confirms replacement. */
+    } else {
+        const size_t capacity = 65536;
+        xxwidgets_form_field fields[2] = {0};
+        path = (char *)calloc(capacity, 1);
+        if (!path) return XXWIDGETS_OUT_OF_MEMORY;
+        memcpy(path, name, strlen(name) + 1);
+        fields[0].label = "Output file";
+        fields[0].value = path;
+        fields[0].capacity = capacity;
+        fields[1].label = "Replace existing file";
+        fields[1].checkbox = 1;
+        do {
+            status = xxwidgets_form_dialog(owner, path[0] ? title : "Enter an output file path", fields, 2, &accepted);
+        } while (status == XXWIDGETS_OK && accepted && !path[0]);
+        overwrite = fields[1].checked;
+    }
+    if (status != XXWIDGETS_OK || !accepted) {
+        free(path);
+        if (owner->enabled && !widget->app->quit) (void)xxwidgets_widget_focus(widget);
+        return status;
+    }
+    status = xxwidget_systemprocessesviewer_dump_process(process, path, type, overwrite);
+    if (status == XXWIDGETS_OK) {
+        size_t length = strlen(path);
+        if (length > SIZE_MAX - 128) notice = XXWIDGETS_OUT_OF_MEMORY;
+        else {
+            message = (char *)malloc(length + 128);
+            if (!message) notice = XXWIDGETS_OUT_OF_MEMORY;
+            else {
+                snprintf(message, length + 128, "Saved %s to:\n%s", description, path);
+                notice = xxwidgets_text_dialog(owner, "Dump saved", message);
+            }
+        }
+    } else {
+        char failure[640];
+        const char *hint = type == XXWIDGETS_PROCESS_DUMP_IMAGE ?
+            "The main executable must have a readable memory image." :
+#ifdef _WIN32
+            "Process memory dumps require a compatible process architecture.";
+#elif defined(__APPLE__)
+            "Process memory dumps require /usr/bin/gcore and permission to inspect the target.";
+#else
+            "Process memory dumps require GNU gcore and permission to inspect the target.";
+#endif
+        snprintf(failure, sizeof(failure),
+            "Could not dump %s: %s.\n\n"
+            "The process must still exist and allow memory access. Check the output folder "
+            "and replacement choice. %s The existing output file is preserved on failure.",
+            description, status == XXWIDGETS_UNAVAILABLE ? "process access or output unavailable" :
+                status == XXWIDGETS_BUSY ? "output already exists or process mappings changed" : xxwidgets_status_string(status), hint);
+        notice = xxwidgets_text_dialog(owner, "Dump failed", failure);
+    }
+    free(message);
+    free(path);
+    if (owner->enabled && !widget->app->quit) (void)xxwidgets_widget_focus(widget);
+    return status == XXWIDGETS_OK ? notice : status;
+}
+
 xxwidgets_status xxwidget_systemprocessesviewer_show_actions(xxwidgets_widget *widget)
 {
-    static const char *const actions[] = {"Open executable location", "Copy PID", "Refresh", "Kill process...", "Cancel"};
+    static const char *const actions[] = {"Open executable location", "Copy PID", "Refresh", "Kill process...",
+        "Dump process memory...", "Dump executable image...", "Hex view...", "Cancel"};
     static const char *const confirm[] = {"Terminate process", "Cancel"};
     xxwidgets_process_info process; size_t index; int choice = -1; unsigned disabled = 0;
     xxwidgets_status status; char title[96], pid[32];
     if (!process_widget(widget)) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidget_systemprocessesviewer_get_selection(widget, &index, &process);
     if (status != XXWIDGETS_OK) return status;
-    if (index == SIZE_MAX) disabled = (1u << 0) | (1u << 1) | (1u << 3);
+    if (index == SIZE_MAX) disabled = (1u << 0) | (1u << 1) | (1u << 3) | (1u << 4) | (1u << 5) | (1u << 6);
     else {
         if (!process.path || !*process.path) disabled |= 1u << 0;
-        if (!process.start_time || process.pid <= 1) disabled |= 1u << 3;
+        if (!process.start_time || process.pid <= 1) disabled |= (1u << 3) | (1u << 4) | (1u << 5) | (1u << 6);
     }
     if (!widget->app->ops->copy_text || widget->app->backend == XXWIDGETS_BACKEND_TUI) disabled |= 1u << 1;
     snprintf(title, sizeof(title), "Process actions - PID %" PRIu64, process.pid);
-    status = action_dialog(widget, title, index != SIZE_MAX ? widget->scan_cells[index * 4] : "No process selected", actions, 5, disabled, &choice);
+    status = action_dialog(widget, title, index != SIZE_MAX ? widget->scan_cells[index * 4] : "No process selected", actions,
+        sizeof(actions) / sizeof(actions[0]), disabled, &choice);
     if (status != XXWIDGETS_OK || choice < 0 || (disabled & (1u << choice))) return status;
     if (choice == 0) return xxwidget_systemprocessesviewer_open_process_path(&process);
     if (choice == 1) { snprintf(pid, sizeof(pid), "%" PRIu64, process.pid); return widget->app->ops->copy_text(widget->parent, pid); }
     if (choice == 2) return xxwidget_systemprocessesviewer_refresh(widget);
+    if (choice == 6) return xxwidget_systemprocessesviewer_show_hexview(widget);
+    if (choice == 4 || choice == 5) return dump_action(widget, &process,
+        choice == 4 ? XXWIDGETS_PROCESS_DUMP_MEMORY : XXWIDGETS_PROCESS_DUMP_IMAGE);
     if (choice == 3) {
         snprintf(title, sizeof(title), "Terminate PID %" PRIu64 "?", process.pid);
         status = action_dialog(widget, title, "Unsaved work in this process may be lost.", confirm, 2, 0, &choice);

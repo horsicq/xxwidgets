@@ -23,6 +23,7 @@
 #define XXWIDGETS_HEX_OPTIONS_H
 
 #include "xxwidgets/xxwidgets.h"
+#include "xxwidgets/xxwidgets_font_options.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +32,8 @@ extern "C" {
 typedef struct xxwidgets_hex_options {
     unsigned int bytes_per_row;
     int editable;
+    int bold_nonzero;
+    xxwidgets_font font;
 } xxwidgets_hex_options;
 
 typedef struct xxwidgets_hex_options_widget xxwidgets_hex_options_widget;
@@ -39,14 +42,21 @@ typedef enum xxwidgets_hex_options_control_id {
     XXWIDGETS_HEX_OPTIONS_BYTES_PER_ROW = 0,
     XXWIDGETS_HEX_OPTIONS_EDITABLE,
     XXWIDGETS_HEX_OPTIONS_BYTES_PER_ROW_LABEL,
+    XXWIDGETS_HEX_OPTIONS_BOLD_NONZERO,
+    XXWIDGETS_HEX_OPTIONS_FONT_FAMILY,
+    XXWIDGETS_HEX_OPTIONS_FONT_SIZE,
+    XXWIDGETS_HEX_OPTIONS_FONT_FAMILY_LABEL,
+    XXWIDGETS_HEX_OPTIONS_FONT_SIZE_LABEL,
+    XXWIDGETS_HEX_OPTIONS_FONT_SIZE_HINT,
     XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT
 } xxwidgets_hex_options_control_id;
 
-/* Defaults match a newly created HexView: 16 bytes per row and read-only. */
+/* Defaults: 16 bytes per row, read-only, normal weight, monospace/automatic size. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_init(xxwidgets_hex_options *options);
 
 /* Embedded HexView options form with an 8/16/24/32/48/64-byte row selector and an
- * Editable checkbox. Bounds use text cells and require at least 44 x 2.
+ * Editable and Bold non-zero checkboxes, plus font family and point-size edits.
+ * Bounds use text cells and require at least 44 x 5.
  * Children belong to the owner WINDOW and use its app callback. Destroy the
  * form before its owner/app; borrowed controls must not be destroyed alone. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
@@ -56,11 +66,18 @@ XXWIDGETS_API xxwidgets_widget *xxwidgets_hex_options_widget_control(const xxwid
                                                                      xxwidgets_hex_options_control_id control);
 XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_get(const xxwidgets_hex_options_widget *widget,
                                                                  xxwidgets_hex_options *options);
-/* bytes_per_row must be 8, 16, 24, 32, 48 or 64 and editable must be 0 or 1.
+/* bytes_per_row must be 8, 16, 24, 32, 48 or 64; checkbox values must be 0 or 1.
+ * Font descriptors follow xxwidgets_font validation; 0 selects automatic size.
  * Programmatic updates are transactional and emit no input events. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_set(xxwidgets_hex_options_widget *widget,
                                                                  const xxwidgets_hex_options *options);
 XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_set_rect(xxwidgets_hex_options_widget *widget, xxwidgets_rect bounds);
+
+/* Shared native/TUI modal. show_editable must be zero or one; zero hides the
+ * Editable control and preserves its input value. OK commits all options only
+ * after successful cleanup. Cancel/Escape/close, quit and errors preserve them. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const char *title,
+    xxwidgets_hex_options *options, int show_editable, int *accepted);
 
 #ifdef __cplusplus
 }

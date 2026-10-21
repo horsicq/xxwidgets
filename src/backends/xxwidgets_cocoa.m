@@ -41,6 +41,7 @@ typedef struct cocoa_widget_state {
     int tree_collapsing, tree_before_collapse;
     NSTextView *about_text; /* Owned by the window's content view. */
     NSFont *preview_font;
+    NSFont *hex_font;
     NSFont *applied_font;
     NSTextView *field_editor;
 } cocoa_widget_state;
@@ -55,11 +56,12 @@ static void cocoa_size_table(xxwidgets_widget *widget);
 static NSFont *cocoa_font_create(const xxwidgets_font *settings, int formatted)
 {
     CGFloat size = settings->point_size ? settings->point_size : [NSFont systemFontSize];
-    NSFont *base = formatted ? [NSFont userFixedPitchFontOfSize:size] : [NSFont systemFontOfSize:size];
+    int generic = settings->family[0] && xxwidgets_font_is_monospace(settings);
+    NSFont *base = formatted || generic ? [NSFont userFixedPitchFontOfSize:size] : [NSFont systemFontOfSize:size];
     NSFontManager *manager = [NSFontManager sharedFontManager];
     if (!base) base = [NSFont systemFontOfSize:size];
     if (!base) return nil;
-    if (settings->family[0]) {
+    if (settings->family[0] && !generic) {
         NSString *family = [NSString stringWithUTF8String:settings->family];
         NSFont *named = [NSFont fontWithName:family size:size];
         if (!named) named = [manager convertFont:base toFamily:family];
@@ -120,8 +122,9 @@ static void cocoa_widget_fonts(xxwidgets_widget *widget)
     }
     NSFont *font = state->preview_font ? state->preview_font :
         cocoa_role_font(widget, xxwidgets_widget_font_role(widget));
-    if (!state->preview_font && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW)) {
-        font = app->formatted_font ? app->formatted_font : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]];
+    if (!state->preview_font && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW || xxwidgets_debugger_table_kind(widget))) {
+        font = widget->kind == XXWIDGETS_HEXVIEW && state->hex_font ? state->hex_font :
+            app->formatted_font ? app->formatted_font : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]];
         if (!font) font = cocoa_role_font(widget, XXWIDGETS_FONT_TABLE_VIEWS);
     }
     int font_changed = state->applied_font != font;
@@ -132,7 +135,17 @@ static void cocoa_widget_fonts(xxwidgets_widget *widget)
             [[column headerCell] setFont:font];
         }
         [table setRowHeight:MAX(app->cell_height, ceil([font ascender] - [font descender] + [font leading]) + 4)];
-        if (font_changed && xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_SCANRESULTS && widget->kind != XXWIDGET_SYSTEMPROCESSESVIEWER && !xxwidgets_binaryviewer_kind(widget) &&
+        if (font_changed && widget->kind == XXWIDGETS_HEXVIEW) {
+            CGFloat width = MAX(1, [@"0" sizeWithAttributes:@{NSFontAttributeName:font}].width);
+            for (size_t i = 0; i < 3; ++i) {
+                NSTableColumn *column = [[table tableColumns] objectAtIndex:i];
+                [column setWidth:xxwidgets_hexview_column_width(widget, i) * width];
+                NSAttributedString *title = [[[NSAttributedString alloc] initWithString:[NSString stringWithUTF8String:xxwidgets_hexview_title(widget, i)]
+                    attributes:@{NSFontAttributeName:font}] autorelease];
+                [[column headerCell] setAttributedStringValue:title];
+            }
+        }
+        if (font_changed && xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_SCANRESULTS && widget->kind != XXWIDGET_SYSTEMPROCESSESVIEWER && !xxwidgets_binaryviewer_kind(widget) && !xxwidgets_debugger_table_kind(widget) &&
             !xxwidgets_entropy_table(widget) && widget->kind != XXWIDGETS_HEXVIEW && widget->kind != XXWIDGETS_DATA_STRUCT_TABLE &&
             widget->kind != XXWIDGETS_ARCHIVEBROWSER) {
             NSDictionary *attributes = [NSDictionary dictionaryWithObject:font forKey:NSFontAttributeName];
@@ -204,6 +217,18 @@ static xxwidgets_status cocoa_preview_font(xxwidgets_widget *widget, xxwidgets_f
         (void)role;
         if (!font) return XXWIDGETS_OUT_OF_MEMORY;
         [state->preview_font release]; state->preview_font = font;
+        cocoa_widget_fonts(widget);
+        return XXWIDGETS_OK;
+    }
+}
+
+static xxwidgets_status cocoa_hexview_font(xxwidgets_widget *widget, const xxwidgets_font *settings)
+{
+    @autoreleasepool {
+        cocoa_widget_state *state = widget->platform;
+        NSFont *font = cocoa_font_create(settings, 1);
+        if (!font) return XXWIDGETS_OUT_OF_MEMORY;
+        [state->hex_font release]; state->hex_font = font;
         cocoa_widget_fonts(widget);
         return XXWIDGETS_OK;
     }
@@ -428,6 +453,179 @@ static int cocoa_key_input(NSEvent *event, unsigned int *out_key, unsigned int *
 }
 - (NSMenu *)hexMenu:(NSInteger)column;
 - (void)hexMenuAction:(id)sender;
+@end
+
+/* Keep the full-file map outside the table's scrolling document. Its narrow
+ * gutter is reserved by tile rather than covering the last symbol column. */
+@interface XXWidgetsHexOverview : NSView {
+@public
+    xxwidgets_widget *hex_widget;
+    BOOL tracking;
+}
+@end
+@interface XXWidgetsHexScroll : NSScrollView {
+@public
+    xxwidgets_widget *hex_widget;
+    XXWidgetsHexOverview *overview;
+    BOOL tiling_overview;
+    BOOL overview_reserved;
+    NSRect content_unreserved, content_reserved;
+    NSRect header_unreserved, header_reserved;
+    NSRect horizontal_unreserved, horizontal_reserved;
+}
+- (void)refreshOverview;
+@end
+
+@implementation XXWidgetsHexOverview
+- (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return YES; }
+- (void)drawRect:(NSRect)dirty
+{
+    NSRect bounds = [self bounds];
+    [[NSColor controlBackgroundColor] setFill];
+    NSRectFill(dirty);
+    if (!hex_widget || !xxwidgets_hexview_overview_size(hex_widget) || bounds.size.height < 1) return;
+    size_t height = (size_t)ceil(bounds.size.height);
+    size_t first = (size_t)MAX(0, floor(NSMinY(dirty)));
+    size_t last = MIN(height, (size_t)MAX(0, ceil(NSMaxY(dirty))));
+    for (size_t row = first; row < last; ++row) {
+        uint32_t rgb;
+        if (!xxwidgets_hexview_overview_color(hex_widget, row, height, &rgb)) continue;
+        [[NSColor colorWithSRGBRed:((rgb >> 16) & 255) / 255.0
+            green:((rgb >> 8) & 255) / 255.0 blue:(rgb & 255) / 255.0 alpha:1] setFill];
+        NSRectFill(NSMakeRect(3, row, MAX(0, bounds.size.width - 3), 1));
+    }
+    /* A separate left rail shows the displayed page and cursor without
+     * changing any application's marker color. No source reads are needed. */
+    NSTableView *table = hex_widget->native;
+    NSRect visible = [table visibleRect];
+    CGFloat row_height = [table rowHeight] + [table intercellSpacing].height;
+    uint64_t size = xxwidgets_hexview_overview_size(hex_widget);
+    uint64_t origin = hex_widget->hex_source_read ? 0 : hex_widget->hex_base;
+    uint64_t page_first = hex_widget->hex_base - origin;
+    uint64_t page_last = page_first + hex_widget->hex_size;
+    if (row_height > 0 && hex_widget->hex_columns) {
+        uint64_t skip = (uint64_t)MAX(0, floor(NSMinY(visible) / row_height)) * hex_widget->hex_columns;
+        uint64_t end = (uint64_t)MAX(0, ceil(NSMaxY(visible) / row_height)) * hex_widget->hex_columns;
+        page_last = page_first + MIN((uint64_t)hex_widget->hex_size, end);
+        page_first += MIN((uint64_t)hex_widget->hex_size, skip);
+    }
+    CGFloat top = floor((long double)MIN(page_first, size) * bounds.size.height / size);
+    CGFloat bottom = ceil((long double)MIN(page_last, size) * bounds.size.height / size);
+    [[NSColor secondaryLabelColor] setFill];
+    NSRectFill(NSMakeRect(0, top, 2, MAX(2, bottom - top)));
+    if (hex_widget->hex_cursor < hex_widget->hex_size) {
+        uint64_t cursor = hex_widget->hex_base - origin + hex_widget->hex_cursor;
+        CGFloat cursor_y = size > 1 ? floor((long double)MIN(cursor, size - 1) * (height - 1) / (size - 1)) : 0;
+        [[NSColor labelColor] setFill];
+        NSRectFill(NSMakeRect(0, cursor_y, 3, 1));
+    }
+}
+- (void)jump:(NSEvent *)event
+{
+    if (!hex_widget || !xxwidgets_focusable(hex_widget) || !xxwidgets_hexview_overview_size(hex_widget)) return;
+    NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+    size_t height = (size_t)ceil([self bounds].size.height);
+    if (!height) return;
+    size_t row = (size_t)MAX(0, MIN((CGFloat)height - 1, floor(point.y)));
+    [[self window] makeFirstResponder:hex_widget->native];
+    (void)xxwidgets_hexview_overview_activate(hex_widget, row, height);
+}
+- (void)mouseDown:(NSEvent *)event { tracking = YES; [self jump:event]; }
+- (void)mouseDragged:(NSEvent *)event { if (tracking) [self jump:event]; }
+- (void)mouseUp:(NSEvent *)event { (void)event; tracking = NO; }
+- (void)resetCursorRects { [self addCursorRect:[self bounds] cursor:[NSCursor pointingHandCursor]]; }
+@end
+
+@implementation XXWidgetsHexScroll
+- (id)initWithFrame:(NSRect)frame
+{
+    self = [super initWithFrame:frame];
+    if (self) {
+        overview = [[XXWidgetsHexOverview alloc] initWithFrame:NSZeroRect];
+        [overview setAccessibilityElement:YES];
+        [overview setAccessibilityRole:NSAccessibilitySliderRole];
+        [overview setAccessibilityLabel:@"File overview"];
+        [overview setToolTip:@"File overview — click or drag to navigate"];
+        [self addSubview:overview];
+        [overview release];
+        [[self contentView] setPostsBoundsChangedNotifications:YES];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(overviewBoundsChanged:)
+            name:NSViewBoundsDidChangeNotification object:[self contentView]];
+    }
+    return self;
+}
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
+}
+- (void)overviewBoundsChanged:(NSNotification *)notification
+{ (void)notification; [overview setNeedsDisplay:YES]; }
+- (void)tile
+{
+    if (tiling_overview) return;
+    tiling_overview = YES;
+    /* AppKit can skip recomputing an unchanged tile. Restore our preceding
+     * reservation first so frequent selection syncs never shrink it again. */
+    NSClipView *clip = [self contentView];
+    NSTableView *table = (NSTableView *)[self documentView];
+    NSView *header_clip = [[table headerView] superview];
+    NSScroller *horizontal = [self horizontalScroller];
+    if (overview_reserved) {
+        if (NSEqualRects([clip frame], content_reserved)) [clip setFrame:content_unreserved];
+        if (header_clip && [header_clip superview] == self && NSEqualRects([header_clip frame], header_reserved))
+            [header_clip setFrame:header_unreserved];
+        if (horizontal && NSEqualRects([horizontal frame], horizontal_reserved)) [horizontal setFrame:horizontal_unreserved];
+    }
+    overview_reserved = NO;
+    [super tile];
+    if (overview) {
+        BOOL present = hex_widget && xxwidgets_hexview_overview_size(hex_widget) != 0;
+        [overview setHidden:!present];
+        if (present) {
+            NSRect content = [clip frame];
+            content_unreserved = content;
+            CGFloat right = NSMaxX(content);
+            NSScroller *vertical = [self verticalScroller];
+            /* Overlay scrollers occupy the content's trailing edge. Reserve
+             * their lane too so the map remains clickable while they show. */
+            if ([self hasVerticalScroller] && [self scrollerStyle] == NSScrollerStyleOverlay && vertical &&
+                NSWidth([vertical frame]) > 0 && NSHeight([vertical frame]) > 0 &&
+                NSMinX([vertical frame]) > NSMinX(content))
+                right = MIN(right, NSMinX([vertical frame]));
+            CGFloat width = MIN(12, MAX(0, right - NSMinX(content)));
+            NSRect track = NSMakeRect(right - width, NSMinY(content), width, NSHeight(content));
+            content.size.width = MAX(0, NSMinX(track) - NSMinX(content));
+            [clip setFrame:content];
+            content_reserved = content;
+            if ([self hasHorizontalScroller] && horizontal) {
+                NSRect lane = [horizontal frame];
+                horizontal_unreserved = lane;
+                lane.size.width = MAX(0, MIN(NSMaxX(lane), NSMinX(track)) - NSMinX(lane));
+                [horizontal setFrame:lane];
+                horizontal_reserved = lane;
+            }
+            if (header_clip && [header_clip superview] == self) {
+                NSRect header = [header_clip frame];
+                header_unreserved = header;
+                header.size.width = MAX(0, NSMinX(track) - NSMinX(header));
+                [header_clip setFrame:header];
+                header_reserved = header;
+            }
+            overview_reserved = YES;
+            [overview setFrame:track];
+            [overview setNeedsDisplay:YES];
+        }
+    }
+    tiling_overview = NO;
+}
+- (void)refreshOverview
+{
+    overview->hex_widget = hex_widget;
+    [self tile];
+    [overview setNeedsDisplay:YES];
+}
 @end
 
 static CGFloat cocoa_hex_cell_width(xxwidgets_widget *widget)
@@ -1251,6 +1449,21 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
         NSMutableAttributedString *value = [[[NSMutableAttributedString alloc]
             initWithString:[NSString stringWithUTF8String:text]
                 attributes:@{NSFontAttributeName : [cell font], NSForegroundColorAttributeName : [NSColor textColor]}] autorelease];
+        int bold_nonzero = 0;
+        if (col == 1 && xxwidgets_hexview_get_bold_nonzero(widget, &bold_nonzero) == XXWIDGETS_OK && bold_nonzero) {
+            NSFontManager *manager = [NSFontManager sharedFontManager];
+            NSFont *regular = [manager convertFont:[cell font] toNotHaveTrait:NSBoldFontMask];
+            if (!regular) regular = [cell font];
+            NSFont *bold = [manager convertFont:regular toHaveTrait:NSBoldFontMask];
+            if (!bold) bold = regular;
+            [value addAttribute:NSFontAttributeName value:regular range:NSMakeRange(0, [value length])];
+            size_t bold_count = xxwidgets_hexview_bold_spans(widget, (size_t)row, col, spans);
+            for (size_t i = 0; i < bold_count; ++i) {
+                /* The values column is ASCII, so byte and UTF-16 indices agree.
+                 * Keep the cell font unchanged for column sizing and hit tests. */
+                [value addAttribute:NSFontAttributeName value:bold range:NSMakeRange(spans[i].start, spans[i].length)];
+            }
+        }
         size_t all_count = xxwidgets_hexview_spans(widget, (size_t)row, col, spans);
         for (size_t i = 0; i < all_count; ++i) {
             uint32_t rgb;
@@ -1450,6 +1663,13 @@ static int cocoa_shortcut(xxwidgets_app *app, NSEvent *event)
     return xxwidgets_shortcut_dispatch(window, key, modifiers);
 }
 
+static int cocoa_modal_button_eligible(const xxwidgets_widget *button, const xxwidgets_widget *dialog)
+{
+    return button && button->parent == dialog && button->kind == XXWIDGETS_BUTTON &&
+        button->visible && button->enabled && button->native &&
+        [(NSButton *)button->native isEnabled] && ![(NSButton *)button->native isHiddenOrHasHiddenAncestor];
+}
+
 static xxwidgets_status cocoa_poll_backend(xxwidgets_app *app, int timeout_ms)
 {
     @autoreleasepool {
@@ -1463,10 +1683,23 @@ static xxwidgets_status cocoa_poll_backend(xxwidgets_app *app, int timeout_ms)
             if (app->modal_window && [event type] == NSEventTypeKeyDown &&
                 [event window] == app->modal_window->native && [event keyCode] == 53)
                 xxwidgets_emit(app->modal_window, XXWIDGETS_EVENT_CLOSE, 0);
-            else if (app->modal_default && [event type] == NSEventTypeKeyDown &&
+            else if (app->modal_window && app->modal_window->visible && app->modal_window->enabled &&
+                [event type] == NSEventTypeKeyDown &&
                 [event window] == app->modal_window->native &&
-                ([event keyCode] == 36 || [event keyCode] == 76))
-                xxwidgets_emit(app->modal_default, XXWIDGETS_EVENT_CLICK, 0);
+                ([event keyCode] == 36 || [event keyCode] == 76)) {
+                xxwidgets_widget *button = app->modal_default, *candidate;
+                /* Enter activates a focused dialog button before the default
+                 * action. Fields and other controls retain the default. */
+                for (candidate = app->widgets; candidate; candidate = candidate->next)
+                    if (cocoa_modal_button_eligible(candidate, app->modal_window) &&
+                        xxwidgets_widget_has_focus(candidate) == 1) {
+                        button = candidate;
+                        break;
+                    }
+                if (cocoa_modal_button_eligible(button, app->modal_window))
+                    xxwidgets_emit(button, XXWIDGETS_EVENT_CLICK, 0);
+                else if (!cocoa_shortcut(app, event)) [NSApp sendEvent:event];
+            }
             else if (!cocoa_shortcut(app, event)) [NSApp sendEvent:event];
             ++processed;
             if (timeout_ms > 0 && [deadline timeIntervalSinceNow] <= 0) break;
@@ -1693,7 +1926,11 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
             [table setRowHeight:((cocoa_app_state *)widget->app->platform)->cell_height];
             [table setDataSource:state->delegate];
             [table setDelegate:state->delegate];
-            NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+            NSScrollView *scroll = widget->kind == XXWIDGETS_HEXVIEW ?
+                [[XXWidgetsHexScroll alloc] initWithFrame:NSZeroRect] :
+                [[NSScrollView alloc] initWithFrame:NSZeroRect];
+            if (widget->kind == XXWIDGETS_HEXVIEW)
+                ((XXWidgetsHexScroll *)scroll)->hex_widget = widget;
             [scroll setBorderType:NSBezelBorder];
             [scroll setHasVerticalScroller:YES];
             [scroll setHasHorizontalScroller:xxwidgets_formatted_rows(widget)];
@@ -1753,6 +1990,9 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
         case XXWIDGET_IMPORTSVIEWER:
         case XXWIDGET_EXPORTSVIEWER:
         case XXWIDGET_SYMBOLSVIEWER:
+        case XXWIDGETS_DEBUGGER_DISASM:
+        case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
         case XXWIDGETS_ENTROPY_BYTES:
@@ -1762,14 +2002,14 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
             size_t column_count = xxwidgets_tabular_column_count(widget);
             NSTableView *table = widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ?
                 [[XXWidgetsProcessTable alloc] initWithFrame:NSZeroRect] :
-                xxwidgets_binaryviewer_kind(widget) ? [[XXWidgetsBinaryTable alloc] initWithFrame:NSZeroRect] :
+                (xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) ? [[XXWidgetsBinaryTable alloc] initWithFrame:NSZeroRect] :
                 [[NSTableView alloc] initWithFrame:NSZeroRect];
             if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) {
                 ((XXWidgetsProcessTable *)table)->process_widget = widget;
                 [table setTarget:state->delegate];
                 [table setDoubleAction:@selector(tableActivated:)];
             }
-            if (xxwidgets_binaryviewer_kind(widget)) {
+            if (xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) {
                 ((XXWidgetsBinaryTable *)table)->binary_widget = widget;
                 [table setTarget:state->delegate];
                 [table setDoubleAction:@selector(tableActivated:)];
@@ -1783,8 +2023,8 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
                 [[column dataCell] setEditable:NO];
                 [[column dataCell] setWraps:NO];
                 [[column dataCell] setLineBreakMode:NSLineBreakByTruncatingTail];
-                [column setWidth:(xxwidgets_entropy_table(widget) || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget)) ? xxwidgets_tabular_column_width(widget, index) * 8 : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[index] : data_widths[index]];
-                [column setMinWidth:60];
+                [column setWidth:(xxwidgets_entropy_table(widget) || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) ? xxwidgets_tabular_column_width(widget, index) * 8 : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[index] : data_widths[index]];
+                [column setMinWidth:xxwidgets_debugger_table_kind(widget) && index == 0 ? 16 : 60];
                 [column setResizingMask:NSTableColumnUserResizingMask];
                 [table addTableColumn:column];
                 [column release];
@@ -1902,8 +2142,11 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
                 [(NSTableView *)native setDelegate:nil];
                 [(NSTableView *)native setDataSource:nil];
             }
-            if (widget->kind == XXWIDGETS_HEXVIEW && native)
+            if (widget->kind == XXWIDGETS_HEXVIEW && native) {
                 ((XXWidgetsHexTable *)native)->hex_widget = NULL;
+                ((XXWidgetsHexScroll *)state->root)->hex_widget = NULL;
+                ((XXWidgetsHexScroll *)state->root)->overview->hex_widget = NULL;
+            }
             if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
                 ((XXWidgetsArchiveTable *)native)->archive_widget = NULL;
                 [(NSTableView *)native setTarget:nil];
@@ -1921,6 +2164,7 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
         [state->combo_popover close]; [state->combo_popover release];
         [state->tree_items release];
         [state->preview_font release];
+        [state->hex_font release];
         [state->applied_font release];
         [native release];
         [state->delegate release];
@@ -2045,6 +2289,9 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         case XXWIDGET_IMPORTSVIEWER:
         case XXWIDGET_EXPORTSVIEWER:
         case XXWIDGET_SYMBOLSVIEWER:
+        case XXWIDGETS_DEBUGGER_DISASM:
+        case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
         case XXWIDGETS_ENTROPY_BYTES:
@@ -2084,6 +2331,7 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
                 (xxwidgets_formatted_rows(widget) &&
                  state->rendered_hex_revision != xxwidgets_row_revision(widget));
             if (widget->kind == XXWIDGETS_HEXVIEW) {
+                [(XXWidgetsHexScroll *)state->root refreshOverview];
                 [table setNeedsDisplay:YES];
                 for (size_t i = 0; i < 3; ++i) {
                     NSTableColumn *column = [[table tableColumns] objectAtIndex:i];
@@ -2119,8 +2367,18 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
                 }
             }
             if (refreshed) {
+                if (xxwidgets_debugger_table_kind(widget)) {
+                    CGFloat character_width = cocoa_hex_cell_width(widget);
+                    for (size_t index = 0; index < xxwidgets_tabular_column_count(widget); ++index) {
+                        NSTableColumn *column = [[table tableColumns] objectAtIndex:index];
+                        CGFloat needed = ceil(xxwidgets_tabular_column_width(widget, index) * character_width) + 12;
+                        /* New models may contain wider SIMD values. Keep any
+                         * additional width chosen by the user. */
+                        if ([column width] < needed) [column setWidth:needed];
+                    }
+                }
                 if (xxwidgets_formatted_rows(widget) && widget->kind != XXWIDGETS_ARCHIVEBROWSER &&
-                    widget->kind != XXWIDGETS_SCANRESULTS && widget->kind != XXWIDGET_SYSTEMPROCESSESVIEWER && !xxwidgets_binaryviewer_kind(widget) && widget->kind != XXWIDGETS_HEXVIEW && !xxwidgets_entropy_table(widget) && widget->kind != XXWIDGETS_DATA_STRUCT_TABLE) {
+                    widget->kind != XXWIDGETS_SCANRESULTS && widget->kind != XXWIDGET_SYSTEMPROCESSESVIEWER && !xxwidgets_binaryviewer_kind(widget) && !xxwidgets_debugger_table_kind(widget) && widget->kind != XXWIDGETS_HEXVIEW && !xxwidgets_entropy_table(widget) && widget->kind != XXWIDGETS_DATA_STRUCT_TABLE) {
                     NSFont *row_font = [[[[table tableColumns] objectAtIndex:0] dataCell] font];
                     NSDictionary *attributes = [NSDictionary dictionaryWithObject:row_font
                         forKey:NSFontAttributeName];
@@ -2407,5 +2665,5 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {
     "AppKit", cocoa_init_backend, cocoa_shutdown_backend, cocoa_poll_backend,
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
     cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
-    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text
+    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font
 };

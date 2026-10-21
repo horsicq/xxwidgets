@@ -68,6 +68,28 @@ xxwidgets_status xxwidgets_hexview_get_display(const xxwidgets_widget *w, xxwidg
     *d = w->hex_display;
     return XXWIDGETS_OK;
 }
+xxwidgets_status xxwidgets_hexview_set_bold_nonzero(xxwidgets_widget *w, int enabled)
+{
+    xxwidgets_status status;
+    int previous;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || (enabled != 0 && enabled != 1))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    previous = w->hex_bold_nonzero;
+    if (previous == enabled) return XXWIDGETS_OK;
+    w->hex_bold_nonzero = enabled;
+    status = sync_display(w);
+    if (status != XXWIDGETS_OK) {
+        w->hex_bold_nonzero = previous;
+        (void)sync_display(w);
+    }
+    return status;
+}
+xxwidgets_status xxwidgets_hexview_get_bold_nonzero(const xxwidgets_widget *w, int *enabled)
+{
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !enabled) return XXWIDGETS_INVALID_ARGUMENT;
+    *enabled = w->hex_bold_nonzero;
+    return XXWIDGETS_OK;
+}
 xxwidgets_status xxwidgets_hexview_get_active_column(const xxwidgets_widget *w, unsigned int *column)
 {
     if (!w || w->kind != XXWIDGETS_HEXVIEW || !column)
@@ -295,6 +317,31 @@ size_t xxwidgets_hexview_spans(const xxwidgets_widget *w, size_t row, size_t col
     }
     return count;
 }
+size_t xxwidgets_hexview_bold_spans(const xxwidgets_widget *w, size_t row, size_t column, xxwidgets_hex_span spans[64])
+{
+    size_t count = 0, offset, available, unit, width;
+    const char *text;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !w->hex_bold_nonzero || !spans || column != 1 || row >= w->item_count ||
+        !w->hex_columns || row > SIZE_MAX / w->hex_columns) return 0;
+    offset = row * w->hex_columns;
+    if (offset >= w->hex_size) return 0;
+    available = w->hex_size - offset;
+    if (available > w->hex_columns) available = w->hex_columns;
+    unit = unit_size(w->hex_display.mode);
+    width = unit_width(w->hex_display.mode);
+    text = xxwidgets_hexview_cell(w, row, column);
+    for (size_t i = 0; i < available; i += unit) {
+        size_t amount = available - i < unit ? available - i : unit;
+        size_t start = i / unit * (width + 1) + 1, end = start + width;
+        int nonzero = 0;
+        for (size_t j = 0; j < amount; ++j) nonzero |= w->hex_data[offset + i + j] != 0;
+        if (!nonzero) continue;
+        while (start < end && text[start] == ' ') ++start;
+        while (end > start && text[end - 1] == ' ') --end;
+        if (end > start) spans[count++] = (xxwidgets_hex_span){start, end - start, offset + i, amount};
+    }
+    return count;
+}
 size_t xxwidgets_hexview_selection_spans(const xxwidgets_widget *w, size_t row, size_t column, xxwidgets_hex_span spans[64])
 {
     size_t count = xxwidgets_hexview_spans(w, row, column, spans), selected = 0;
@@ -348,7 +395,7 @@ int xxwidgets_hexview_hit_span(const xxwidgets_widget *w, size_t row, size_t col
 }
 size_t xxwidgets_hexview_menu_count(unsigned int column)
 {
-    return column == 0 ? 4 : column == 1 ? 19 : column == 2 ? xx_codepage_count() : column == 3 ? 12 : 0;
+    return column == 0 ? 4 : column == 1 ? 19 : column == 2 ? xx_codepage_count() : column == 3 ? 20 : 0;
 }
 xxwidgets_hex_menu_item xxwidgets_hexview_menu_item(const xxwidgets_widget *w, unsigned int column, size_t index)
 {
@@ -357,10 +404,32 @@ xxwidgets_hex_menu_item xxwidgets_hexview_menu_item(const xxwidgets_widget *w, u
         return item;
     if (column == 3) {
         static const char *const titles[] = {"Dump to file", "Beginning", "End",  "Selection start", "Selection end", "All", "Row",
-                                             "Clear",        "Hex",       "Text", "C array",         "Offset"};
+                                             "Clear",        "Hex",       "Text", "C array",         "Offset", "Insert bytes...", "Delete selected bytes", "Undo", "Redo", "Overwrite bytes...", "Paste bytes", "Cut bytes", "Insert pasted bytes"};
         item.title = titles[index];
-        item.group = !index ? "" : index < 5 ? "Go to" : index < 8 ? "Select" : "Copy";
-        item.disabled = !w->hex_size || ((index == 0 || index == 3 || index == 4 || index >= 7) &&
+        item.group = !index ? "" : index < 5 ? "Go to" : index < 8 ? "Select" : index < 12 ? "Copy" : "Edit";
+        if (index == 19) {
+            item.disabled = !xxwidgets_hexview_can_paste_insert(w);
+            return item;
+        }
+        if (index == 18) {
+            item.disabled = !xxwidgets_hexview_can_cut(w);
+            return item;
+        }
+        if (index == 16 || index == 17) {
+            item.disabled = !xxwidgets_hexview_can_overwrite(w) || !(w->hex_source_read ? w->hex_source_size : w->hex_size) ||
+                            (index == 17 && !w->hex_header);
+            return item;
+        }
+        if (index >= 14) {
+            item.disabled = !(index == 14 ? xxwidgets_hexview_can_undo(w) : xxwidgets_hexview_can_redo(w));
+            return item;
+        }
+        if (index >= 12) {
+            item.disabled = !xxwidgets_hexview_can_resize(w) || (index == 13 &&
+                !(w->hex_source_read ? w->hex_source_length : w->hex_selection_length));
+            return item;
+        }
+        item.disabled = !(w->hex_source_read ? w->hex_source_size : w->hex_size) || ((index == 0 || index == 3 || index == 4 || index >= 7) &&
                         !(w->hex_source_read ? w->hex_source_length : w->hex_selection_length)) ||
                         (index == 6 && w->hex_cursor >= w->hex_size) || (index >= 8 && !w->app->ops->copy_text && !w->hex_copy_handler);
     } else if (!column) {

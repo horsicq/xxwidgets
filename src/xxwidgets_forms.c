@@ -1,6 +1,7 @@
 /* Copyright (c) 2026 hors<horsicq@gmail.com>. SPDX-License-Identifier: MIT */
 #include "xxwidgets_internal.h"
 #include "xxwidgets/xxwidgets_forms.h"
+#include "xxwidgets/xxwidgets_hex_options.h"
 
 #include <limits.h>
 #include <inttypes.h>
@@ -18,6 +19,7 @@ typedef struct form_modal {
     xxwidgets_status failure;
     const xxwidgets_canvas_region *canvas_regions;size_t canvas_region_count;
     xxwidgets_widget *canvas_status;
+    xxwidgets_widget *hex_choose, *hex_default;
 } form_modal;
 
 static int owner_valid(xxwidgets_widget *owner, const char *title, int height)
@@ -66,6 +68,8 @@ static void form_event(xxwidgets_app *app, const xxwidgets_event *event, void *u
     else if (event->type == XXWIDGETS_EVENT_CLICK) {
         if (event->widget == modal->ok) modal->pending = 1;
         else if (event->widget == modal->cancel) modal->done = 1;
+        else if (event->widget == modal->hex_choose) modal->pending = 2;
+        else if (event->widget == modal->hex_default) modal->pending = 3;
     }
 }
 
@@ -131,6 +135,94 @@ static xxwidgets_status modal_finish(form_modal *modal, xxwidgets_status status)
     modal->app->on_event = modal->previous_event;
     modal->app->user_data = modal->previous_user;
     if (modal->focus) xxwidgets_widget_focus(modal->focus);
+    return status;
+}
+
+xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const char *title,
+    xxwidgets_hex_options *options, int show_editable, int *accepted)
+{
+    form_modal modal = {0};
+    xxwidgets_hex_options_widget *form = NULL;
+    xxwidgets_widget *error = NULL;
+    xxwidgets_hex_options result;
+    xxwidgets_status status;
+    int commit = 0;
+    if (accepted) *accepted = 0;
+    if (!accepted || !options || !owner_valid(owner, title, 12) || (show_editable != 0 && show_editable != 1) ||
+        (options->bytes_per_row != 8 && options->bytes_per_row != 16 && options->bytes_per_row != 24 &&
+         options->bytes_per_row != 32 && options->bytes_per_row != 48 && options->bytes_per_row != 64) ||
+        (options->editable != 0 && options->editable != 1) || (options->bold_nonzero != 0 && options->bold_nonzero != 1) || !xxwidgets_font_valid(&options->font))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    status = modal_begin(&modal, owner, title, 12);
+    if (status != XXWIDGETS_OK) goto finish;
+    status = xxwidgets_hex_options_widget_create(modal.window, (xxwidgets_rect){2, 1, 70, 5}, &form);
+    if (status == XXWIDGETS_OK) status = xxwidgets_hex_options_widget_set(form, options);
+    if (status == XXWIDGETS_OK && !show_editable)
+        status = xxwidgets_widget_set_visible(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_EDITABLE), 0);
+    if (status == XXWIDGETS_OK && xxwidgets_app_backend(modal.app) == XXWIDGETS_BACKEND_TUI) {
+        xxwidgets_widget *hint = NULL;
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL,
+            "TUI uses the terminal font; this preference is saved for GUI.", (xxwidgets_rect){2, 6, 70, 1}, &hint);
+    }
+    if (status != XXWIDGETS_OK) goto finish;
+    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, "Choose", (xxwidgets_rect){17, 7, 12, 1}, &modal.hex_choose);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, "Default", (xxwidgets_rect){31, 7, 12, 1}, &modal.hex_default);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){2, 8, 70, 1}, &error);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, "OK", (xxwidgets_rect){48, 10, 10, 1}, &modal.ok);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, "Cancel", (xxwidgets_rect){60, 10, 12, 1}, &modal.cancel);
+    if (status != XXWIDGETS_OK) goto finish;
+    status = modal_show(&modal, xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_BYTES_PER_ROW));
+    while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
+        status = xxwidgets_app_poll(modal.app, 30);
+        if (status != XXWIDGETS_OK || modal.done || modal.app->quit || !modal.pending) continue;
+        int pending = modal.pending;
+        modal.pending = 0;
+        if (pending == 3) {
+            status = xxwidgets_widget_set_text(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_FONT_FAMILY), "monospace");
+            if (status == XXWIDGETS_OK)
+                status = xxwidgets_widget_set_text(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_FONT_SIZE), "0");
+            if (status == XXWIDGETS_OK) status = xxwidgets_hex_options_widget_get(form, &result);
+            if (status == XXWIDGETS_OK) {
+                result.font.bold = result.font.italic = 0;
+                status = xxwidgets_hex_options_widget_set(form, &result);
+            }
+            if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(error, "Monospace font, automatic size.");
+            continue;
+        }
+        status = xxwidgets_hex_options_widget_get(form, &result);
+        if (status == XXWIDGETS_INVALID_ARGUMENT || status == XXWIDGETS_BUFFER_TOO_SMALL) {
+            status = xxwidgets_widget_set_text(error, "Font family: up to 127 UTF-8 bytes. Size: 4..96, or 0 for automatic.");
+            continue;
+        }
+        if (status != XXWIDGETS_OK) continue;
+        if (pending == 2) {
+            int chosen = 0;
+            status = xxwidgets_font_choose_dialog(modal.window, XXWIDGETS_FONT_TABLE_VIEWS, &result.font, &chosen);
+            if (status == XXWIDGETS_UNAVAILABLE) {
+                status = xxwidgets_widget_set_text(error, "Edit the font family and point size above; 0 selects automatic size.");
+                if (status == XXWIDGETS_OK) status = xxwidgets_widget_focus(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_FONT_FAMILY));
+            } else if (status == XXWIDGETS_OK && chosen) {
+                status = xxwidgets_hex_options_widget_set(form, &result);
+                if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(error, "");
+            }
+        } else { commit = 1; modal.done = 1; }
+    }
+    if (modal.app->quit) commit = 0;
+finish:
+    if (form) {
+        xxwidgets_status cleanup = xxwidgets_hex_options_widget_destroy(form);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    status = modal_finish(&modal, status);
+    if (status == XXWIDGETS_OK && commit) {
+        if (!show_editable) result.editable = options->editable;
+        *options = result;
+        *accepted = 1;
+    }
     return status;
 }
 

@@ -405,6 +405,7 @@ size_t xxwidgets_data_struct_table_column_width(const xxwidgets_widget *widget, 
 
 size_t xxwidgets_tabular_column_count(const xxwidgets_widget *widget)
 {
+    if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_count(widget);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_count(widget);
     if (widget && widget->kind == XXWIDGETS_HEXVIEW) return 3;
     if (widget && widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) return 2;
@@ -413,6 +414,7 @@ size_t xxwidgets_tabular_column_count(const xxwidgets_widget *widget)
 
 const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_t column)
 {
+    if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_title(widget, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_title(widget, column);
     static const char *scan_titles[4] = {"Type", "Name", "Version", "Info"};
     static const char *data_titles[DATA_STRUCT_COLUMNS] = {"Name", "Type", "Relative offset", "File offset", "Size", "Role", "Raw", "Value", "Comment"};
@@ -428,6 +430,7 @@ const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_
 
 const char *xxwidgets_tabular_cell(const xxwidgets_widget *widget, size_t row, size_t column)
 {
+    if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_cell(widget, row, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_cell(widget, row, column);
     if (widget && widget->kind == XXWIDGETS_HEXVIEW) return xxwidgets_hexview_cell(widget, row, column);
     if (xxwidgets_entropy_table(widget)) return xxwidgets_entropy_cell(widget, row, column);
@@ -437,6 +440,7 @@ const char *xxwidgets_tabular_cell(const xxwidgets_widget *widget, size_t row, s
 
 size_t xxwidgets_tabular_column_width(const xxwidgets_widget *widget, size_t column)
 {
+    if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_width(widget, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_width(widget, column);
     if (widget && widget->kind == XXWIDGETS_HEXVIEW) return xxwidgets_hexview_column_width(widget, column);
     if (xxwidgets_entropy_table(widget)) {
