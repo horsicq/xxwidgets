@@ -19,6 +19,8 @@ appearance, keyboard behavior, accessibility, and input methods.
 ## Current controls
 
 - Top-level windows, labels, push buttons, single-line text fields
+- A [DIE signature editor](docs/die-signature-editor-reference.md) under `die_engine`, with native/TUI multiline editing, JavaScript highlighting, line numbers, file actions, find, and an application Run callback
+- An optional [DIE signature debugger](docs/die-signature-debugger-reference.md) under `die_engine`, with actual JavaScript execution, source breakpoints, stepping, stack, locals, watches, captured output and an optional DIE input adapter
 - Checkboxes, single-selection scrolling lists, progress bars (0–100)
 - Normal and checkbox comboboxes with typed `xx_meta_string` records
 - Modal application options forms with checkboxes, OK and Cancel
@@ -46,7 +48,7 @@ appearance, keyboard behavior, accessibility, and input methods.
 - Dedicated demos for every basic control and for Options, About and persistent settings
 
 This is an initial common control set. Menus as a public API, nested containers,
-automatic layout, multiline/rich text, editable table models, drawing surfaces,
+automatic layout, general rich text, editable table models, drawing surfaces,
 and mobile backends are outside the current API.
 
 `xxwidgets_options_dialog(owner, title, options, count, &accepted)` presents
@@ -328,6 +330,8 @@ terminal at a time. Normal destruction restores the console/terminal state.
 | `XXWIDGETS_BUILD_INSPECTORS` | Top-level builds: `ON` | Build `xxwidgets::inspect` for executable-file loading and the binary viewer demos |
 | `XXWIDGETS_BUILD_DEBUGGER` | `OFF` | Build the optional `xxwidgets::debugger` xxdebug session adapter |
 | `XXWIDGETS_BUILD_EMULATOR` | `OFF` | Build the optional `xxwidgets::emulator` direct xxemul session adapter |
+| `XXWIDGETS_BUILD_SIGNATURE_DEBUGGER` | `OFF` | Build `xxwidgets::signature_debugger` with a JavaScript execution worker and GUI/TUI view |
+| `XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE` | `ON` | With the signature debugger enabled, build the separate `xxwidgets::signature_debugger_die_engine` target for actual DIE input/parser APIs |
 | `XXWIDGETS_XXDEBUG_DIR` | `../xxdebug` | xxdebug sources for the optional debugger adapter |
 | `XXWIDGETS_XXEMUL_DIR` | `../xxemul` | xxemul sources for the optional emulator adapter |
 | `XXWIDGETS_XXFCLIB_DIR` | `../xxfclib` | xxfclib headers and optional settings/inspection adapter sources |
@@ -490,6 +494,42 @@ Use `--tui --emulate MACHO64 [ARG...]` to load an ARM64 Mach-O executable into
 xxemul. The demo displays program output and the final exit code. Optional
 `XXWIDGETS_DEBUGGER_MACHO_FIXTURE` enables real ARM64 hello runtime and TUI tests;
 see the debugger reference for commands.
+
+## DIE signature debugger
+
+Enable `XXWIDGETS_BUILD_SIGNATURE_DEBUGGER=ON` and link
+`xxwidgets::signature_debugger` for the JavaScript signature debugging view and
+worker session. Include `xxwidgets/die_engine/xxwidgets_die_signature_debugger.h`.
+The view has source breakpoints, start/continue, pause, stop, step into/over/out,
+a call stack, selected-frame locals, identifier watches and captured output.
+The GUI and TUI use the same copied execution snapshots.
+
+For actual DIE signatures against input files, also enable
+`XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE=ON` and link the separate
+`xxwidgets::signature_debugger_die_engine` target. This adapter supplies actual
+format objects, `_init` scripts, `includeScript()`, `_log()` and `detect()` from
+the xxfclib DIE engine. The generic target can be built with this option off;
+base xxwidgets and the signature editor do not acquire a JavaScript dependency
+when the debugger is disabled.
+
+```sh
+cmake -S . -B build-signatures \
+  -DXXWIDGETS_BUILD_SIGNATURE_DEBUGGER=ON \
+  -DXXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE=ON \
+  -DXXWIDGETS_BUILD_EXAMPLES=ON -DXXWIDGETS_BUILD_TESTS=OFF
+cmake --build build-signatures --target xxwidgets_die_signature_debugger_demo
+./build-signatures/xxwidgets_die_signature_debugger_demo --tui
+./build-signatures/xxwidgets_die_signature_debugger_demo --native \
+  --signature /path/to/rule.sg --target /path/to/input \
+  --database /path/to/db --type Binary
+```
+
+Without `--target`, the demo runs a self-contained JavaScript signature. F5
+starts or continues, F9 toggles a source breakpoint, F10 steps over, F11 steps
+into, and Shift+F11 steps out. All actions also have visible buttons. Source
+stays read-only while debugging; use the editor to change the draft and replace
+it after execution ends. See the [reference](docs/die-signature-debugger-reference.md)
+for ownership, source resolution, cancellation and the actual DIE adapter API.
 
 ## HexView
 

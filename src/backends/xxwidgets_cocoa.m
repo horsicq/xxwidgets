@@ -1,7 +1,9 @@
 #include "xxwidgets_internal.h"
+#include "die_engine/xxwidgets_die_signature_edit_internal.h"
 
 #import <AppKit/AppKit.h>
 #include <math.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,6 +16,7 @@ typedef struct cocoa_app_state {
     CGFloat cell_height;
     id saved_delegate;
     NSMenu *saved_menu;
+    NSMenu *base_menu;
     NSApplicationActivationPolicy saved_policy;
     XXWidgetsApplicationDelegate *delegate;
     NSFont *fonts[XXWIDGETS_FONT_ROLE_COUNT];
@@ -44,6 +47,7 @@ typedef struct cocoa_widget_state {
     NSFont *hex_font;
     NSFont *applied_font;
     NSTextView *field_editor;
+    NSMenu *menu;
 } cocoa_widget_state;
 
 static xxwidgets_app *active_app;
@@ -122,7 +126,7 @@ static void cocoa_widget_fonts(xxwidgets_widget *widget)
     }
     NSFont *font = state->preview_font ? state->preview_font :
         cocoa_role_font(widget, xxwidgets_widget_font_role(widget));
-    if (!state->preview_font && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW || xxwidgets_debugger_table_kind(widget))) {
+    if (!state->preview_font && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || xxwidgets_debugger_table_kind(widget))) {
         font = widget->kind == XXWIDGETS_HEXVIEW && state->hex_font ? state->hex_font :
             app->formatted_font ? app->formatted_font : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]];
         if (!font) font = cocoa_role_font(widget, XXWIDGETS_FONT_TABLE_VIEWS);
@@ -417,12 +421,469 @@ static int cocoa_key_input(NSEvent *event, unsigned int *out_key, unsigned int *
     return 1;
 }
 
+/* The signature model owns source, selection, undo, and lexical styles. Native
+ * text storage would duplicate those states, so this view only draws the
+ * visible cells and uses AppKit's text input service for Unicode composition. */
+@interface XXWidgetsDieSignatureView : NSView <NSTextInputClient, NSMenuItemValidation> {
+@public
+    xxwidgets_widget *signature_widget;
+@private
+    NSFont *signature_font;
+    NSScroller *vertical_scroller, *horizontal_scroller;
+    NSString *marked_text;
+    NSRange marked_selection;
+    CGFloat cell_width, line_height, gutter_width, scroller_width;
+    size_t page_rows, page_columns;
+    NSPoint caret_point;
+    CGFloat wheel_lines, wheel_columns;
+}
+- (void)setFont:(NSFont *)font;
+- (void)refresh;
+- (void)scrollChanged:(NSScroller *)sender;
+- (void)editKey:(int)key modifiers:(unsigned int)modifiers;
+- (BOOL)handleKey:(int)key modifiers:(unsigned int)modifiers;
+@end
+
+static NSColor *cocoa_signature_color(xxwidgets_die_signature_style style)
+{
+    uint32_t rgb = xxwidgets_die_edit_color(style);
+    NSColor *color = [NSColor colorWithCalibratedRed:((rgb >> 16) & 255) / 255.0
+        green:((rgb >> 8) & 255) / 255.0 blue:(rgb & 255) / 255.0 alpha:1];
+    if (@available(macOS 10.14, *)) {
+        NSAppearance *drawing = [NSApp effectiveAppearance];
+        if (@available(macOS 11.0, *)) drawing = [NSAppearance currentDrawingAppearance];
+        NSString *appearance = [drawing bestMatchFromAppearancesWithNames:
+            @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+        if ([appearance isEqualToString:NSAppearanceNameDarkAqua]) {
+            CGFloat hue, saturation, brightness, alpha;
+            [color getHue:&hue saturation:&saturation brightness:&brightness alpha:&alpha];
+            color = [NSColor colorWithCalibratedHue:hue saturation:saturation * 0.65 brightness:MAX(0.85, brightness) alpha:alpha];
+        }
+    }
+    return color;
+}
+
+/* Public selection offsets are UTF-8 bytes. AppKit text services use UTF-16;
+ * reject a replacement that would split either representation's scalar. */
+static int cocoa_signature_utf16_bytes(NSString *source, NSRange range, size_t *start, size_t *length)
+{
+    NSUInteger count = [source length], end;
+    if (range.location == NSNotFound || range.location > count || range.length > count - range.location) return 0;
+    end = range.location + range.length;
+    if ((range.location && range.location < count && [source characterAtIndex:range.location] >= 0xdc00 && [source characterAtIndex:range.location] <= 0xdfff) ||
+        (end && end < count && [source characterAtIndex:end] >= 0xdc00 && [source characterAtIndex:end] <= 0xdfff)) return 0;
+    *start = [[source substringToIndex:range.location] lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    *length = [[source substringWithRange:range] lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    return 1;
+}
+
+@implementation XXWidgetsDieSignatureView
+- (id)initWithFrame:(NSRect)frame
+{
+    self = [super initWithFrame:frame];
+    if (!self) return nil;
+    signature_font = [[NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]] retain];
+    scroller_width = [NSScroller scrollerWidthForControlSize:NSControlSizeRegular scrollerStyle:NSScrollerStyleLegacy];
+    vertical_scroller = [[NSScroller alloc] initWithFrame:NSMakeRect(0, 0, scroller_width, 100)];
+    horizontal_scroller = [[NSScroller alloc] initWithFrame:NSMakeRect(0, 0, 100, scroller_width)];
+    if (!signature_font || !vertical_scroller || !horizontal_scroller) { [self release]; return nil; }
+    for (NSScroller *scroller in @[vertical_scroller, horizontal_scroller]) {
+        [scroller setScrollerStyle:NSScrollerStyleLegacy];
+        [scroller setTarget:self]; [scroller setAction:@selector(scrollChanged:)];
+        [scroller setContinuous:YES]; [self addSubview:scroller];
+    }
+    marked_selection = NSMakeRange(0, 0);
+    return self;
+}
+- (void)dealloc
+{
+    [vertical_scroller setTarget:nil]; [horizontal_scroller setTarget:nil];
+    [vertical_scroller release]; [horizontal_scroller release];
+    [signature_font release]; [marked_text release];
+    [super dealloc];
+}
+- (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return YES; }
+- (BOOL)acceptsFirstResponder { return signature_widget && xxwidgets_focusable(signature_widget); }
+- (BOOL)becomeFirstResponder { [self setNeedsDisplay:YES]; return [self acceptsFirstResponder]; }
+- (BOOL)resignFirstResponder { [self unmarkText]; [self setNeedsDisplay:YES]; return YES; }
+- (void)resetCursorRects
+{
+    [super resetCursorRects];
+    NSRect area = [self bounds];
+    area.size.width = MAX(0, area.size.width - scroller_width);
+    area.size.height = MAX(0, area.size.height - scroller_width);
+    [self addCursorRect:area cursor:[NSCursor IBeamCursor]];
+}
+- (void)setFont:(NSFont *)font
+{
+    if (![font isFixedPitch]) {
+        NSFont *fixed = [NSFont userFixedPitchFontOfSize:[font pointSize]];
+        NSFont *styled = [[NSFontManager sharedFontManager] convertFont:fixed toHaveTrait:
+            [[NSFontManager sharedFontManager] traitsOfFont:font] & (NSBoldFontMask | NSItalicFontMask)];
+        font = styled ? styled : fixed;
+    }
+    if (signature_font != font) { [font retain]; [signature_font release]; signature_font = font; }
+    [self refresh];
+}
+- (void)setFrameSize:(NSSize)size { [super setFrameSize:size]; [self refresh]; }
+- (void)refresh
+{
+    if (!signature_widget) return;
+    xxwidgets_die_edit_view view;
+    xxwidgets_die_edit_view_get(signature_widget, &view);
+    cell_width = MAX(1, ceil([@"0" sizeWithAttributes:@{NSFontAttributeName:signature_font}].width));
+    line_height = MAX(1, ceil([signature_font ascender] - [signature_font descender] + [signature_font leading]) + 3);
+    gutter_width = (view.gutter_columns + 1) * cell_width;
+    NSSize size = [self bounds].size;
+    CGFloat width = MAX(0, size.width - scroller_width), height = MAX(0, size.height - scroller_width);
+    [vertical_scroller setFrame:NSMakeRect(width, 0, scroller_width, height)];
+    [horizontal_scroller setFrame:NSMakeRect(gutter_width, height, MAX(0, width - gutter_width), scroller_width)];
+    page_rows = MAX((size_t)1, (size_t)floor(height / line_height));
+    page_columns = MAX((size_t)1, (size_t)floor(MAX(0, width - gutter_width - 4) / cell_width));
+    xxwidgets_die_edit_page(signature_widget, page_rows, page_columns);
+    xxwidgets_die_edit_view_get(signature_widget, &view);
+    size_t vertical_range = view.line_count > page_rows ? view.line_count - page_rows : 0;
+    size_t total_columns = view.max_columns + 1; /* Include the end-of-line caret cell. */
+    size_t horizontal_range = total_columns > page_columns ? total_columns - page_columns : 0;
+    [vertical_scroller setEnabled:vertical_range && xxwidgets_focusable(signature_widget)];
+    [vertical_scroller setKnobProportion:MIN(1.0, (double)page_rows / MAX((size_t)1, view.line_count))];
+    [vertical_scroller setDoubleValue:vertical_range ? (double)view.first_line / vertical_range : 0];
+    [horizontal_scroller setEnabled:horizontal_range && xxwidgets_focusable(signature_widget)];
+    [horizontal_scroller setKnobProportion:MIN(1.0, (double)page_columns / total_columns)];
+    [horizontal_scroller setDoubleValue:horizontal_range ? (double)view.first_column / horizontal_range : 0];
+    [self setNeedsDisplay:YES];
+    [[self window] invalidateCursorRectsForView:self];
+    [[self inputContext] invalidateCharacterCoordinates];
+}
+- (void)scrollChanged:(NSScroller *)sender
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget)) return;
+    xxwidgets_die_edit_view view;
+    xxwidgets_die_edit_view_get(signature_widget, &view);
+    BOOL vertical = sender == vertical_scroller;
+    size_t page = vertical ? page_rows : page_columns;
+    size_t total = vertical ? view.line_count : view.max_columns + 1;
+    size_t first = vertical ? view.first_line : view.first_column;
+    size_t range = total > page ? total - page : 0;
+    int delta = 0;
+    switch ([sender hitPart]) {
+    case NSScrollerDecrementPage: delta = -(int)MIN(page, (size_t)INT_MAX); break;
+    case NSScrollerIncrementPage: delta = (int)MIN(page, (size_t)INT_MAX); break;
+    case NSScrollerKnob: case NSScrollerKnobSlot:
+        delta = (int)llround([sender doubleValue] * range) - (int)first; break;
+    default: break;
+    }
+    xxwidgets_die_edit_scroll(signature_widget, vertical ? delta : 0, vertical ? 0 : delta);
+    [self refresh];
+}
+- (void)drawRect:(NSRect)dirty
+{
+    (void)dirty;
+    NSRect bounds = [self bounds];
+    [[NSColor textBackgroundColor] setFill]; NSRectFill(bounds);
+    if (!signature_widget || !signature_font) return;
+    xxwidgets_die_edit_view view;
+    xxwidgets_die_edit_view_get(signature_widget, &view);
+    CGFloat width = MAX(0, bounds.size.width - scroller_width);
+    CGFloat height = MAX(0, bounds.size.height - scroller_width);
+    [[NSColor controlBackgroundColor] setFill]; NSRectFill(NSMakeRect(0, 0, MIN(gutter_width, width), height));
+    [[NSColor separatorColor] setFill]; NSRectFill(NSMakeRect(gutter_width - 1, 0, 1, height));
+    NSRect text_rect = NSMakeRect(gutter_width, 0, MAX(0, width - gutter_width), height);
+    size_t cells_count = page_columns + 1;
+    xxwidgets_die_edit_cell *cells = calloc(cells_count, sizeof(*cells));
+    if (!cells) return;
+    BOOL focused = [[self window] firstResponder] == self && [[self window] isKeyWindow];
+    size_t current = xxwidgets_die_edit_caret_line(signature_widget);
+    caret_point = NSMakePoint(gutter_width + 2, 0);
+    NSColor *selection = focused ? [NSColor selectedTextBackgroundColor] : [NSColor unemphasizedSelectedTextBackgroundColor];
+    NSDictionary *number_attributes = @{NSFontAttributeName:signature_font, NSForegroundColorAttributeName:[NSColor secondaryLabelColor]};
+    for (size_t row = 0; row <= page_rows && view.first_line + row < view.line_count; ++row) {
+        size_t line = view.first_line + row;
+        CGFloat y = row * line_height;
+        int breakpoint, execution;
+        xxwidgets_die_edit_line_marker(signature_widget, line, &breakpoint, &execution);
+        NSString *number = [NSString stringWithFormat:@"%zu", line + 1];
+        [number drawAtPoint:NSMakePoint(MAX(1, gutter_width - cell_width - [number sizeWithAttributes:number_attributes].width), y + 1)
+            withAttributes:number_attributes];
+        if (breakpoint) {
+            CGFloat diameter = MAX(3, MIN(cell_width, line_height) * 0.65);
+            [[NSColor systemRedColor] setFill];
+            [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect((cell_width - diameter) / 2,
+                y + (line_height - diameter) / 2, diameter, diameter)] fill];
+        }
+        if (execution) {
+            CGFloat left = cell_width + 1, right = cell_width * 2 - 1, middle = y + line_height / 2;
+            NSBezierPath *arrow = [NSBezierPath bezierPath];
+            [arrow moveToPoint:NSMakePoint(left, middle - line_height * 0.20)];
+            [arrow lineToPoint:NSMakePoint(right - cell_width * 0.35, middle - line_height * 0.20)];
+            [arrow lineToPoint:NSMakePoint(right - cell_width * 0.35, middle - line_height * 0.36)];
+            [arrow lineToPoint:NSMakePoint(right, middle)];
+            [arrow lineToPoint:NSMakePoint(right - cell_width * 0.35, middle + line_height * 0.36)];
+            [arrow lineToPoint:NSMakePoint(right - cell_width * 0.35, middle + line_height * 0.20)];
+            [arrow lineToPoint:NSMakePoint(left, middle + line_height * 0.20)];
+            [arrow closePath]; [[NSColor systemOrangeColor] setFill]; [arrow fill];
+            [[[NSColor systemYellowColor] colorWithAlphaComponent:0.20] setFill];
+            NSRectFill(NSIntersectionRect(text_rect, NSMakeRect(gutter_width, y, text_rect.size.width, line_height)));
+        } else if (!view.read_only && line == current) {
+            [[NSColor colorWithCalibratedWhite:0.5 alpha:0.08] setFill];
+            NSRectFill(NSIntersectionRect(text_rect, NSMakeRect(gutter_width, y, text_rect.size.width, line_height)));
+        }
+        xxwidgets_die_edit_render_line(signature_widget, line, view.first_column, cells, cells_count);
+        [NSGraphicsContext saveGraphicsState]; NSRectClip(text_rect);
+        for (size_t column = 0; column < cells_count; ++column) {
+            xxwidgets_die_edit_cell *cell = cells + column;
+            NSRect rect = NSMakeRect(gutter_width + 2 + column * cell_width, y, cell_width, line_height);
+            if (cell->selected) { [selection setFill]; NSRectFill(rect); }
+            if (cell->scalar && cell->scalar != ' ') {
+                char utf8[5]; xxwidgets_die_edit_encode(cell->scalar, utf8);
+                NSString *text = [NSString stringWithUTF8String:utf8];
+                NSColor *color = cell->selected && focused ? [NSColor selectedTextColor] :
+                    cell->style == XXWIDGETS_DIE_STYLE_TEXT ? [NSColor textColor] : cocoa_signature_color(cell->style);
+                [NSGraphicsContext saveGraphicsState]; NSRectClip(rect);
+                [text drawAtPoint:NSMakePoint(rect.origin.x, y + 1)
+                    withAttributes:@{NSFontAttributeName:signature_font, NSForegroundColorAttributeName:color}];
+                [NSGraphicsContext restoreGraphicsState];
+            }
+            if (cell->caret) {
+                caret_point = rect.origin;
+                if (focused) { [[NSColor textColor] setFill]; NSRectFill(NSMakeRect(rect.origin.x, y + 1, 1, line_height - 2)); }
+            }
+        }
+        [NSGraphicsContext restoreGraphicsState];
+    }
+    if ([marked_text length]) {
+        [NSGraphicsContext saveGraphicsState]; NSRectClip(text_rect);
+        [marked_text drawAtPoint:NSMakePoint(caret_point.x, caret_point.y + 1)
+            withAttributes:@{NSFontAttributeName:signature_font, NSForegroundColorAttributeName:[NSColor textColor],
+                NSBackgroundColorAttributeName:[NSColor textBackgroundColor], NSUnderlineStyleAttributeName:@(NSUnderlineStyleSingle)}];
+        [NSGraphicsContext restoreGraphicsState];
+    }
+    free(cells);
+    [[NSColor separatorColor] setStroke]; NSFrameRect(bounds);
+    if (focused) { [[NSColor keyboardFocusIndicatorColor] setStroke]; NSFrameRectWithWidth(NSInsetRect(bounds, 1, 1), 1); }
+}
+- (void)mousePoint:(NSEvent *)event extend:(BOOL)extend
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget)) return;
+    [[self window] makeFirstResponder:self]; [self unmarkText];
+    NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+    xxwidgets_die_edit_view view; xxwidgets_die_edit_view_get(signature_widget, &view);
+    int lines = point.y < 0 ? -1 : point.y >= page_rows * line_height ? 1 : 0;
+    int columns = point.x < gutter_width ? -1 : point.x >= gutter_width + page_columns * cell_width ? 1 : 0;
+    if (extend && (lines || columns)) {
+        xxwidgets_die_edit_scroll(signature_widget, lines, columns);
+        xxwidgets_die_edit_view_get(signature_widget, &view);
+    }
+    size_t row = (size_t)MAX(0, floor(point.y / line_height));
+    size_t column = (size_t)MAX(0, floor((point.x - gutter_width - 2) / cell_width + 0.5));
+    [self retain];
+    xxwidgets_die_edit_point(signature_widget, view.first_line + MIN(row, page_rows), view.first_column + column, extend);
+    [self refresh]; [self release];
+}
+- (void)mouseDown:(NSEvent *)event { [self mousePoint:event extend:([event modifierFlags] & NSEventModifierFlagShift) != 0]; }
+- (void)mouseDragged:(NSEvent *)event { [self mousePoint:event extend:YES]; }
+- (void)scrollWheel:(NSEvent *)event
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget)) return;
+    CGFloat scale_y = [event hasPreciseScrollingDeltas] ? line_height : 1;
+    CGFloat scale_x = [event hasPreciseScrollingDeltas] ? cell_width : 1;
+    wheel_lines -= [event scrollingDeltaY] / MAX(1, scale_y);
+    wheel_columns -= [event scrollingDeltaX] / MAX(1, scale_x);
+    int lines = (int)wheel_lines, columns = (int)wheel_columns;
+    wheel_lines -= lines; wheel_columns -= columns;
+    if (lines || columns) { xxwidgets_die_edit_scroll(signature_widget, lines, columns); [self refresh]; }
+}
+- (void)editKey:(int)key modifiers:(unsigned int)modifiers
+{
+    (void)[self handleKey:key modifiers:modifiers];
+}
+- (BOOL)handleKey:(int)key modifiers:(unsigned int)modifiers
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget)) return NO;
+    /* CHANGE/SELECT handlers may destroy this control synchronously. */
+    [self retain]; [self unmarkText];
+    BOOL handled = xxwidgets_die_edit_key(signature_widget, key, modifiers) != 0;
+    [self refresh]; [self release];
+    return handled;
+}
+- (void)keyDown:(NSEvent *)event
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget)) { [super keyDown:event]; return; }
+    if ([self hasMarkedText] && !([event modifierFlags] & (NSEventModifierFlagControl | NSEventModifierFlagCommand))) {
+        [self interpretKeyEvents:@[event]];
+        return;
+    }
+    unsigned int key, modifiers;
+    if (cocoa_key_input(event, &key, &modifiers)) {
+        if (key == XXWIDGETS_KEY_TAB && (modifiers & XXWIDGETS_MOD_CTRL)) {
+            if (modifiers & XXWIDGETS_MOD_SHIFT) [[self window] selectPreviousKeyView:self];
+            else [[self window] selectNextKeyView:self];
+            return;
+        }
+        if (key >= XXWIDGETS_KEY_F1 || (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META))) {
+            if ([self handleKey:(int)key modifiers:modifiers]) return;
+            [super keyDown:event]; return;
+        }
+    }
+    [self interpretKeyEvents:@[event]];
+}
+- (void)doCommandBySelector:(SEL)selector
+{
+    unsigned int modifiers = ([[NSApp currentEvent] modifierFlags] & NSEventModifierFlagShift) ? XXWIDGETS_MOD_SHIFT : 0;
+    int key = 0;
+    if (selector == @selector(insertNewline:)) key = XXWIDGETS_KEY_ENTER;
+    else if (selector == @selector(insertTab:) || selector == @selector(insertBacktab:)) key = XXWIDGETS_KEY_TAB;
+    else if (selector == @selector(deleteBackward:)) key = XXWIDGETS_KEY_BACKSPACE;
+    else if (selector == @selector(deleteForward:)) key = XXWIDGETS_KEY_DELETE;
+    else if (selector == @selector(moveLeft:) || selector == @selector(moveLeftAndModifySelection:)) key = XXWIDGETS_KEY_LEFT;
+    else if (selector == @selector(moveRight:) || selector == @selector(moveRightAndModifySelection:)) key = XXWIDGETS_KEY_RIGHT;
+    else if (selector == @selector(moveUp:) || selector == @selector(moveUpAndModifySelection:)) key = XXWIDGETS_KEY_UP;
+    else if (selector == @selector(moveDown:) || selector == @selector(moveDownAndModifySelection:)) key = XXWIDGETS_KEY_DOWN;
+    else if (selector == @selector(moveToBeginningOfLine:)) key = XXWIDGETS_KEY_HOME;
+    else if (selector == @selector(moveToEndOfLine:)) key = XXWIDGETS_KEY_END;
+    else if (selector == @selector(pageUp:)) key = XXWIDGETS_KEY_PAGEUP;
+    else if (selector == @selector(pageDown:)) key = XXWIDGETS_KEY_PAGEDOWN;
+    else if (selector == @selector(cancelOperation:)) { [self unmarkText]; return; }
+    if (key) [self editKey:key modifiers:modifiers];
+    else if ([self respondsToSelector:selector]) [NSApp sendAction:selector to:self from:self];
+    else [super doCommandBySelector:selector];
+}
+- (void)copy:(id)sender { (void)sender; [self editKey:'c' modifiers:XXWIDGETS_MOD_META]; }
+- (void)cut:(id)sender { (void)sender; [self editKey:'x' modifiers:XXWIDGETS_MOD_META]; }
+- (void)paste:(id)sender { (void)sender; [self editKey:'v' modifiers:XXWIDGETS_MOD_META]; }
+- (void)selectAll:(id)sender { (void)sender; [self editKey:'a' modifiers:XXWIDGETS_MOD_META]; }
+- (void)undo:(id)sender { (void)sender; [self editKey:'z' modifiers:XXWIDGETS_MOD_META]; }
+- (void)redo:(id)sender { (void)sender; [self editKey:'y' modifiers:XXWIDGETS_MOD_META]; }
+- (NSMenu *)menuForEvent:(NSEvent *)event
+{
+    (void)event;
+    NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"Signature"] autorelease];
+    NSArray *titles = @[@"Undo", @"Redo", @"Cut", @"Copy", @"Paste", @"Select All"];
+    SEL selectors[] = {@selector(undo:), @selector(redo:), @selector(cut:), @selector(copy:), @selector(paste:), @selector(selectAll:)};
+    for (NSUInteger i = 0; i < [titles count]; ++i) {
+        if (i == 2) [menu addItem:[NSMenuItem separatorItem]];
+        NSMenuItem *item = [menu addItemWithTitle:titles[i] action:selectors[i] keyEquivalent:@""];
+        [item setTarget:self];
+    }
+    return menu;
+}
+- (BOOL)validateMenuItem:(NSMenuItem *)item
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget)) return NO;
+    SEL action = [item action];
+    if (action == @selector(copy:) || action == @selector(cut:)) {
+        size_t offset, length;
+        xxwidgets_die_signature_edit_get_selection(signature_widget, &offset, &length);
+        return length && (action != @selector(cut:) || !xxwidgets_die_signature_edit_read_only(signature_widget));
+    }
+    if (action == @selector(selectAll:)) return YES;
+    return !xxwidgets_die_signature_edit_read_only(signature_widget);
+}
+- (BOOL)hasMarkedText { return [marked_text length] != 0; }
+- (NSRange)markedRange
+{
+    NSRange selected = [self selectedRange];
+    return [marked_text length] ? NSMakeRange(selected.location - marked_selection.location, [marked_text length]) : NSMakeRange(NSNotFound, 0);
+}
+- (NSRange)selectedRange
+{
+    if (!signature_widget) return NSMakeRange(NSNotFound, 0);
+    size_t offset = 0, length = 0;
+    xxwidgets_die_signature_edit_get_selection(signature_widget, &offset, &length);
+    const char *source = xxwidgets_die_signature_edit_source(signature_widget);
+    NSString *prefix = [[[NSString alloc] initWithBytes:source length:offset encoding:NSUTF8StringEncoding] autorelease];
+    NSString *selected = [[[NSString alloc] initWithBytes:source + offset length:length encoding:NSUTF8StringEncoding] autorelease];
+    return [marked_text length] ? NSMakeRange([prefix length] + marked_selection.location, marked_selection.length) :
+        NSMakeRange([prefix length], [selected length]);
+}
+- (void)setMarkedText:(id)text selectedRange:(NSRange)selection replacementRange:(NSRange)replacement
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget) || xxwidgets_die_signature_edit_read_only(signature_widget)) return;
+    NSString *string = [text isKindOfClass:[NSAttributedString class]] ? [text string] : text;
+    if (replacement.location != NSNotFound && ![self hasMarkedText]) {
+        size_t offset, length;
+        NSString *source = [NSString stringWithUTF8String:xxwidgets_die_signature_edit_source(signature_widget)];
+        if (!cocoa_signature_utf16_bytes(source, replacement, &offset, &length)) return;
+        xxwidgets_die_signature_edit_set_selection(signature_widget, offset, length);
+    }
+    NSString *copy = [string copy]; [marked_text release]; marked_text = copy;
+    selection.location = MIN(selection.location, [string length]);
+    selection.length = MIN(selection.length, [string length] - selection.location);
+    marked_selection = selection; [self setNeedsDisplay:YES];
+}
+- (void)unmarkText { [marked_text release]; marked_text = nil; marked_selection = NSMakeRange(0, 0); [self setNeedsDisplay:YES]; }
+- (void)insertText:(id)text replacementRange:(NSRange)replacement
+{
+    if (!signature_widget || !xxwidgets_focusable(signature_widget) || xxwidgets_die_signature_edit_read_only(signature_widget)) return;
+    NSString *string = [text isKindOfClass:[NSAttributedString class]] ? [text string] : text;
+    if (replacement.location != NSNotFound && ![self hasMarkedText]) {
+        size_t offset, length;
+        NSString *source = [NSString stringWithUTF8String:xxwidgets_die_signature_edit_source(signature_widget)];
+        if (!cocoa_signature_utf16_bytes(source, replacement, &offset, &length)) return;
+        xxwidgets_die_signature_edit_set_selection(signature_widget, offset, length);
+    }
+    [self retain];
+    [string retain];
+    [self unmarkText];
+    const char *utf8 = [string UTF8String];
+    if (utf8) xxwidgets_die_edit_input(signature_widget, utf8);
+    [string release]; [self refresh]; [self release];
+}
+- (NSArray *)validAttributesForMarkedText { return @[NSUnderlineStyleAttributeName, NSForegroundColorAttributeName, NSBackgroundColorAttributeName]; }
+- (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)range actualRange:(NSRangePointer)actual
+{
+    if (!signature_widget) return nil;
+    NSString *source = [NSString stringWithUTF8String:xxwidgets_die_signature_edit_source(signature_widget)];
+    if (range.location == NSNotFound || range.location > [source length]) return nil;
+    range.length = MIN(range.length, [source length] - range.location);
+    if (actual) *actual = range;
+    return [[[NSAttributedString alloc] initWithString:[source substringWithRange:range]
+        attributes:@{NSFontAttributeName:signature_font}] autorelease];
+}
+- (NSRect)firstRectForCharacterRange:(NSRange)range actualRange:(NSRangePointer)actual
+{
+    (void)range;
+    if (actual) *actual = [self selectedRange];
+    size_t line = 1, column = 1;
+    xxwidgets_die_edit_view view;
+    xxwidgets_die_edit_view_get(signature_widget, &view);
+    xxwidgets_die_signature_edit_position(signature_widget, &line, &column);
+    CGFloat x = gutter_width + 2 + ((double)column - 1 - (double)view.first_column) * cell_width;
+    CGFloat y = ((double)line - 1 - (double)view.first_line) * line_height;
+    NSRect rect = [self convertRect:NSMakeRect(x, y, cell_width, line_height) toView:nil];
+    return [[self window] convertRectToScreen:rect];
+}
+- (NSUInteger)characterIndexForPoint:(NSPoint)point
+{
+    if (!signature_widget) return NSNotFound;
+    point = [self convertPoint:[[self window] convertPointFromScreen:point] fromView:nil];
+    xxwidgets_die_edit_view view;
+    xxwidgets_die_edit_view_get(signature_widget, &view);
+    size_t target_line = view.first_line + (size_t)MAX(0, floor(point.y / MAX(1, line_height)));
+    size_t target_column = view.first_column + (size_t)MAX(0, floor((point.x - gutter_width - 2) / MAX(1, cell_width)));
+    const unsigned char *p = (const unsigned char *)xxwidgets_die_signature_edit_source(signature_widget);
+    size_t line = 0, column = 0;
+    NSUInteger index = 0;
+    while (*p) {
+        if (line == target_line && (column >= target_column || *p == '\n')) break;
+        if (*p == '\n') { ++line; column = 0; }
+        else column += *p == '\t' ? 4 - column % 4 : 1;
+        index += *p >= 0xf0 ? 2 : 1;
+        do { ++p; } while ((*p & 0xc0) == 0x80);
+    }
+    return index;
+}
+@end
+
 @interface XXWidgetsDelegate : NSObject <NSWindowDelegate, NSTextFieldDelegate,
     NSTableViewDataSource, NSTableViewDelegate, NSOutlineViewDataSource, NSOutlineViewDelegate> {
 @public
     xxwidgets_widget *widget;
 }
 - (void)clicked:(id)sender;
+- (void)menuActivated:(id)sender;
+- (BOOL)validateMenuItem:(NSMenuItem *)item;
 - (void)editActivated:(id)sender;
 - (void)comboSelected:(id)sender;
 - (void)comboOpen:(id)sender;
@@ -1151,6 +1612,24 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 @end
 
 @implementation XXWidgetsDelegate
+- (void)menuActivated:(id)sender
+{
+    if (widget) xxwidgets_menu_activate(widget, (size_t)[sender tag]);
+}
+- (BOOL)validateMenuItem:(NSMenuItem *)item
+{
+    if ([item action] == @selector(menuActivated:))
+        return widget && xxwidgets_menu_can_activate(widget, (size_t)[item tag]);
+    return YES;
+}
+- (void)windowDidBecomeMain:(NSNotification *)notification
+{
+    (void)notification;
+    if (!widget || widget->app->modal_window) return;
+    cocoa_widget_state *state = widget->platform;
+    cocoa_app_state *app = widget->app->platform;
+    [NSApp setMainMenu:state->menu ? state->menu : app->base_menu];
+}
 - (void)editActivated:(id)sender
 {
     if (widget && xxwidgets_focusable(widget) && xxwidgets_store_text(widget, [edit_text(sender) UTF8String]) == XXWIDGETS_OK)
@@ -1613,6 +2092,7 @@ static xxwidgets_status cocoa_init_backend(xxwidgets_app *app)
         [NSApp setDelegate:state->delegate];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         install_menu();
+        state->base_menu = [[NSApp mainMenu] retain];
         if (!finished_launching && ![NSApp isRunning]) {
             [NSApp finishLaunching];
             finished_launching = 1;
@@ -1636,6 +2116,7 @@ static void cocoa_shutdown_backend(xxwidgets_app *app)
         [state->delegate release];
         [state->saved_delegate release];
         [state->saved_menu release];
+        [state->base_menu release];
         for (size_t role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) [state->fonts[role] release];
         [state->formatted_font release];
         free(state);
@@ -1651,6 +2132,19 @@ static int cocoa_shortcut(xxwidgets_app *app, NSEvent *event)
         if (window->kind == XXWIDGETS_WINDOW && window->native == [event window]) break;
     if (!window) return 0;
     if (!cocoa_key_input(event, &key, &modifiers)) return 0;
+    /* Keep the editor's document commands bound to its shared history and
+     * selection, including when the host window also binds those letters. */
+    if ((modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) &&
+        !(modifiers & XXWIDGETS_MOD_ALT) &&
+        (key == 'a' || key == 'A' || key == 'c' || key == 'C' || key == 'x' || key == 'X' ||
+         key == 'v' || key == 'V' || key == 'z' || key == 'Z' || key == 'y' || key == 'Y')) {
+        for (xxwidgets_widget *edit = app->widgets; edit; edit = edit->next)
+            if (edit->parent == window && edit->kind == XXWIDGETS_DIE_SIGNATURE_EDIT &&
+                xxwidgets_widget_has_focus(edit) == 1 && xxwidgets_focusable(edit)) {
+                [(XXWidgetsDieSignatureView *)edit->native editKey:(int)key modifiers:modifiers];
+                return 1;
+            }
+    }
     /* Text controls retain ordinary paste even when an application binds V
      * elsewhere. Control+V follows the portable widget shortcut convention;
      * Command+V remains the native equivalent. */
@@ -1686,6 +2180,7 @@ static xxwidgets_status cocoa_poll_backend(xxwidgets_app *app, int timeout_ms)
             else if (app->modal_window && app->modal_window->visible && app->modal_window->enabled &&
                 [event type] == NSEventTypeKeyDown &&
                 [event window] == app->modal_window->native &&
+                ![[[event window] firstResponder] isKindOfClass:[XXWidgetsDieSignatureView class]] &&
                 ([event keyCode] == 36 || [event keyCode] == 76)) {
                 xxwidgets_widget *button = app->modal_default, *candidate;
                 /* Enter activates a focused dialog button before the default
@@ -1719,9 +2214,10 @@ static void cocoa_enable_control(xxwidgets_widget *widget)
     if (widget->kind == XXWIDGETS_CHECKCOMBOBOX && !enabled) [state->combo_popover close];
     if (widget->kind == XXWIDGETS_ARCHIVEBROWSER)
         [state->browser_up setEnabled:enabled && xxwidgets_archivebrowser_directory(widget)[0] != '\0'];
-    if (xxwidgets_list_kind(widget) ||
+    if (xxwidgets_list_kind(widget) || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT ||
         widget->kind == XXWIDGETS_PROGRESS)
         [state->root setAlphaValue:enabled ? 1.0 : 0.5];
+    if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) [(XXWidgetsDieSignatureView *)native refresh];
 }
 
 static void cocoa_size_table(xxwidgets_widget *widget)
@@ -1833,6 +2329,16 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
             if (widget->kind == XXWIDGETS_EDIT) { [field setDelegate:state->delegate]; [field setTarget:state->delegate]; [field setAction:@selector(editActivated:)]; }
             else [[field cell] setLineBreakMode:NSLineBreakByTruncatingTail];
             native = field;
+            break;
+        }
+        case XXWIDGETS_DIE_SIGNATURE_EDIT: {
+            XXWidgetsDieSignatureView *view = [[XXWidgetsDieSignatureView alloc] initWithFrame:NSZeroRect];
+            if (view) {
+                view->signature_widget = widget;
+                [view setAccessibilityLabel:@"DIE signature source editor"];
+                [view setAccessibilityHelp:@"JavaScript signature editor. Tab indents; Control-Tab moves focus."];
+            }
+            native = view;
             break;
         }
         case XXWIDGETS_BUTTON:
@@ -2127,6 +2633,11 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
     if (!state) return;
     @autoreleasepool {
         id native = widget->native;
+        if (state->menu) {
+            cocoa_app_state *app = widget->app->platform;
+            if ([NSApp mainMenu] == state->menu) [NSApp setMainMenu:app->base_menu];
+            [state->menu release];
+        }
         if (state->delegate) state->delegate->widget = NULL;
         if (widget->kind == XXWIDGETS_WINDOW) {
             if (native) ((XXWidgetsContentView *)[(NSWindow *)native contentView])->drop_window = NULL;
@@ -2138,6 +2649,10 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
             [(NSWindow *)native close];
         } else {
             if (widget->kind == XXWIDGETS_EDIT) [(NSTextField *)native setDelegate:nil];
+            if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && native) {
+                [(XXWidgetsDieSignatureView *)native unmarkText];
+                ((XXWidgetsDieSignatureView *)native)->signature_widget = NULL;
+            }
             if (xxwidgets_list_kind(widget)) {
                 [(NSTableView *)native setDelegate:nil];
                 [(NSTableView *)native setDataSource:nil];
@@ -2180,7 +2695,7 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         cocoa_app_state *app_state = widget->app->platform;
         cocoa_widget_state *state = widget->platform;
         id native = widget->native;
-        NSString *text = [NSString stringWithUTF8String:widget->text];
+        NSString *text = widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT ? @"" : [NSString stringWithUTF8String:widget->text];
         if (!text) return XXWIDGETS_INVALID_ARGUMENT;
         NSRect frame = NSMakeRect(widget->rect.x * app_state->cell_width,
             widget->rect.y * app_state->cell_height, widget->rect.width * app_state->cell_width,
@@ -2274,6 +2789,9 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
             }
             break;
         }
+        case XXWIDGETS_DIE_SIGNATURE_EDIT:
+            [(XXWidgetsDieSignatureView *)native refresh];
+            break;
         case XXWIDGETS_BUTTON:
             [(NSButton *)native setTitle:text];
             break;
@@ -2449,6 +2967,7 @@ static xxwidgets_status cocoa_read_text_backend(xxwidgets_widget *widget)
         case XXWIDGETS_WINDOW: text = [(NSWindow *)native title]; break;
         case XXWIDGETS_LABEL: text = [(NSTextField *)native stringValue]; break;
         case XXWIDGETS_EDIT: text = edit_text(native); break;
+        case XXWIDGETS_DIE_SIGNATURE_EDIT: return XXWIDGETS_OK; /* The C model already owns source text. */
         case XXWIDGETS_BUTTON:
         case XXWIDGETS_CHECKBOX: text = [(NSButton *)native title]; break;
         default: return XXWIDGETS_OK;
@@ -2661,9 +3180,54 @@ static size_t cocoa_hexview_page_rows(const xxwidgets_widget *widget)
     return rows ? rows : 1;
 }
 
+static xxwidgets_status cocoa_window_menu(xxwidgets_widget *window)
+{
+    @autoreleasepool {
+        cocoa_widget_state *state = window->platform;
+        cocoa_app_state *app = window->app->platform;
+        NSMenu *menu = nil, *group = nil;
+        const char *last = NULL;
+        if (window->menu_count) {
+            menu = [app->base_menu copy];
+            if (!menu) return XXWIDGETS_OUT_OF_MEMORY;
+            NSInteger group_index = 1; /* Keep the application menu first. */
+            for (size_t i = 0; i < window->menu_count; ++i) {
+                const xxwidgets_menu_item *entry = &window->menu_items[i];
+                if (!last || strcmp(last, entry->menu)) {
+                    NSString *title = [NSString stringWithUTF8String:entry->menu];
+                    NSMenuItem *heading = [[NSMenuItem alloc] initWithTitle:title action:NULL keyEquivalent:@""];
+                    group = [[NSMenu alloc] initWithTitle:title];
+                    if (!heading || !group) { [heading release]; [group release]; [menu release]; return XXWIDGETS_OUT_OF_MEMORY; }
+                    [heading setSubmenu:group];
+                    [menu insertItem:heading atIndex:group_index++];
+                    [heading release]; [group release];
+                    last = entry->menu;
+                }
+                if (!*entry->label) [group addItem:[NSMenuItem separatorItem]];
+                else {
+                    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[NSString stringWithUTF8String:entry->label]
+                        action:@selector(menuActivated:) keyEquivalent:@""];
+                    if (!item) { [menu release]; return XXWIDGETS_OUT_OF_MEMORY; }
+                    [item setTarget:state->delegate];
+                    [item setTag:(NSInteger)i];
+                    [item setEnabled:entry->enabled];
+                    [group addItem:item];
+                    [item release];
+                }
+            }
+        }
+        NSMenu *previous = state->menu;
+        state->menu = menu;
+        if ([NSApp mainMenu] == previous || [(NSWindow *)window->native isMainWindow] || [(NSWindow *)window->native isKeyWindow])
+            [NSApp setMainMenu:menu ? menu : app->base_menu];
+        [previous release];
+        return XXWIDGETS_OK;
+    }
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {
     "AppKit", cocoa_init_backend, cocoa_shutdown_backend, cocoa_poll_backend,
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
     cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
-    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font
+    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font, cocoa_window_menu
 };

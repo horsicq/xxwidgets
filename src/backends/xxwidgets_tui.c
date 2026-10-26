@@ -20,6 +20,7 @@
  */
 
 #include "../xxwidgets_internal.h"
+#include "../die_engine/xxwidgets_die_signature_edit_internal.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -56,7 +57,8 @@ extern char **environ;
 /* Text occupies one cell per Unicode scalar, and two for an East Asian wide
  * one on POSIX terminals (its second cell holds TUI_WIDE_TAIL). Combining
  * glyphs need a shaping layer this backend does not have. The Windows console
- * keeps one cell per scalar. Edits are single-line; terminal mouse input is
+ * keeps one cell per scalar. EDIT fields are single-line; the signature editor
+ * handles multiline source separately. Terminal mouse input is
  * deliberately not required. */
 #define TUI_WIDE_TAIL 0x110000U
 typedef struct tui_cell {
@@ -113,6 +115,10 @@ typedef struct tui_state {
     unsigned char input[256];
     size_t input_length;
     uint64_t escape_since;
+    char *die_paste;
+    size_t die_paste_length, die_paste_capacity;
+    int die_paste_active, die_paste_discard, die_paste_enabled;
+    xxwidgets_widget *die_paste_target;
 #endif
 } tui_state;
 
@@ -615,6 +621,106 @@ static unsigned int tui_hexview_key(uint32_t key)
     }
 }
 
+static unsigned char tui_die_style(xxwidgets_die_signature_style style)
+{
+    switch (style) {
+        case XXWIDGETS_DIE_STYLE_KEYWORD: return TUI_BLUE;
+        case XXWIDGETS_DIE_STYLE_BUILTIN: return TUI_TEAL;
+        case XXWIDGETS_DIE_STYLE_STRING: return TUI_GREEN;
+        case XXWIDGETS_DIE_STYLE_COMMENT: return TUI_GRAY;
+        case XXWIDGETS_DIE_STYLE_NUMBER: return TUI_OLIVE;
+        case XXWIDGETS_DIE_STYLE_FUNCTION: return TUI_BLUE;
+        case XXWIDGETS_DIE_STYLE_REGEX: return TUI_RED;
+        default: return TUI_NORMAL;
+    }
+}
+
+static void tui_die_control(tui_state *state, xxwidgets_widget *widget, tui_clip clip, long long x, long long y)
+{
+    xxwidgets_die_edit_view view;
+    size_t width = widget->rect.width > 0 ? (size_t)widget->rect.width : 0;
+    size_t height = widget->rect.height > 0 ? (size_t)widget->rect.height : 0;
+    size_t gutter, columns, current = xxwidgets_die_edit_caret_line(widget);
+    int enabled = widget->enabled && widget->parent->enabled;
+    xxwidgets_die_edit_cell *cells;
+    xxwidgets_die_edit_view_get(widget, &view);
+    gutter = view.gutter_columns + 1;
+    if (gutter >= width) gutter = width ? width - 1 : 0;
+    columns = width - gutter;
+    /* A terminal may be smaller than the application's cell layout. Keep
+     * the caret and allocations within its actual visible viewport. */
+    if (clip.bottom - y < (long long)height) height = clip.bottom > y ? (size_t)(clip.bottom - y) : 0;
+    if (height > (size_t)state->rows) height = (size_t)state->rows;
+    if (clip.right - x - (long long)gutter < (long long)columns)
+        columns = clip.right > x + (long long)gutter ? (size_t)(clip.right - x - (long long)gutter) : 0;
+    if (columns > (size_t)state->columns) columns = (size_t)state->columns;
+    xxwidgets_die_edit_page(widget, height ? height : 1, columns ? columns : 1);
+    xxwidgets_die_edit_view_get(widget, &view);
+    cells = calloc(columns ? columns : 1, sizeof(*cells));
+    if (!cells) return;
+    for (size_t row = 0; row < height; ++row) {
+        size_t line = view.first_line + row;
+        char number[32]; size_t digits;
+        int breakpoint, execution;
+        if (line >= view.line_count) break;
+        xxwidgets_die_edit_line_marker(widget, line, &breakpoint, &execution);
+        snprintf(number, sizeof(number), "%zu", line + 1);
+        digits = strlen(number);
+        for (size_t column = 0; column < gutter; ++column) {
+            uint32_t cp = column + digits + 1 >= gutter && column + 1 < gutter ? (unsigned char)number[column + digits + 1 - gutter] : ' ';
+            unsigned char marker_style = enabled ? TUI_GRAY : TUI_DISABLED;
+            if (column + 1 == gutter) cp = '|';
+            if (column == 0 && breakpoint) { cp = 0x2022; marker_style = enabled ? TUI_RED : TUI_DISABLED; }
+            if (column == 1 && execution) { cp = '>'; marker_style = enabled ? TUI_OLIVE : TUI_DISABLED; }
+            tui_put(state, clip, x + (long long)column, y + (long long)row, cp, marker_style);
+        }
+        xxwidgets_die_edit_render_line(widget, line, view.first_column, cells, columns);
+        for (size_t column = 0; column < columns; ++column) {
+            long long sx = x + (long long)(gutter + column), sy = y + (long long)row;
+            uint32_t cp = cells[column].scalar;
+            unsigned char style = !enabled ? TUI_DISABLED : cells[column].selected ? TUI_FOCUS : tui_die_style(cells[column].style);
+            /* One model cell is one scalar. A terminal cannot shape a wide
+             * or zero-width scalar into that slot; keep positions stable. */
+            if (cp < 32 || cp == 127) cp = ' ';
+            else if (tui_width(cp) != 1 || tui_invisible(cp) || (cp >= 0x300 && cp <= 0x36f) ||
+                (cp >= 0x1ab0 && cp <= 0x1aff) || (cp >= 0x1dc0 && cp <= 0x1dff) ||
+                (cp >= 0x20d0 && cp <= 0x20ff) || (cp >= 0xfe00 && cp <= 0xfe2f) ||
+                cp == 0x200c || cp == 0x200d || (cp >= 0xe0100 && cp <= 0xe01ef)) cp = 0xfffd;
+            tui_put(state, clip, sx, sy, cp ? cp : ' ', style);
+            if (sx >= clip.left && sx < clip.right && sy >= clip.top && sy < clip.bottom) {
+                tui_cell *cell = state->cells + (size_t)sy * (size_t)state->columns + (size_t)sx;
+                if (enabled && !cells[column].selected) {
+                    if (execution) cell->background = 0x4a3e17;
+                    else if (!view.read_only && line == current) cell->background = 0x29323c;
+                }
+                if (cells[column].style == XXWIDGETS_DIE_STYLE_KEYWORD || cells[column].style == XXWIDGETS_DIE_STYLE_BUILTIN) cell->bold = enabled;
+                if (cells[column].caret && state->focus == widget && enabled) {
+                    state->cursor_x = (int)sx; state->cursor_y = (int)sy; state->cursor_visible = 1;
+                }
+            }
+        }
+    }
+    free(cells);
+}
+
+static int tui_die_key(xxwidgets_widget *widget, uint32_t key, unsigned int modifiers)
+{
+    int mapped = (int)tui_hexview_key(key);
+    if (key >= 1 && key <= 26) {
+        mapped = (int)key + 'A' - 1;
+        modifiers |= XXWIDGETS_MOD_CTRL;
+    } else if (key >= TUI_KEY_F1 && key < TUI_KEY_F1 + 24) mapped = XXWIDGETS_KEY_F1 + (int)(key - TUI_KEY_F1);
+    else switch (key) {
+        case TUI_KEY_ESCAPE: mapped = XXWIDGETS_KEY_ESCAPE; break;
+        case TUI_KEY_ENTER: mapped = XXWIDGETS_KEY_ENTER; break;
+        case TUI_KEY_BACKTAB: modifiers |= XXWIDGETS_MOD_SHIFT; /* fall through */
+        case TUI_KEY_TAB: mapped = XXWIDGETS_KEY_TAB; break;
+        case TUI_KEY_INSERT: mapped = XXWIDGETS_KEY_INSERT; break;
+        default: break;
+    }
+    return xxwidgets_die_edit_key(widget, mapped, modifiers);
+}
+
 typedef struct tui_plot_context { tui_state *state; tui_clip clip; long long x, y; } tui_plot_context;
 static void tui_plot_draw(void *user, int kind, double x, double y, double x2, double y2, uint32_t rgb, const char *text)
 {
@@ -645,10 +751,11 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
     if ((widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_CHECKBOX || widget->kind == XXWIDGETS_COMBOBOX || widget->kind == XXWIDGETS_CHECKCOMBOBOX) &&
         clip.bottom > y + 1)
         clip.bottom = y + 1;
-    if (widget->kind == XXWIDGETS_HEXVIEW && style == TUI_FOCUS)
+    if ((widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) && style == TUI_FOCUS)
         style = TUI_NORMAL;
     tui_fill(state, clip, style);
     switch (widget->kind) {
+        case XXWIDGETS_DIE_SIGNATURE_EDIT: tui_die_control(state, widget, clip, x, y); break;
         case XXWIDGETS_SPLITTER:
             for(row=0;row<widget->rect.height;++row)for(col=0;col<widget->rect.width;++col)tui_put(state,clip,x+col,y+row,widget->rect.height>widget->rect.width?'|':'=',style);break;
         case XXWIDGETS_CANVAS: {
@@ -1126,6 +1233,13 @@ static xxwidgets_status tui_present(tui_state *state)
     int x, y, previous_style = -1, previous_bold = -1;
     uint32_t previous_background = UINT32_MAX;
     if (!output) return XXWIDGETS_OUT_OF_MEMORY;
+    {
+        int enabled = state->focus && state->focus->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && tui_eligible(state->focus);
+        if (enabled != state->die_paste_enabled) {
+            length += (size_t)snprintf(output + length, capacity - length, enabled ? "\033[?2004h" : "\033[?2004l");
+            state->die_paste_enabled = enabled;
+        }
+    }
     length += (size_t)snprintf(output + length, capacity - length, "\033[?25l");
     for (y = 0; y < state->rows; ++y) {
         length += (size_t)snprintf(output + length, capacity - length, "\033[%d;1H", y + 1);
@@ -1336,6 +1450,17 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
 {
     tui_state *state = (tui_state *)app->platform;
     xxwidgets_widget *widget = state->focus;
+    if (widget && widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && tui_eligible(widget)) {
+        if (key == TUI_KEY_F1 + 5 || ((key == TUI_KEY_TAB || key == TUI_KEY_BACKTAB) && (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)))) {
+            /* F6 also works in terminals that cannot encode Ctrl+Tab. */
+            tui_focus_next(app, key == TUI_KEY_BACKTAB || (modifiers & XXWIDGETS_MOD_SHIFT));
+            return XXWIDGETS_OK;
+        }
+        if (tui_die_key(widget, key, modifiers)) { state->dirty = 1; return XXWIDGETS_OK; }
+        /* Ctrl+D is not an editor command and must not close the window.
+         * Escape remains the application's explicit close/navigation key. */
+        if (key == 4 || ((key == 'd' || key == 'D') && (modifiers & XXWIDGETS_MOD_CTRL))) return XXWIDGETS_OK;
+    }
     if (widget && widget->kind == XXWIDGETS_HEXVIEW && tui_eligible(widget)) {
         if (widget->hex_menu_open) {
             size_t count = xxwidgets_hexview_menu_count(widget->hex_menu_open == 2 ? 3 : widget->hex_header);
@@ -1696,7 +1821,7 @@ static xxwidgets_status tui_init(xxwidgets_app *app)
     }
     if (!tui_write("\033[?1049h\033[?25l\033[2J", sizeof("\033[?1049h\033[?25l\033[2J") - 1)) {
         tcsetattr(STDIN_FILENO, TCSANOW, &state->original_termios);
-        tui_write("\033[0m\033[?25h\033[?1049l", sizeof("\033[0m\033[?25h\033[?1049l") - 1);
+        tui_write("\033[?2004l\033[0m\033[?25h\033[?1049l", sizeof("\033[?2004l\033[0m\033[?25h\033[?1049l") - 1);
         free(state);
         return XXWIDGETS_PLATFORM_ERROR;
     }
@@ -1716,20 +1841,78 @@ static void tui_shutdown(xxwidgets_app *app)
     SetConsoleActiveScreenBuffer(state->original_output);
     CloseHandle(state->output);
 #else
-    tui_write("\033[0m\033[?25h\033[?1049l", sizeof("\033[0m\033[?25h\033[?1049l") - 1);
+    tui_write("\033[?2004l\033[0m\033[?25h\033[?1049l", sizeof("\033[?2004l\033[0m\033[?25h\033[?1049l") - 1);
     tcsetattr(STDIN_FILENO, TCSANOW, &state->original_termios);
 #endif
     free(state->cells);
+#ifndef _WIN32
+    free(state->die_paste);
+#endif
     free(state);
     app->platform = NULL;
     tui_active = 0;
 }
 
 #ifndef _WIN32
+/* Buffer a bracketed paste so tabs/newlines are source bytes, not keys.
+ * The cap matches the document limit; excess input is consumed through the
+ * closing marker without changing the source. */
+static void tui_die_paste_append(tui_state *state, const unsigned char *bytes, size_t count)
+{
+    size_t required, capacity;
+    char *next;
+    if (!count || state->die_paste_discard) return;
+    if (count > 8u * 1024u * 1024u - state->die_paste_length) { state->die_paste_discard = 1; return; }
+    required = state->die_paste_length + count + 1;
+    if (required > state->die_paste_capacity) {
+        capacity = state->die_paste_capacity ? state->die_paste_capacity : 1024;
+        while (capacity < required) capacity *= 2;
+        next = realloc(state->die_paste, capacity);
+        if (!next) { state->die_paste_discard = 1; return; }
+        state->die_paste = next; state->die_paste_capacity = capacity;
+    }
+    memcpy(state->die_paste + state->die_paste_length, bytes, count);
+    state->die_paste_length += count;
+    state->die_paste[state->die_paste_length] = 0;
+}
+
+static int tui_die_paste_consume(xxwidgets_app *app)
+{
+    static const unsigned char end[] = "\033[201~";
+    tui_state *state = app->platform;
+    size_t at, keep = 0;
+    for (at = 0; at + sizeof(end) - 1 <= state->input_length; ++at)
+        if (!memcmp(state->input + at, end, sizeof(end) - 1)) {
+            xxwidgets_widget *target = state->die_paste_target;
+            tui_die_paste_append(state, state->input, at);
+            at += sizeof(end) - 1;
+            memmove(state->input, state->input + at, state->input_length - at);
+            state->input_length -= at;
+            state->die_paste_active = 0; state->die_paste_target = NULL;
+            if (!state->die_paste_discard && state->die_paste_length && target == state->focus && target && tui_eligible(target))
+                (void)xxwidgets_die_edit_input(target, state->die_paste);
+            state->die_paste_length = 0;
+            state->dirty = 1;
+            return 1;
+        }
+    /* A marker split across reads stays in the input buffer; its other bytes
+     * can be appended immediately, including split UTF-8 sequences. */
+    for (size_t prefix = 1; prefix < sizeof(end) - 1 && prefix <= state->input_length; ++prefix)
+        if (!memcmp(state->input + state->input_length - prefix, end, prefix)) keep = prefix;
+    tui_die_paste_append(state, state->input, state->input_length - keep);
+    if (keep) memmove(state->input, state->input + state->input_length - keep, keep);
+    state->input_length = keep;
+    return 0;
+}
+
 static xxwidgets_status tui_parse(xxwidgets_app *app)
 {
     tui_state *state = (tui_state *)app->platform;
     while (state->input_length && !app->quit) {
+        if (state->die_paste_active) {
+            if (!tui_die_paste_consume(app)) break;
+            continue;
+        }
         size_t consumed = 1;
         uint32_t key = state->input[0];
         unsigned int modifiers = 0;
@@ -1801,6 +1984,13 @@ static xxwidgets_status tui_parse(xxwidgets_app *app)
                             if (parameters[0] == 27 && parameter == 2)
                                 key = parameters[2] <= 0x10ffffu &&
                                     !(parameters[2] >= 0xd800u && parameters[2] <= 0xdfffu) ? parameters[2] : 0;
+                            else if (parameters[0] == 200) {
+                                state->die_paste_active = 1;
+                                state->die_paste_discard = 0;
+                                state->die_paste_length = 0;
+                                state->die_paste_target = state->focus && state->focus->kind == XXWIDGETS_DIE_SIGNATURE_EDIT ? state->focus : NULL;
+                                key = 0;
+                            } else if (parameters[0] == 201) key = 0;
                             else if (parameters[0] == 2)
                                 key = TUI_KEY_INSERT;
                             else if (parameters[0] == 1 || parameters[0] == 7)
@@ -1853,8 +2043,15 @@ static xxwidgets_status tui_parse(xxwidgets_app *app)
             key = tui_decode((const char *)state->input, state->input_length, &consumed);
             if (!consumed) break;
         }
+        /* Extended terminal protocols carry Tab/Enter as Unicode controls,
+         * including Ctrl+Tab; normalize them like legacy terminal bytes. */
+        if (key == '\t') key = TUI_KEY_TAB;
+        else if (key == '\r' || key == '\n') key = TUI_KEY_ENTER;
+        else if (key == 8 || key == 127) key = TUI_KEY_BACKSPACE;
+        else if (key == 27) key = TUI_KEY_ESCAPE;
         memmove(state->input, state->input + consumed, state->input_length - consumed);
         state->input_length -= consumed;
+        if (state->die_paste_active || !key) continue;
         status = tui_key(app, key, modifiers);
         if (status != XXWIDGETS_OK) return status;
     }
@@ -2004,6 +2201,9 @@ static void tui_destroy(xxwidgets_widget *widget)
 {
     tui_state *state = (tui_state *)widget->app->platform;
     if (state->focus == widget) state->focus = NULL;
+#ifndef _WIN32
+    if (state->die_paste_target == widget) state->die_paste_target = NULL;
+#endif
     if (state->dropdown == widget) state->dropdown = NULL;
     if (widget->kind == XXWIDGETS_EDIT && widget->platform) free(((tui_edit *)widget->platform)->seen);
     free(widget->platform);
@@ -2350,4 +2550,4 @@ static size_t tui_hexview_page_rows(const xxwidgets_widget *widget)
 
 const xxwidgets_backend_ops xxwidgets_tui_ops = {"tui",    tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,   tui_sync,
                                                  tui_read, tui_read, tui_focus,    NULL,     NULL,       tui_copy_text, tui_apply_fonts,
-                                                 NULL,     NULL,     NULL,         NULL,     NULL,       tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL};
+                                                 NULL,     NULL,     NULL,         NULL,     NULL,       tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL, NULL};

@@ -473,7 +473,7 @@ static const xxwidgets_debugger_session_ops emul_ops = {
     XXWIDGETS_DEBUGGER_SESSION_ABI,
     get_state, get_target, read_memory, write_memory, disassemble,
     list_breakpoints, set_breakpoint, remove_breakpoint,
-    resume, step, interrupt, poll, error_code, error_message
+    resume, step, interrupt, poll, error_code, error_message, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 xxwidgets_status xxwidgets_debugger_xxemul_create(xxemul *emulator, uint64_t instruction_quantum,

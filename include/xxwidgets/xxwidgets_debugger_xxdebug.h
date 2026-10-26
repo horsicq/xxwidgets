@@ -3,6 +3,7 @@
 #define XXWIDGETS_DEBUGGER_XXDEBUG_H
 
 #include "xxwidgets/xxwidgets_debugger_session.h"
+#include "xxwidgets/debugger/xxwidgets_debugger_project_dialog.h"
 #include "xxdebug/xxdebug.h"
 
 #ifdef __cplusplus
@@ -25,13 +26,25 @@ typedef struct xxwidgets_debugger_xxdebug xxwidgets_debugger_xxdebug;
  * already stopped/empty/exited targets return OK with EVENT_NONE. Events can
  * leave the process stopped, including OUTPUT/OTHER: consult get_state and
  * explicitly resume as needed. Native event kinds are preserved in
- * backend_kind. Only execution breakpoints are exposed by the common API;
- * set creates a software breakpoint and remove rejects watchpoint IDs.
+ * backend_kind. The legacy breakpoint list exposes execution breakpoints;
+ * the full information list also exposes data watchpoints. Legacy set creates
+ * a software execution breakpoint; spec creation and removal support data.
  * Native errors are available through the session diagnostic callbacks.
  */
 xxwidgets_status xxwidgets_debugger_xxdebug_create(xxdebug *debugger, xxwidgets_debugger_xxdebug **output);
 const xxwidgets_debugger_session *xxwidgets_debugger_xxdebug_session(xxwidgets_debugger_xxdebug *adapter);
 void xxwidgets_debugger_xxdebug_destroy(xxwidgets_debugger_xxdebug *adapter);
+
+/* Project-dialog probe for the optional xxdebug adapter. Reads bounded file
+ * headers without launching anything. Reports the compiled backends and
+ * their supported host/target combinations; this is a capability hint, not
+ * full image validation or a guarantee that every target instruction/API is
+ * implemented. Missing/unreadable files return OK with no available backend
+ * and an explanatory message. Unknown regular files retain native debugging
+ * when available (for example, a script executed by the host loader).
+ * user_data is unused and may be NULL. */
+xxwidgets_status xxwidgets_debugger_xxdebug_probe_project(const char *program,
+    xxwidgets_debugger_project_info *info, void *user_data);
 
 /* Compatibility wrapper over xxwidgets_debugger_refresh_session; a temporary
  * provider is borrowed only for this call. NULL options use all defaults.

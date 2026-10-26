@@ -36,6 +36,7 @@
 #include <wchar.h>
 
 #include "../xxwidgets_internal.h"
+#include "../die_engine/xxwidgets_die_signature_edit_internal.h"
 
 typedef struct xxwidgets_win32_app {
     HINSTANCE instance;
@@ -98,6 +99,13 @@ typedef struct xxwidgets_win32_widget {
     size_t tree_count;
     uint64_t tree_content_revision;
     int tree_initialized;
+    HMENU menu;
+    int die_cell_width, die_cell_height, die_gutter, die_layouting, die_dragging, die_wheel_delta;
+    HFONT die_font;
+    LOGFONTW die_font_description;
+    int die_font_initialized;
+    uint32_t die_surrogate;
+    size_t die_rows, die_columns;
     int owner_hidden; /* WINDOW: Windows hid it with its minimized owner; it shows it on restore. */
 } xxwidgets_win32_widget;
 
@@ -1102,7 +1110,7 @@ static xxwidgets_status win32_geometry(xxwidgets_widget *widget, DWORD style, DW
         frame.left = frame.top = 0;
         frame.right = *width;
         frame.bottom = *height;
-        if (!AdjustWindowRectEx(&frame, style, FALSE, extended)) return XXWIDGETS_PLATFORM_ERROR;
+        if (!AdjustWindowRectEx(&frame, style, widget->menu_count != 0, extended)) return XXWIDGETS_PLATFORM_ERROR;
         *width = frame.right - frame.left;
         *height = frame.bottom - frame.top;
     }
@@ -1448,6 +1456,10 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
         case WM_CLOSE: xxwidgets_emit(widget, XXWIDGETS_EVENT_CLOSE, 0); return 0;
         case WM_DROPFILES: win32_drop_files(widget, (HDROP)wp); return 0;
         case WM_COMMAND:
+            if (!lp && !HIWORD(wp) && LOWORD(wp) >= 0x1000 && LOWORD(wp) < 0x2000) {
+                xxwidgets_menu_activate(widget, (size_t)LOWORD(wp) - 0x1000);
+                return 0;
+            }
             if (lp && !widget->app->syncing) {
                 HWND control_handle = (HWND)lp;
                 xxwidgets_widget *control = win32_find_widget(widget->app, control_handle);
@@ -2125,6 +2137,336 @@ static xxwidgets_status win32_hexview_create_overview(xxwidgets_widget *widget, 
     return XXWIDGETS_OK;
 }
 
+/* A fixed-cell native editor backed entirely by the portable DiE model. */
+static HFONT win32_die_font(xxwidgets_widget *widget)
+{
+    xxwidgets_win32_widget *native = widget->platform;
+    xxwidgets_win32_app *app = widget->app->platform;
+    xxwidgets_font_role role = xxwidgets_widget_font_role(widget);
+    LOGFONTW configured, mono;
+    HFONT next;
+    if (native->preview_font) return native->preview_font;
+    if (widget->app->font_options.fonts[role].family[0]) return app->role_fonts[role];
+    /* Preserve size/weight/style from the text-editor role while using the
+     * standard monospace family when the user has not chosen a family. */
+    memset(&configured, 0, sizeof(configured)); memset(&mono, 0, sizeof(mono));
+    if (!GetObjectW(app->role_fonts[role], sizeof(configured), &configured) ||
+        !GetObjectW(app->monospace_font, sizeof(mono), &mono)) return app->monospace_font;
+    memcpy(configured.lfFaceName, mono.lfFaceName, sizeof(configured.lfFaceName));
+    configured.lfPitchAndFamily = mono.lfPitchAndFamily;
+    if (native->die_font_initialized && !memcmp(&configured, &native->die_font_description, sizeof(configured))) return native->die_font;
+    next = CreateFontIndirectW(&configured);
+    if (!next) return app->monospace_font;
+    if (native->die_font) DeleteObject(native->die_font);
+    native->die_font = next; native->die_font_description = configured; native->die_font_initialized = 1;
+    return next;
+}
+
+static void win32_die_metrics(xxwidgets_widget *widget, HDC dc)
+{
+    xxwidgets_win32_widget *native = widget->platform;
+    HGDIOBJ previous = SelectObject(dc, win32_die_font(widget));
+    TEXTMETRICW metrics;
+    SIZE extent;
+    if (GetTextMetricsW(dc, &metrics)) native->die_cell_height = metrics.tmHeight + metrics.tmExternalLeading;
+    if (GetTextExtentPoint32W(dc, L"0", 1, &extent)) native->die_cell_width = extent.cx;
+    if (native->die_cell_width < 1) native->die_cell_width = 1;
+    if (native->die_cell_height < 1) native->die_cell_height = 1;
+    if (previous) SelectObject(dc, previous);
+}
+
+static void win32_die_sync(xxwidgets_widget *widget)
+{
+    xxwidgets_win32_widget *native = widget->platform;
+    HWND handle = widget->native;
+    xxwidgets_die_edit_view view;
+    RECT rect;
+    SCROLLINFO info = {sizeof(info), SIF_RANGE | SIF_PAGE | SIF_POS};
+    HDC dc;
+    size_t rows, columns;
+    if (!handle || !native || native->die_layouting || !GetClientRect(handle, &rect)) return;
+    native->die_layouting = 1;
+    dc = GetDC(handle);
+    if (dc) { win32_die_metrics(widget, dc); ReleaseDC(handle, dc); }
+    if (native->die_cell_width < 1) native->die_cell_width = 8;
+    if (native->die_cell_height < 1) native->die_cell_height = 16;
+    xxwidgets_die_edit_view_get(widget, &view);
+    native->die_gutter = (int)(view.gutter_columns + 2) * native->die_cell_width;
+    rows = rect.bottom > 0 ? (size_t)(rect.bottom / native->die_cell_height) : 1;
+    columns = rect.right > native->die_gutter ? (size_t)((rect.right - native->die_gutter) / native->die_cell_width) : 1;
+    if (!rows) rows = 1;
+    if (!columns) columns = 1;
+    if (rows != native->die_rows || columns != native->die_columns) {
+        native->die_rows = rows; native->die_columns = columns;
+        xxwidgets_die_edit_page(widget, rows, columns);
+        xxwidgets_die_edit_view_get(widget, &view);
+    }
+    info.nMin = 0; info.nMax = view.line_count ? (int)view.line_count - 1 : 0;
+    info.nPage = (UINT)rows; info.nPos = (int)view.first_line;
+    SetScrollInfo(handle, SB_VERT, &info, TRUE);
+    info.nMax = (int)view.max_columns; info.nPage = (UINT)columns; info.nPos = (int)view.first_column;
+    SetScrollInfo(handle, SB_HORZ, &info, TRUE);
+    native->die_layouting = 0;
+    InvalidateRect(handle, NULL, FALSE);
+}
+
+static COLORREF win32_die_rgb(uint32_t rgb)
+{
+    return RGB((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+}
+
+static void win32_die_fill(HDC dc, const RECT *rect, COLORREF color)
+{
+    SetDCBrushColor(dc, color);
+    FillRect(dc, rect, (HBRUSH)GetStockObject(DC_BRUSH));
+}
+
+static void win32_die_markers(HDC dc, const xxwidgets_win32_widget *native, int y, int breakpoint, int execution)
+{
+    HGDIOBJ old_pen = SelectObject(dc, GetStockObject(NULL_PEN));
+    int width = native->die_cell_width, height = native->die_cell_height;
+    if (breakpoint) {
+        int radius = (width < height ? width : height) / 3;
+        HBRUSH brush = CreateSolidBrush(RGB(210, 30, 30));
+        if (radius < 2) radius = 2;
+        if (brush) {
+            HGDIOBJ old_brush = SelectObject(dc, brush);
+            Ellipse(dc, width / 2 - radius, y + height / 2 - radius,
+                width / 2 + radius, y + height / 2 + radius);
+            if (old_brush) SelectObject(dc, old_brush);
+            DeleteObject(brush);
+        }
+    }
+    if (execution) {
+        int left = width + 1, right = width * 2 - 1, middle = y + height / 2;
+        int head = right - width / 3;
+        POINT arrow[7] = {{left, middle - height / 5}, {head, middle - height / 5},
+            {head, middle - height / 3}, {right, middle}, {head, middle + height / 3},
+            {head, middle + height / 5}, {left, middle + height / 5}};
+        HBRUSH brush = CreateSolidBrush(RGB(210, 110, 5));
+        if (brush) {
+            HGDIOBJ old_brush = SelectObject(dc, brush);
+            Polygon(dc, arrow, 7);
+            if (old_brush) SelectObject(dc, old_brush);
+            DeleteObject(brush);
+        }
+    }
+    if (old_pen) SelectObject(dc, old_pen);
+}
+
+static void win32_die_paint(xxwidgets_widget *widget)
+{
+    HWND handle = widget->native;
+    xxwidgets_win32_widget *native = widget->platform;
+    xxwidgets_die_edit_view view;
+    PAINTSTRUCT paint;
+    HDC dc = BeginPaint(handle, &paint);
+    RECT rect;
+    HGDIOBJ previous;
+    xxwidgets_die_edit_cell *cells;
+    size_t count, current;
+    if (!dc) return;
+    GetClientRect(handle, &rect);
+    win32_die_metrics(widget, dc);
+    previous = SelectObject(dc, win32_die_font(widget));
+    SetBkMode(dc, TRANSPARENT);
+    win32_die_fill(dc, &rect, RGB(255, 255, 255));
+    xxwidgets_die_edit_view_get(widget, &view);
+    current = xxwidgets_die_edit_caret_line(widget);
+    count = rect.right > native->die_gutter ? (size_t)((rect.right - native->die_gutter) / native->die_cell_width + 1) : 1;
+    cells = calloc(count, sizeof(*cells));
+    if (cells) for (size_t row = 0; row <= (size_t)(rect.bottom / native->die_cell_height); ++row) {
+        size_t line = view.first_line + row;
+        int y = (int)row * native->die_cell_height;
+        wchar_t number[32];
+        int breakpoint, execution;
+        RECT box = {native->die_gutter, y, rect.right, y + native->die_cell_height};
+        if (line >= view.line_count) break;
+        xxwidgets_die_edit_line_marker(widget, line, &breakpoint, &execution);
+        if (execution) win32_die_fill(dc, &box, RGB(255, 232, 163));
+        else if (!view.read_only && line == current) win32_die_fill(dc, &box, RGB(255, 255, 224));
+        box.left = 0; box.right = native->die_gutter - native->die_cell_width / 2;
+        win32_die_fill(dc, &box, RGB(238, 238, 238));
+        win32_die_markers(dc, native, y, breakpoint, execution);
+        _snwprintf(number, sizeof(number) / sizeof(*number), L"%llu", (unsigned long long)line + 1);
+        box.right = native->die_gutter - native->die_cell_width;
+        SetTextColor(dc, RGB(102, 102, 102));
+        DrawTextW(dc, number, -1, &box, DT_RIGHT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+        xxwidgets_die_edit_render_line(widget, line, view.first_column, cells, count);
+        for (size_t column = 0; column < count; ++column) {
+            int x = native->die_gutter + (int)column * native->die_cell_width;
+            wchar_t scalar[2]; int units = 1;
+            box.left = x; box.right = x + native->die_cell_width;
+            if (cells[column].selected) win32_die_fill(dc, &box, GetSysColor(COLOR_HIGHLIGHT));
+            if (cells[column].scalar >= 32) {
+                uint32_t cp = cells[column].scalar;
+                if (cp > 0xffff) { cp -= 0x10000; scalar[0] = (wchar_t)(0xd800 + (cp >> 10)); scalar[1] = (wchar_t)(0xdc00 + (cp & 1023)); units = 2; }
+                else scalar[0] = (wchar_t)cp;
+                SetTextColor(dc, cells[column].selected ? GetSysColor(COLOR_HIGHLIGHTTEXT) :
+                    cells[column].style == XXWIDGETS_DIE_STYLE_TEXT ? RGB(0, 0, 0) : win32_die_rgb(xxwidgets_die_edit_color(cells[column].style)));
+                ExtTextOutW(dc, x, y, ETO_CLIPPED, &box, scalar, units, NULL);
+            }
+            if (cells[column].caret && GetFocus() == handle) {
+                RECT caret = {x, y, x + 1, y + native->die_cell_height};
+                win32_die_fill(dc, &caret, RGB(0, 0, 0));
+                SetCaretPos(x, y);
+            }
+        }
+    }
+    free(cells);
+    if (previous) SelectObject(dc, previous);
+    EndPaint(handle, &paint);
+}
+
+static unsigned int win32_die_modifiers(void)
+{
+    unsigned int modifiers = 0;
+    if (GetKeyState(VK_CONTROL) < 0) modifiers |= XXWIDGETS_MOD_CTRL;
+    if (GetKeyState(VK_MENU) < 0) modifiers |= XXWIDGETS_MOD_ALT;
+    if (GetKeyState(VK_SHIFT) < 0) modifiers |= XXWIDGETS_MOD_SHIFT;
+    if (GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0) modifiers |= XXWIDGETS_MOD_META;
+    return modifiers;
+}
+
+static int win32_die_key(xxwidgets_widget *widget, WPARAM vk)
+{
+    unsigned int modifiers = win32_die_modifiers();
+    int key;
+    if (!xxwidgets_focusable(widget) || widget->app->syncing) return 0;
+    switch (vk) {
+        case VK_ESCAPE: return 0;
+        case VK_RETURN: key = XXWIDGETS_KEY_ENTER; break;
+        case VK_TAB:
+            if (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) {
+                HWND next = widget->parent ? GetNextDlgTabItem((HWND)widget->parent->native, (HWND)widget->native, !!(modifiers & XXWIDGETS_MOD_SHIFT)) : NULL;
+                if (next) SetFocus(next);
+                return 1;
+            }
+            key = XXWIDGETS_KEY_TAB; break;
+        case VK_BACK: key = XXWIDGETS_KEY_BACKSPACE; break;
+        case VK_DELETE: key = XXWIDGETS_KEY_DELETE; break;
+        case VK_INSERT: key = XXWIDGETS_KEY_INSERT; break;
+        case VK_HOME: key = XXWIDGETS_KEY_HOME; break;
+        case VK_END: key = XXWIDGETS_KEY_END; break;
+        case VK_PRIOR: key = XXWIDGETS_KEY_PAGEUP; break;
+        case VK_NEXT: key = XXWIDGETS_KEY_PAGEDOWN; break;
+        case VK_UP: key = XXWIDGETS_KEY_UP; break;
+        case VK_DOWN: key = XXWIDGETS_KEY_DOWN; break;
+        case VK_LEFT: key = XXWIDGETS_KEY_LEFT; break;
+        case VK_RIGHT: key = XXWIDGETS_KEY_RIGHT; break;
+        default:
+            /* Printable text is delivered through WM_CHAR after layout/IME
+             * translation; AltGr must not become a clipboard shortcut. */
+            if (!(modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) || (modifiers & XXWIDGETS_MOD_ALT) || vk < 'A' || vk > 'Z') return 0;
+            key = (int)vk;
+            break;
+    }
+    return xxwidgets_die_edit_key(widget, key, modifiers);
+}
+
+static void win32_die_hit(xxwidgets_widget *widget, int x, int y, int extend)
+{
+    xxwidgets_win32_widget *native = widget->platform;
+    xxwidgets_die_edit_view view;
+    int row, column;
+    if (native->die_cell_width < 1 || native->die_cell_height < 1) return;
+    xxwidgets_die_edit_view_get(widget, &view);
+    row = y < 0 ? -1 : y / native->die_cell_height;
+    column = (x - native->die_gutter + native->die_cell_width / 2) / native->die_cell_width;
+    if (row < 0) { xxwidgets_die_edit_scroll(widget, -1, 0); row = 0; xxwidgets_die_edit_view_get(widget, &view); }
+    else if ((size_t)row >= native->die_rows) { xxwidgets_die_edit_scroll(widget, 1, 0); row = (int)native->die_rows - 1; xxwidgets_die_edit_view_get(widget, &view); }
+    if (column < 0) column = 0;
+    xxwidgets_die_edit_point(widget, view.first_line + (size_t)row, view.first_column + (size_t)column, extend);
+}
+
+static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
+{
+    xxwidgets_widget *widget = (xxwidgets_widget *)data;
+    xxwidgets_win32_widget *native = widget->platform;
+    (void)id;
+    if (message == WM_GETDLGCODE) {
+        const MSG *key = (const MSG *)lp;
+        LRESULT flags = DLGC_WANTARROWS | DLGC_WANTCHARS | DLGC_WANTTAB;
+        if (key && key->wParam != VK_ESCAPE) flags |= DLGC_WANTMESSAGE;
+        return flags;
+    }
+    if (message == WM_ERASEBKGND) return 1;
+    if (message == WM_PAINT) { win32_die_paint(widget); return 0; }
+    if (message == WM_SIZE || message == WM_SETFONT) {
+        LRESULT result = DefSubclassProc(handle, message, wp, lp);
+        win32_die_sync(widget);
+        return result;
+    }
+    if (message == WM_GETFONT) return (LRESULT)win32_die_font(widget);
+    if (message == WM_SETFOCUS) {
+        CreateCaret(handle, NULL, 1, native->die_cell_height > 0 ? native->die_cell_height : 16);
+        /* Keep the system caret available for IME positioning; the viewport
+         * draws its caret to avoid flicker during model-driven repaints. */
+        InvalidateRect(handle, NULL, FALSE); return 0;
+    }
+    if (message == WM_KILLFOCUS) { native->die_surrogate = 0; DestroyCaret(); InvalidateRect(handle, NULL, FALSE); return 0; }
+    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && win32_die_key(widget, wp)) return 0;
+    if ((message == WM_CHAR || message == WM_UNICHAR) && xxwidgets_focusable(widget) && !widget->app->syncing) {
+        uint32_t cp = (uint32_t)wp;
+        char utf8[5];
+        if (message == WM_UNICHAR && cp == UNICODE_NOCHAR) return TRUE;
+        if (message == WM_CHAR) {
+            if (cp >= 0xd800 && cp <= 0xdbff) { native->die_surrogate = cp; return 0; }
+            if (cp >= 0xdc00 && cp <= 0xdfff) {
+                if (!native->die_surrogate) return 0;
+                cp = 0x10000 + ((native->die_surrogate - 0xd800) << 10) + cp - 0xdc00;
+            }
+        }
+        native->die_surrogate = 0;
+        if (cp >= 32 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff)) {
+            xxwidgets_die_edit_encode(cp, utf8);
+            (void)xxwidgets_die_edit_input(widget, utf8);
+        }
+        return 0;
+    }
+    if (message == WM_LBUTTONDOWN && xxwidgets_focusable(widget) && !widget->app->syncing) {
+        SetFocus(handle); SetCapture(handle); native->die_dragging = 1;
+        win32_die_hit(widget, (short)LOWORD(lp), (short)HIWORD(lp), GetKeyState(VK_SHIFT) < 0); return 0;
+    }
+    if (message == WM_MOUSEMOVE && native->die_dragging) {
+        win32_die_hit(widget, (short)LOWORD(lp), (short)HIWORD(lp), 1); return 0;
+    }
+    if (message == WM_LBUTTONUP && native->die_dragging) { native->die_dragging = 0; ReleaseCapture(); return 0; }
+    if (message == WM_CAPTURECHANGED) { native->die_dragging = 0; return 0; }
+    if ((message == WM_VSCROLL || message == WM_HSCROLL) && !widget->app->syncing) {
+        xxwidgets_die_edit_view view;
+        SCROLLINFO info = {sizeof(info), SIF_TRACKPOS};
+        int vertical = message == WM_VSCROLL, delta = 0;
+        xxwidgets_die_edit_view_get(widget, &view);
+        switch (LOWORD(wp)) {
+            case SB_LINEUP: delta = -1; break;
+            case SB_LINEDOWN: delta = 1; break;
+            case SB_PAGEUP: delta = -(int)(vertical ? native->die_rows : native->die_columns); break;
+            case SB_PAGEDOWN: delta = (int)(vertical ? native->die_rows : native->die_columns); break;
+            case SB_TOP: delta = -(int)(vertical ? view.first_line : view.first_column); break;
+            case SB_BOTTOM: delta = (int)(vertical ? view.line_count : view.max_columns); break;
+            case SB_THUMBTRACK:
+            case SB_THUMBPOSITION:
+                GetScrollInfo(handle, vertical ? SB_VERT : SB_HORZ, &info);
+                delta = info.nTrackPos - (int)(vertical ? view.first_line : view.first_column); break;
+            default: break;
+        }
+        xxwidgets_die_edit_scroll(widget, vertical ? delta : 0, vertical ? 0 : delta);
+        win32_die_sync(widget); return 0;
+    }
+    if ((message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL) && xxwidgets_focusable(widget) && !widget->app->syncing) {
+        int delta, horizontal = message == WM_MOUSEHWHEEL || (LOWORD(wp) & MK_SHIFT);
+        native->die_wheel_delta += (short)HIWORD(wp);
+        delta = native->die_wheel_delta / WHEEL_DELTA;
+        native->die_wheel_delta %= WHEEL_DELTA;
+        if (message == WM_MOUSEWHEEL) delta = -delta;
+        xxwidgets_die_edit_scroll(widget, horizontal ? 0 : delta * 3, horizontal ? delta * 3 : 0);
+        win32_die_sync(widget); return 0;
+    }
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_die_proc, 1);
+    return DefSubclassProc(handle, message, wp, lp);
+}
+
 static xxwidgets_status win32_create(xxwidgets_widget *widget)
 {
     xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
@@ -2149,6 +2491,11 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         case XXWIDGETS_BUTTON:
             class_name = L"BUTTON";
             style |= WS_TABSTOP | BS_PUSHBUTTON;
+            break;
+        case XXWIDGETS_DIE_SIGNATURE_EDIT:
+            class_name = L"STATIC";
+            style |= SS_NOTIFY | WS_TABSTOP | WS_VSCROLL | WS_HSCROLL;
+            extended = WS_EX_CLIENTEDGE;
             break;
         case XXWIDGETS_EDIT:
             class_name = L"EDIT";
@@ -2258,12 +2605,15 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_CHECKCOMBOBOX && !SetWindowSubclass(handle, win32_checkcombo_control_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && !SetWindowSubclass(handle, win32_die_proc, 1, (DWORD_PTR)widget))
+        status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK) status = win32_sync(widget);
     if (status != XXWIDGETS_OK) {
         if (native->hex_container) DestroyWindow(native->hex_container);
         if (IsWindow(handle)) DestroyWindow(handle);
         widget->native = NULL;
         if (native->browser_images) ImageList_Destroy(native->browser_images);
+        if (native->die_font) DeleteObject(native->die_font);
         free(native->tree_items);
         free(native);
         widget->platform = NULL;
@@ -2275,6 +2625,10 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
 static void win32_destroy(xxwidgets_widget *widget)
 {
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    if (native && native->menu) {
+        if (widget->native) SetMenu((HWND)widget->native, NULL);
+        DestroyMenu(native->menu);
+    }
     if (native && native->combo_popup) DestroyWindow(native->combo_popup);
     if (native && native->hex_container) DestroyWindow(native->hex_container);
     else if (widget->native) DestroyWindow((HWND)widget->native);
@@ -2282,6 +2636,7 @@ static void win32_destroy(xxwidgets_widget *widget)
     if (native && native->browser_images) ImageList_Destroy(native->browser_images);
     if (native && native->about_bitmap) DeleteObject(native->about_bitmap);
     if (native && native->preview_font) DeleteObject(native->preview_font);
+    if (native && native->die_font) DeleteObject(native->die_font);
     if (native && native->hex_font) DeleteObject(native->hex_font);
     if (native && native->hex_regular_font) DeleteObject(native->hex_regular_font);
     if (native && native->hex_bold_font) DeleteObject(native->hex_bold_font);
@@ -3298,7 +3653,9 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
         } else if (!SetWindowPos(native->hex_container ? native->hex_container : handle, NULL, x, y, width, height, SWP_NOACTIVATE | SWP_NOZORDER)) return XXWIDGETS_PLATFORM_ERROR;
         native->applied_rect = widget->rect;
     }
-    if (xxwidgets_combo_kind(widget)) {
+    if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) {
+        win32_die_sync(widget);
+    } else if (xxwidgets_combo_kind(widget)) {
         status = win32_sync_combo(widget);
         if (status != XXWIDGETS_OK) return status;
     } else if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
@@ -3327,6 +3684,10 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
     if (widget->kind == XXWIDGETS_CHECKBOX) SendMessageW(handle, BM_SETCHECK, widget->value ? BST_CHECKED : BST_UNCHECKED, 0);
     if (widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER || widget->kind == XXWIDGETS_ENTROPY_PLOT) InvalidateRect(handle, NULL, FALSE);
     if (widget->kind == XXWIDGETS_PROGRESS) SendMessageW(handle, PBM_SETPOS, (WPARAM)widget->value, 0);
+    if (native->die_dragging && (!widget->enabled || !widget->visible)) {
+        native->die_dragging = 0;
+        if (GetCapture() == handle) ReleaseCapture();
+    }
     if (native->hex_overview_dragging && (!widget->enabled || !widget->visible)) {
         native->hex_overview_dragging = 0;
         if (GetCapture() == native->hex_overview) ReleaseCapture();
@@ -3369,7 +3730,7 @@ static xxwidgets_status win32_read_text(xxwidgets_widget *widget)
     int length;
     xxwidgets_status status;
     /* List items and progress captions are maintained by the portable model. */
-    if (xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget) || widget->kind == XXWIDGETS_ARCHIVEBROWSER || widget->kind == XXWIDGETS_PROGRESS)
+    if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget) || widget->kind == XXWIDGETS_ARCHIVEBROWSER || widget->kind == XXWIDGETS_PROGRESS)
         return XXWIDGETS_OK;
     if (!widget->native) return XXWIDGETS_PLATFORM_ERROR;
     status = win32_window_text((HWND)widget->native, &wide);
@@ -3511,6 +3872,16 @@ static xxwidgets_status win32_poll(xxwidgets_app *app, int timeout_ms)
                 return XXWIDGETS_OK;
             }
             root = message.hwnd ? GetAncestor(message.hwnd, GA_ROOT) : NULL;
+            /* The editor consumes text-editing keys before modal Enter and
+             * application accelerators. Unhandled keys remain application keys. */
+            if ((message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) && message.hwnd == GetFocus()) {
+                xxwidgets_widget *focused = win32_find_widget(app, message.hwnd);
+                if (focused && focused->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && win32_die_key(focused, message.wParam)) {
+                    ++processed;
+                    if (app->quit || processed >= 256 || (timeout_ms > 0 && GetTickCount() - started >= (DWORD)timeout_ms)) return XXWIDGETS_OK;
+                    continue;
+                }
+            }
             if (app->modal_window && root == (HWND)app->modal_window->native && message.message == WM_KEYDOWN) {
                 if (message.wParam == VK_ESCAPE) {
                     xxwidgets_emit(app->modal_window, XXWIDGETS_EVENT_CLOSE, 0);
@@ -3743,6 +4114,58 @@ static int win32_has_focus(const xxwidgets_widget *widget)
     return native && focus && (focus == native || IsChild(native, focus));
 }
 
+static xxwidgets_status win32_window_menu(xxwidgets_widget *window)
+{
+    xxwidgets_win32_widget *state = window->platform;
+    HWND handle = (HWND)window->native;
+    HMENU menu = NULL, group = NULL;
+    const char *last = NULL;
+    xxwidgets_status status = XXWIDGETS_OK;
+    if (window->menu_count) {
+        menu = CreateMenu();
+        if (!menu) return XXWIDGETS_PLATFORM_ERROR;
+        for (size_t i = 0; i < window->menu_count; ++i) {
+            const xxwidgets_menu_item *entry = &window->menu_items[i];
+            wchar_t *wide = NULL;
+            if (!last || strcmp(last, entry->menu)) {
+                status = win32_wide(entry->menu, &wide);
+                if (status != XXWIDGETS_OK) goto failure;
+                group = CreatePopupMenu();
+                if (!group || !AppendMenuW(menu, MF_POPUP, (UINT_PTR)group, wide)) {
+                    if (group) DestroyMenu(group);
+                    free(wide); status = XXWIDGETS_PLATFORM_ERROR; goto failure;
+                }
+                free(wide); wide = NULL; last = entry->menu;
+            }
+            if (!*entry->label) {
+                if (!AppendMenuW(group, MF_SEPARATOR, 0, NULL)) { status = XXWIDGETS_PLATFORM_ERROR; goto failure; }
+            } else {
+                status = win32_wide(entry->label, &wide);
+                if (status != XXWIDGETS_OK) goto failure;
+                int added = AppendMenuW(group, MF_STRING | (entry->enabled ? MF_ENABLED : MF_GRAYED), (UINT_PTR)(0x1000 + i), wide);
+                free(wide);
+                if (!added) { status = XXWIDGETS_PLATFORM_ERROR; goto failure; }
+            }
+        }
+    }
+    if (!SetMenu(handle, menu)) { status = XXWIDGETS_PLATFORM_ERROR; goto failure; }
+    if (state->menu) DestroyMenu(state->menu);
+    state->menu = menu;
+    DrawMenuBar(handle);
+    /* Keep the application's content-cell rectangle when the nonclient menu changes. */
+    {
+        int x, y, width, height;
+        DWORD style = (DWORD)GetWindowLongPtrW(handle, GWL_STYLE);
+        DWORD extended = (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE);
+        if (win32_geometry(window, style, extended, &x, &y, &width, &height) == XXWIDGETS_OK)
+            SetWindowPos(handle, NULL, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    return XXWIDGETS_OK;
+failure:
+    if (menu) DestroyMenu(menu);
+    return status;
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_init,
                                                     win32_shutdown,
@@ -3764,4 +4187,4 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_choose_file,
                                                     win32_has_focus,
                                                     win32_accept_file_drops,
-                                                    win32_hexview_page_rows, win32_paste_text, win32_hexview_font};
+                                                    win32_hexview_page_rows, win32_paste_text, win32_hexview_font, win32_window_menu};

@@ -92,7 +92,8 @@ typedef enum xxwidgets_kind {
     XXWIDGET_SYMBOLSVIEWER,
     XXWIDGETS_DEBUGGER_DISASM,
     XXWIDGETS_DEBUGGER_REGISTERS,
-    XXWIDGETS_DEBUGGER_STACK
+    XXWIDGETS_DEBUGGER_STACK,
+    XXWIDGETS_DIE_SIGNATURE_EDIT
 } xxwidgets_kind;
 
 typedef enum xxwidgets_event_type {
@@ -179,6 +180,22 @@ XXWIDGETS_API size_t xxwidgets_window_shortcut_count(const xxwidgets_widget *win
  * Handler/user data are borrowed. NULL removes the filter. */
 typedef int (*xxwidgets_shortcut_filter_fn)(xxwidgets_widget *window, int action, void *user_data);
 XXWIDGETS_API xxwidgets_status xxwidgets_window_set_shortcut_filter(xxwidgets_widget *, xxwidgets_shortcut_filter_fn, void *);
+
+typedef struct xxwidgets_menu_item {
+    const char *menu;  /* Top-level group, e.g. "File". Adjacent entries share a group. */
+    const char *label; /* UTF-8 label; NULL or empty inserts a separator. */
+    int action;       /* Unique nonzero action for ordinary items. */
+    int enabled;      /* 0 or 1; ignored for separators. */
+} xxwidgets_menu_item;
+
+/* Replace the native window menu with a copied list (NULL/count 0 clears it).
+ * Activation emits SHORTCUT on the window with value=action. Install keyboard
+ * bindings separately with window_set_shortcuts. Disabled/hidden windows and
+ * owners blocked by a modal dialog do not activate menu actions. The menu is
+ * outside the content-cell rectangle; child coordinates remain unchanged.
+ * TUI returns UNAVAILABLE. Do not replace a menu from an input callback. */
+XXWIDGETS_API xxwidgets_status xxwidgets_window_set_menu(xxwidgets_widget *window, const xxwidgets_menu_item *items, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_window_set_menu_item_enabled(xxwidgets_widget *window, int action, int enabled);
 
 
 /* Opt in to file drops anywhere in the window, including over its controls.

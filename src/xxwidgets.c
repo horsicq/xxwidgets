@@ -86,14 +86,14 @@ xxwidgets_status xxwidgets_store_text(xxwidgets_widget *widget, const char *text
 int xxwidgets_focusable(const xxwidgets_widget *widget)
 {
     return widget && widget->visible && widget->enabled && widget->parent && widget->parent->visible && widget->parent->enabled &&
-           (widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER || widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_list_kind(widget) ||
+           (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER || widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_list_kind(widget) ||
             xxwidgets_combo_kind(widget));
 }
 
 xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget)
 {
     if (widget->kind == XXWIDGETS_TREEVIEW) return XXWIDGETS_FONT_TREE_VIEWS;
-    if (widget->kind == XXWIDGETS_EDIT) return XXWIDGETS_FONT_TEXT_EDITS;
+    if (widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) return XXWIDGETS_FONT_TEXT_EDITS;
     if (xxwidgets_list_kind(widget)) return XXWIDGETS_FONT_TABLE_VIEWS;
     return XXWIDGETS_FONT_CONTROLS;
 }
@@ -288,7 +288,7 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     xxwidgets_status status;
     if (!out_widget) return XXWIDGETS_INVALID_ARGUMENT;
     *out_widget = NULL;
-    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_DEBUGGER_STACK || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
+    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_DIE_SIGNATURE_EDIT || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
         (kind == XXWIDGETS_WINDOW ? parent != NULL : (!parent || parent->app != app || parent->kind != XXWIDGETS_WINDOW)))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (app->dispatch_depth || app->polling) return XXWIDGETS_BUSY;
@@ -309,6 +309,10 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     if (kind == XXWIDGETS_HEXVIEW) xxwidgets_hexview_init(widget);
     if (kind == XXWIDGETS_SCANRESULTS || kind == XXWIDGET_SYSTEMPROCESSESVIEWER) xxwidgets_scanresults_init(widget);
     if (kind == XXWIDGETS_DATA_STRUCT_TABLE) xxwidgets_data_struct_table_init(widget);
+    if (kind == XXWIDGETS_DIE_SIGNATURE_EDIT) {
+        status = xxwidgets_die_edit_init(widget);
+        if (status != XXWIDGETS_OK) { free(widget->text); free(widget); return status; }
+    }
     tail = &app->widgets;
     while (*tail) tail = &(*tail)->next;
     *tail = widget;
@@ -320,6 +324,7 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
         app->ops->destroy(widget);
         --app->syncing;
         *tail = NULL;
+        xxwidgets_die_edit_dispose(widget);
         free(widget->text);
         free(widget);
         return status;
@@ -360,8 +365,10 @@ xxwidgets_status xxwidgets_widget_destroy(xxwidgets_widget *widget)
     xxwidgets_data_struct_table_dispose(widget);
     xxwidgets_entropy_table_dispose(widget);
     xxwidgets_canvas_dispose(widget);
+    xxwidgets_die_edit_dispose(widget);
     xxwidgets_treeview_dispose(widget);
     xxwidgets_shortcuts_dispose(widget);
+    xxwidgets_menu_dispose(widget);
     xxwidgets_hexview_dispose(widget);
     free(widget->text);
     free(widget);
@@ -391,6 +398,7 @@ xxwidgets_status xxwidgets_widget_set_text(xxwidgets_widget *widget, const char 
     char *copy, *previous;
     xxwidgets_status status;
     if (!widget || !valid_utf8(text)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) return xxwidgets_die_signature_edit_set_source(widget, text);
     copy = xxwidgets_strdup(text);
     if (!copy) return XXWIDGETS_OUT_OF_MEMORY;
     previous = widget->text;

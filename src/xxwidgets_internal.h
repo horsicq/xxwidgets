@@ -25,6 +25,7 @@
 #include "xxwidgets/xxwidgets.h"
 #include "xxwidgets/xxwidgets_font_options.h"
 #include "xxwidgets/xxwidgets_canvas.h"
+#include "die_engine/xxwidgets_die_signature_edit_internal.h"
 #include "xxwidgets/xxwidget_systemprocessesviewer.h"
 
 /* Atomic copied-data/base-address replacement for debugger memory panes. */
@@ -55,6 +56,7 @@ typedef struct xxwidgets_backend_ops {
     size_t (*hexview_page_rows)(const xxwidgets_widget *widget);
     xxwidgets_status (*paste_text)(xxwidgets_widget *, char *, size_t, size_t *);
     xxwidgets_status (*hexview_font)(xxwidgets_widget *, const xxwidgets_font *);
+    xxwidgets_status (*window_menu)(xxwidgets_widget *);
 } xxwidgets_backend_ops;
 
 struct xxwidgets_about_dialog {
@@ -102,6 +104,8 @@ struct xxwidgets_widget {
     char *text;
     char **items;
     size_t item_count;
+    xxwidgets_menu_item *menu_items;
+    size_t menu_count;
     unsigned char *hex_data;
     size_t hex_size;
     uint64_t hex_base;
@@ -165,6 +169,7 @@ struct xxwidgets_widget {
     xxwidgets_process_info *processes; /* Names/paths borrow scan_results strings. */
     struct xxwidgets_binaryviewer_state *binaryviewer;
     uint64_t binary_revision;
+    struct xxwidgets_die_signature_edit_state *die_signature_edit;
     struct xxwidgets_debugger_table_state *debugger_table;
     uint64_t debugger_revision;
     int process_selection; /* Transactional replacement selection hint. */
@@ -217,6 +222,9 @@ xxwidgets_status xxwidgets_store_text(xxwidgets_widget *widget, const char *text
  * offset into now, or SIZE_MAX for the end. caret is a byte offset into old. */
 size_t xxwidgets_edit_caret(const char *old, size_t caret, const char *now);
 void xxwidgets_emit(xxwidgets_widget *widget, xxwidgets_event_type type, int value);
+void xxwidgets_menu_dispose(xxwidgets_widget *window);
+int xxwidgets_menu_can_activate(const xxwidgets_widget *window, size_t index);
+void xxwidgets_menu_activate(xxwidgets_widget *window, size_t index);
 int xxwidgets_can_drop_files(const xxwidgets_widget *window);
 int xxwidgets_emit_drop_files(xxwidgets_widget *window, const char *const *paths, size_t count);
 enum {

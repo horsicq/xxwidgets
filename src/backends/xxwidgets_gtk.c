@@ -20,6 +20,7 @@
  */
 
 #include "xxwidgets_internal.h"
+#include "../die_engine/xxwidgets_die_signature_edit_internal.h"
 
 #include <gtk/gtk.h>
 #include <math.h>
@@ -70,6 +71,8 @@ typedef struct gtk_app_state {
 typedef struct gtk_widget_state {
     GtkWidget *root;               /* Scrolled container for a list, otherwise the control. */
     GtkWidget *content;            /* A window's GtkLayout. */
+    GtkWidget *content_box, *menu_bar;
+    int menu_height;
     int frame_width, frame_height; /* WINDOW: last configured client size. */
     int fit_position;              /* WINDOW: the next resize is ours; keep the frame on screen. Counts
                                     * the resizes it held for, until the window reached its minimum. */
@@ -99,6 +102,10 @@ typedef struct gtk_widget_state {
     GtkWidget *hex_scroll, *hex_overview;
     int hex_overview_dragging;
     int has_preview;
+    GtkAdjustment *die_vertical, *die_horizontal; /* Owned by native scrollbars. */
+    GtkIMContext *die_im;
+    int die_adjusting, die_dragging, die_cell_width, die_cell_height, die_gutter;
+    size_t die_rows, die_columns;
 } gtk_widget_state;
 
 /* Keep the full-file map outside the scrolling content. The adjacent native
@@ -296,7 +303,10 @@ static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font
         if (state->font_css[role]) font_css_load(state->font_css[role], fonts[role]);
     }
     for (xxwidgets_widget *widget = app->widgets; widget; widget = widget->next)
-        if (widget->platform && widget->native) rows_font_attributes(widget);
+        if (widget->platform && widget->native) {
+            rows_font_attributes(widget);
+            if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) gtk_widget_queue_resize(GTK_WIDGET(widget->native));
+        }
     return XXWIDGETS_OK;
 }
 
@@ -315,6 +325,7 @@ static xxwidgets_status gtk_preview_font(xxwidgets_widget *widget, xxwidgets_fon
     }
     if (state->preview_css) font_css_load(state->preview_css, description);
     rows_font_attributes(widget);
+    if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) gtk_widget_queue_resize(GTK_WIDGET(widget->native));
     return XXWIDGETS_OK;
 }
 
@@ -499,7 +510,7 @@ static void window_update_minimum(xxwidgets_widget *window)
         gtk_window_get_position(GTK_WINDOW(window->native), &x, &y);
         if (window_frame_area(window, x, y, &area, &frame_width, &frame_height)) {
             if (width > area.width - frame_width) width = area.width - frame_width;
-            if (height > area.height - frame_height) height = area.height - frame_height;
+            if (height > area.height - frame_height - state->menu_height) height = area.height - frame_height - state->menu_height;
             if (width < 0) width = 0;
             if (height < 0) height = 0;
         }
@@ -634,7 +645,7 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
     gtk_widget_state *state = widget->platform;
     /* Round down: a layout for the rounded-up count would overhang the edge. */
     int width = event->width / app_state->cell_width;
-    int height = event->height / app_state->cell_height;
+    int height = (event->height - state->menu_height) / app_state->cell_height;
     if ((event->width != state->frame_width || event->height != state->frame_height) && gtk_widget_get_mapped(native)) {
         /* A size change the toolkit caused (the first map, its minimum, a wider
          * grid) must not push the window off its monitor. Resizes and moves by
@@ -650,7 +661,7 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
         /* A window still short of the minimum it was given grows again, and
          * that size is ours too (a configure can report the size from before
          * the minimum); a few resizes at most, so later ones stay the user's. */
-        if (state->fit_position && state->fit_position < 4 && (event->width < state->min_width || event->height < state->min_height)) ++state->fit_position;
+        if (state->fit_position && state->fit_position < 4 && (event->width < state->min_width || event->height < state->min_height + state->menu_height)) ++state->fit_position;
         else state->fit_position = 0;
     }
     state->frame_width = event->width;
@@ -700,7 +711,8 @@ static int gtk_key_input(GdkEventKey *event, unsigned int *out_key, unsigned int
             case GDK_KEY_Return:
             case GDK_KEY_KP_Enter: key = XXWIDGETS_KEY_ENTER; break;
             case GDK_KEY_Tab:
-            case GDK_KEY_ISO_Left_Tab: key = XXWIDGETS_KEY_TAB; break;
+            case GDK_KEY_ISO_Left_Tab:
+            case GDK_KEY_KP_Tab: key = XXWIDGETS_KEY_TAB; break;
             case GDK_KEY_BackSpace: key = XXWIDGETS_KEY_BACKSPACE; break;
             case GDK_KEY_Delete: key = XXWIDGETS_KEY_DELETE; break;
             case GDK_KEY_Insert: key = XXWIDGETS_KEY_INSERT; break;
@@ -1628,10 +1640,15 @@ static void table_activated(GtkTreeView *native, GtkTreePath *path,
     xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, row);
 }
 
+static gboolean gtk_die_key(GtkWidget *, GdkEventKey *, gpointer);
 static gboolean window_shortcut(GtkWidget *native, GdkEventKey *event, gpointer data)
 {
+    xxwidgets_widget *window = data;
+    GtkWidget *focused = gtk_window_get_focus(GTK_WINDOW(native));
     unsigned int key, modifiers;
-    (void)native;
+    for (xxwidgets_widget *candidate = window->app->widgets; candidate; candidate = candidate->next)
+        if (candidate->parent == window && candidate->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && candidate->native == focused &&
+            gtk_die_key(focused, event, candidate)) return TRUE;
     if (!gtk_key_input(event, &key, &modifiers)) return FALSE;
     return xxwidgets_shortcut_dispatch(data, key, modifiers);
 }
@@ -2037,6 +2054,268 @@ static gboolean gtk_plot_click(GtkWidget *native, GdkEventButton *event, gpointe
     return TRUE;
 }
 
+/* Native signature viewport: the shared model owns source, selection and
+ * history. Scrolling never creates a second text buffer. */
+static PangoLayout *gtk_die_layout(xxwidgets_widget *widget)
+{
+    gtk_widget_state *state = widget->platform;
+    gtk_app_state *app = widget->app->platform;
+    PangoFontDescription *font;
+    const PangoFontDescription *configured = state->has_preview ? state->preview_font : app->fonts[xxwidgets_widget_font_role(widget)];
+    PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(widget->native), "0");
+    font = configured ? pango_font_description_copy(configured) : pango_font_description_new();
+    if (!pango_font_description_get_family(font)) pango_font_description_set_family(font, "monospace");
+    pango_layout_set_font_description(layout, font);
+    pango_font_description_free(font);
+    pango_layout_get_pixel_size(layout, &state->die_cell_width, &state->die_cell_height);
+    if (state->die_cell_width < 1) state->die_cell_width = 1;
+    if (state->die_cell_height < 1) state->die_cell_height = 1;
+    return layout;
+}
+
+static void gtk_die_sync(xxwidgets_widget *widget)
+{
+    gtk_widget_state *state = widget->platform;
+    xxwidgets_die_edit_view view;
+    int width = gtk_widget_get_allocated_width(GTK_WIDGET(widget->native));
+    int height = gtk_widget_get_allocated_height(GTK_WIDGET(widget->native));
+    PangoLayout *layout = gtk_die_layout(widget);
+    size_t rows, columns;
+    g_object_unref(layout);
+    xxwidgets_die_edit_view_get(widget, &view);
+    state->die_gutter = (int)(view.gutter_columns + 2) * state->die_cell_width;
+    rows = height > 0 ? (size_t)(height / state->die_cell_height) : 1;
+    columns = width > state->die_gutter ? (size_t)((width - state->die_gutter) / state->die_cell_width) : 1;
+    if (!rows) rows = 1;
+    if (!columns) columns = 1;
+    if (rows != state->die_rows || columns != state->die_columns) {
+        state->die_rows = rows; state->die_columns = columns;
+        xxwidgets_die_edit_page(widget, rows, columns);
+        xxwidgets_die_edit_view_get(widget, &view);
+    }
+    state->die_adjusting = 1;
+    gtk_adjustment_configure(state->die_vertical, (double)view.first_line, 0,
+        (double)(view.line_count > rows ? view.line_count : rows), 1, (double)rows, (double)rows);
+    gtk_adjustment_configure(state->die_horizontal, (double)view.first_column, 0,
+        (double)(view.max_columns + 1 > columns ? view.max_columns + 1 : columns), 1, (double)columns, (double)columns);
+    state->die_adjusting = 0;
+    gtk_widget_queue_draw(GTK_WIDGET(widget->native));
+}
+
+static void gtk_die_adjusted(GtkAdjustment *adjustment, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    gtk_widget_state *state = widget->platform;
+    xxwidgets_die_edit_view view;
+    int delta;
+    if (state->die_adjusting || widget->app->syncing) return;
+    xxwidgets_die_edit_view_get(widget, &view);
+    delta = (int)gtk_adjustment_get_value(adjustment) - (int)(adjustment == state->die_vertical ? view.first_line : view.first_column);
+    xxwidgets_die_edit_scroll(widget, adjustment == state->die_vertical ? delta : 0, adjustment == state->die_horizontal ? delta : 0);
+    gtk_die_sync(widget);
+}
+
+static void gtk_die_rgb(cairo_t *cr, uint32_t rgb)
+{
+    cairo_set_source_rgb(cr, ((rgb >> 16) & 255) / 255.0, ((rgb >> 8) & 255) / 255.0, (rgb & 255) / 255.0);
+}
+
+static gboolean gtk_die_draw(GtkWidget *native, cairo_t *cr, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    gtk_widget_state *state = widget->platform;
+    GtkStyleContext *context = gtk_widget_get_style_context(native);
+    xxwidgets_die_edit_view view;
+    PangoLayout *layout = gtk_die_layout(widget);
+    GdkRGBA text, selection, selected_text;
+    int width = gtk_widget_get_allocated_width(native), height = gtk_widget_get_allocated_height(native);
+    size_t current = xxwidgets_die_edit_caret_line(widget), count;
+    xxwidgets_die_edit_cell *cells;
+    text = (GdkRGBA){0, 0, 0, 1}; /* The source palette has a light background. */
+    gtk_style_context_get_background_color(context, GTK_STATE_FLAG_SELECTED, &selection);
+    gtk_style_context_get_color(context, GTK_STATE_FLAG_SELECTED, &selected_text);
+    if (selection.alpha < 0.1) selection = (GdkRGBA){0.20, 0.40, 0.70, 1};
+    if (selected_text.alpha < 0.1) selected_text = (GdkRGBA){1, 1, 1, 1};
+    cairo_set_source_rgb(cr, 1, 1, 1); cairo_paint(cr);
+    xxwidgets_die_edit_view_get(widget, &view);
+    count = width > state->die_gutter ? (size_t)((width - state->die_gutter) / state->die_cell_width + 1) : 1;
+    cells = calloc(count, sizeof(*cells));
+    if (!cells) { g_object_unref(layout); return TRUE; }
+    for (size_t row = 0; row < (size_t)(height / state->die_cell_height + 1); ++row) {
+        size_t line = view.first_line + row;
+        int y = (int)row * state->die_cell_height;
+        char number[32];
+        int breakpoint, execution;
+        if (line >= view.line_count) break;
+        xxwidgets_die_edit_line_marker(widget, line, &breakpoint, &execution);
+        if (execution || (!view.read_only && line == current)) {
+            if (execution) cairo_set_source_rgb(cr, 1, 0.91, 0.64);
+            else cairo_set_source_rgb(cr, 1, 1, 0.88);
+            cairo_rectangle(cr, state->die_gutter, y, width - state->die_gutter, state->die_cell_height); cairo_fill(cr);
+        }
+        cairo_set_source_rgb(cr, 0.93, 0.93, 0.93);
+        cairo_rectangle(cr, 0, y, state->die_gutter - state->die_cell_width / 2, state->die_cell_height); cairo_fill(cr);
+        if (breakpoint) {
+            double radius = MIN(state->die_cell_width, state->die_cell_height) * 0.325;
+            cairo_set_source_rgb(cr, 0.82, 0.12, 0.12);
+            cairo_arc(cr, state->die_cell_width * 0.5, y + state->die_cell_height * 0.5, radius, 0, 6.283185307179586); cairo_fill(cr);
+        }
+        if (execution) {
+            double left = state->die_cell_width + 1, right = state->die_cell_width * 2 - 1;
+            double middle = y + state->die_cell_height * 0.5, head = right - state->die_cell_width * 0.35;
+            cairo_set_source_rgb(cr, 0.82, 0.43, 0.02);
+            cairo_move_to(cr, left, middle - state->die_cell_height * 0.2);
+            cairo_line_to(cr, head, middle - state->die_cell_height * 0.2);
+            cairo_line_to(cr, head, middle - state->die_cell_height * 0.36);
+            cairo_line_to(cr, right, middle);
+            cairo_line_to(cr, head, middle + state->die_cell_height * 0.36);
+            cairo_line_to(cr, head, middle + state->die_cell_height * 0.2);
+            cairo_line_to(cr, left, middle + state->die_cell_height * 0.2);
+            cairo_close_path(cr); cairo_fill(cr);
+        }
+        g_snprintf(number, sizeof(number), "%zu", line + 1);
+        pango_layout_set_text(layout, number, -1);
+        { int nwidth; pango_layout_get_pixel_size(layout, &nwidth, NULL);
+          cairo_set_source_rgb(cr, 0.4, 0.4, 0.4);
+          cairo_move_to(cr, state->die_gutter - state->die_cell_width - nwidth, y); pango_cairo_show_layout(cr, layout); }
+        xxwidgets_die_edit_render_line(widget, line, view.first_column, cells, count);
+        for (size_t column = 0; column < count; ++column) {
+            int x = state->die_gutter + (int)column * state->die_cell_width;
+            char utf8[5];
+            if (cells[column].selected) {
+                gdk_cairo_set_source_rgba(cr, &selection);
+                cairo_rectangle(cr, x, y, state->die_cell_width, state->die_cell_height); cairo_fill(cr);
+            }
+            if (cells[column].scalar >= 32) {
+                xxwidgets_die_edit_encode(cells[column].scalar, utf8);
+                pango_layout_set_text(layout, utf8, -1);
+                if (cells[column].selected) gdk_cairo_set_source_rgba(cr, &selected_text);
+                else if (cells[column].style == XXWIDGETS_DIE_STYLE_TEXT) gdk_cairo_set_source_rgba(cr, &text);
+                else gtk_die_rgb(cr, xxwidgets_die_edit_color(cells[column].style));
+                cairo_save(cr); cairo_rectangle(cr, x, y, state->die_cell_width, state->die_cell_height); cairo_clip(cr);
+                cairo_move_to(cr, x, y); pango_cairo_show_layout(cr, layout); cairo_restore(cr);
+            }
+            if (cells[column].caret && gtk_widget_has_focus(native)) {
+                gdk_cairo_set_source_rgba(cr, &text);
+                cairo_rectangle(cr, x, y, 1, state->die_cell_height); cairo_fill(cr);
+            }
+        }
+    }
+    free(cells); g_object_unref(layout);
+    return TRUE;
+}
+
+static void gtk_die_commit(GtkIMContext *context, const gchar *text, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    (void)context;
+    if (xxwidgets_focusable(widget) && !widget->app->syncing) (void)xxwidgets_die_edit_input(widget, text);
+}
+
+static gboolean gtk_die_key(GtkWidget *native, GdkEventKey *event, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    gtk_widget_state *state = widget->platform;
+    unsigned int key, modifiers;
+    if (widget->app->syncing || !xxwidgets_focusable(widget)) return FALSE;
+    if (event->type == GDK_KEY_RELEASE) return gtk_im_context_filter_keypress(state->die_im, event);
+    if (gtk_key_input(event, &key, &modifiers)) {
+        if (key == XXWIDGETS_KEY_TAB && (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META))) {
+            GdkEventKey navigation = *event;
+            navigation.state &= ~(GDK_CONTROL_MASK | GDK_SUPER_MASK | GDK_META_MASK);
+            return list_key(native, &navigation, data);
+        }
+        /* Let the input method translate printable keys, including dead-key
+         * composition and AltGr. Only commands/navigation bypass the IM. */
+        if ((key >= 0x110000 || ((modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) && !(modifiers & XXWIDGETS_MOD_ALT))) &&
+            xxwidgets_die_edit_key(widget, (int)key, modifiers)) {
+            gtk_im_context_reset(state->die_im);
+            return TRUE;
+        }
+        if ((modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) && !(modifiers & XXWIDGETS_MOD_ALT)) return FALSE;
+    }
+    return gtk_im_context_filter_keypress(state->die_im, event);
+}
+
+static void gtk_die_hit(xxwidgets_widget *widget, double x, double y, int extend)
+{
+    gtk_widget_state *state = widget->platform;
+    xxwidgets_die_edit_view view;
+    int row = (int)floor(y / state->die_cell_height);
+    int column = (int)floor((x - state->die_gutter + state->die_cell_width / 2) / state->die_cell_width);
+    xxwidgets_die_edit_view_get(widget, &view);
+    if (row < 0) { xxwidgets_die_edit_scroll(widget, -1, 0); row = 0; xxwidgets_die_edit_view_get(widget, &view); }
+    else if ((size_t)row >= state->die_rows) { xxwidgets_die_edit_scroll(widget, 1, 0); row = (int)state->die_rows - 1; xxwidgets_die_edit_view_get(widget, &view); }
+    if (column < 0) column = 0;
+    xxwidgets_die_edit_point(widget, view.first_line + (size_t)row, view.first_column + (size_t)column, extend);
+}
+
+static gboolean gtk_die_pointer(GtkWidget *native, GdkEventButton *event, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    gtk_widget_state *state = widget->platform;
+    if (event->button != 1) return FALSE;
+    if (event->type == GDK_BUTTON_RELEASE) {
+        if (state->die_dragging) { state->die_dragging = 0; gtk_grab_remove(native); }
+        return TRUE;
+    }
+    if (!xxwidgets_focusable(widget) || widget->app->syncing) return FALSE;
+    gtk_widget_grab_focus(native);
+    state->die_dragging = 1; gtk_grab_add(native);
+    gtk_die_hit(widget, event->x, event->y, !!(event->state & GDK_SHIFT_MASK));
+    return TRUE;
+}
+
+static gboolean gtk_die_motion(GtkWidget *native, GdkEventMotion *event, gpointer data)
+{
+    gtk_widget_state *state = ((xxwidgets_widget *)data)->platform;
+    if (!state->die_dragging) return FALSE;
+    if (!(event->state & GDK_BUTTON1_MASK)) { state->die_dragging = 0; gtk_grab_remove(native); return FALSE; }
+    gtk_die_hit(data, event->x, event->y, 1);
+    return TRUE;
+}
+
+static gboolean gtk_die_scroll(GtkWidget *native, GdkEventScroll *event, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    double dx = 0, dy = 0;
+    (void)native;
+    if (!xxwidgets_focusable(widget) || widget->app->syncing) return FALSE;
+    if (!gdk_event_get_scroll_deltas((GdkEvent *)event, &dx, &dy)) {
+        if (event->direction == GDK_SCROLL_UP) dy = -1;
+        else if (event->direction == GDK_SCROLL_DOWN) dy = 1;
+        else if (event->direction == GDK_SCROLL_LEFT) dx = -1;
+        else if (event->direction == GDK_SCROLL_RIGHT) dx = 1;
+    }
+    if (event->state & GDK_SHIFT_MASK) { dx += dy; dy = 0; }
+    xxwidgets_die_edit_scroll(widget, (int)(dy < 0 ? floor(dy * 3) : ceil(dy * 3)), (int)(dx < 0 ? floor(dx * 3) : ceil(dx * 3)));
+    gtk_die_sync(widget);
+    return TRUE;
+}
+
+static gboolean gtk_die_focus(GtkWidget *native, GdkEventFocus *event, gpointer data)
+{
+    gtk_widget_state *state = ((xxwidgets_widget *)data)->platform;
+    if (event->in) { gtk_im_context_set_client_window(state->die_im, gtk_widget_get_window(native)); gtk_im_context_focus_in(state->die_im); }
+    else { gtk_im_context_focus_out(state->die_im); gtk_im_context_reset(state->die_im); }
+    gtk_widget_queue_draw(native);
+    return FALSE;
+}
+
+static void gtk_die_allocate(GtkWidget *native, GtkAllocation *allocation, gpointer data)
+{
+    (void)native; (void)allocation;
+    gtk_die_sync(data);
+}
+
+static gboolean gtk_die_grab_broken(GtkWidget *native, GdkEventGrabBroken *event, gpointer data)
+{
+    gtk_widget_state *state = ((xxwidgets_widget *)data)->platform;
+    (void)event;
+    if (state->die_dragging) { state->die_dragging = 0; gtk_grab_remove(native); }
+    return FALSE;
+}
+
 static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
 {
     GtkWidget *native = NULL;
@@ -2057,7 +2336,10 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             /* Cleared if another client destroys the window, which frees the layout. */
             g_object_add_weak_pointer(G_OBJECT(state->content), (gpointer *)&state->content);
             gtk_style_context_add_class(gtk_widget_get_style_context(state->content), GRID_CLASS);
-            gtk_container_add(GTK_CONTAINER(native), state->content);
+            state->content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+            gtk_container_add(GTK_CONTAINER(native), state->content_box);
+            gtk_box_pack_end(GTK_BOX(state->content_box), state->content, TRUE, TRUE, 0);
+            gtk_widget_show(state->content_box);
             gtk_widget_show(state->content);
             g_signal_connect(native, "delete-event", G_CALLBACK(window_close), widget);
             g_signal_connect(native, "key-press-event", G_CALLBACK(window_shortcut), widget);
@@ -2076,6 +2358,40 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             native = gtk_button_new_with_label(widget->text);
             g_signal_connect(native, "clicked", G_CALLBACK(button_clicked), widget);
             break;
+        case XXWIDGETS_DIE_SIGNATURE_EDIT: {
+            GtkWidget *vertical, *horizontal;
+            native = gtk_drawing_area_new();
+            state->root = gtk_grid_new();
+            g_object_ref_sink(state->root);
+            state->die_vertical = GTK_ADJUSTMENT(gtk_adjustment_new(0, 0, 1, 1, 1, 1));
+            state->die_horizontal = GTK_ADJUSTMENT(gtk_adjustment_new(0, 0, 1, 1, 1, 1));
+            vertical = gtk_scrollbar_new(GTK_ORIENTATION_VERTICAL, state->die_vertical);
+            horizontal = gtk_scrollbar_new(GTK_ORIENTATION_HORIZONTAL, state->die_horizontal);
+            gtk_widget_set_hexpand(native, TRUE); gtk_widget_set_vexpand(native, TRUE);
+            gtk_grid_attach(GTK_GRID(state->root), native, 0, 0, 1, 1);
+            gtk_grid_attach(GTK_GRID(state->root), vertical, 1, 0, 1, 1);
+            gtk_grid_attach(GTK_GRID(state->root), horizontal, 0, 1, 1, 1);
+            gtk_widget_show(native); gtk_widget_show(vertical); gtk_widget_show(horizontal);
+            gtk_widget_set_can_focus(native, TRUE);
+            gtk_widget_add_events(native, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK |
+                GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_FOCUS_CHANGE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
+            state->die_im = gtk_im_multicontext_new();
+            g_signal_connect(state->die_im, "commit", G_CALLBACK(gtk_die_commit), widget);
+            g_signal_connect(state->die_vertical, "value-changed", G_CALLBACK(gtk_die_adjusted), widget);
+            g_signal_connect(state->die_horizontal, "value-changed", G_CALLBACK(gtk_die_adjusted), widget);
+            g_signal_connect(native, "draw", G_CALLBACK(gtk_die_draw), widget);
+            g_signal_connect(native, "key-press-event", G_CALLBACK(gtk_die_key), widget);
+            g_signal_connect(native, "key-release-event", G_CALLBACK(gtk_die_key), widget);
+            g_signal_connect(native, "button-press-event", G_CALLBACK(gtk_die_pointer), widget);
+            g_signal_connect(native, "button-release-event", G_CALLBACK(gtk_die_pointer), widget);
+            g_signal_connect(native, "motion-notify-event", G_CALLBACK(gtk_die_motion), widget);
+            g_signal_connect(native, "scroll-event", G_CALLBACK(gtk_die_scroll), widget);
+            g_signal_connect(native, "focus-in-event", G_CALLBACK(gtk_die_focus), widget);
+            g_signal_connect(native, "focus-out-event", G_CALLBACK(gtk_die_focus), widget);
+            g_signal_connect(native, "size-allocate", G_CALLBACK(gtk_die_allocate), widget);
+            g_signal_connect(native, "grab-broken-event", G_CALLBACK(gtk_die_grab_broken), widget);
+            break;
+        }
         case XXWIDGETS_EDIT:
             native = gtk_entry_new();
             g_signal_connect(native, "changed", G_CALLBACK(edit_changed), widget);
@@ -2202,6 +2518,10 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
                 gtk_tree_view_column_set_fixed_width(view_column,
                                                      (xxwidgets_entropy_table(widget) || widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) ? (int)xxwidgets_tabular_column_width(widget, column) * 8 : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[column] : data_widths[column]);
                 gtk_tree_view_column_set_min_width(view_column, xxwidgets_debugger_table_kind(widget) && column == 0 ? 16 : 60);
+                /* GTK otherwise gives spare space to the last (PID) column,
+                 * leaving the process name at its narrow initial width. */
+                if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER)
+                    gtk_tree_view_column_set_expand(view_column, column == 0);
                 g_object_set(renderer, "single-paragraph-mode", TRUE, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
                 gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
                 if (xxwidgets_debugger_table_kind(widget)) g_object_set(renderer, "family", "monospace", NULL);
@@ -2356,6 +2676,14 @@ static void gtk_destroy_backend(xxwidgets_widget *widget)
     gtk_widget_state *state = widget->platform;
     if (!state) return;
     if (native) g_signal_handlers_disconnect_by_data(native, widget);
+    if (state->die_im) {
+        g_signal_handlers_disconnect_by_data(state->die_im, widget);
+        gtk_im_context_set_client_window(state->die_im, NULL);
+        g_object_unref(state->die_im);
+    }
+    if (state->die_dragging && native) gtk_grab_remove(native);
+    if (state->die_vertical) g_signal_handlers_disconnect_by_data(state->die_vertical, widget);
+    if (state->die_horizontal) g_signal_handlers_disconnect_by_data(state->die_horizontal, widget);
     if (state->hex_overview) {
         if (state->hex_overview_dragging) gtk_grab_remove(state->hex_overview);
         g_signal_handlers_disconnect_by_data(state->hex_overview, widget);
@@ -2390,6 +2718,8 @@ static void apply_geometry(xxwidgets_widget *widget, int x, int y, int width, in
     gtk_widget_state *state = widget->platform;
     if (widget->kind == XXWIDGETS_WINDOW) {
         int current_width = 0, current_height = 0;
+        if (height > INT_MAX - state->menu_height) return;
+        height += state->menu_height;
         window_fit_workarea(widget, &x, &y, &width, &height);
         gtk_window_get_size(GTK_WINDOW(widget->native), &current_width, &current_height);
         if (width != current_width || height != current_height) state->fit_position = 1;
@@ -2472,6 +2802,7 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
         if (!g_utf8_validate(widget->items[i], -1, NULL)) return XXWIDGETS_INVALID_ARGUMENT;
     if (!state->has_rect || !rect_equal(state->applied_rect, widget->rect)) apply_geometry(widget, x, y, width, height);
     switch (widget->kind) {
+        case XXWIDGETS_DIE_SIGNATURE_EDIT: gtk_die_sync(widget); break;
         case XXWIDGETS_WINDOW:
             if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(native)), widget->text)) gtk_window_set_title(GTK_WINDOW(native), widget->text);
             window_update_minimum(widget);
@@ -2641,6 +2972,9 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
             break;
         }
     }
+    if (state->die_dragging && (!widget->enabled || !widget->visible)) {
+        state->die_dragging = 0; gtk_grab_remove(native);
+    }
     if (state->hex_overview_dragging && (!widget->enabled || !widget->visible)) {
         state->hex_overview_dragging = 0;
         gtk_grab_remove(state->hex_overview);
@@ -2669,6 +3003,7 @@ static xxwidgets_status gtk_read_text_backend(xxwidgets_widget *widget)
         case XXWIDGETS_LABEL: text = gtk_label_get_text(GTK_LABEL(native)); break;
         case XXWIDGETS_BUTTON:
         case XXWIDGETS_CHECKBOX: text = gtk_button_get_label(GTK_BUTTON(native)); break;
+        case XXWIDGETS_DIE_SIGNATURE_EDIT: return XXWIDGETS_OK; /* Shared source is authoritative. */
         case XXWIDGETS_EDIT: text = gtk_entry_get_text(GTK_ENTRY(native)); break;
         case XXWIDGETS_PROGRESS: text = gtk_progress_bar_get_text(GTK_PROGRESS_BAR(native)); break;
         default: return XXWIDGETS_OK;
@@ -2946,6 +3281,55 @@ static size_t gtk_hexview_page_rows(const xxwidgets_widget *widget)
     return rows ? rows : 1;
 }
 
+static void gtk_menu_activate(GtkMenuItem *native, gpointer data)
+{
+    size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(native), "xxwidgets-menu-index"));
+    xxwidgets_menu_activate(data, index);
+}
+
+static xxwidgets_status gtk_window_menu(xxwidgets_widget *window)
+{
+    gtk_widget_state *state = window->platform;
+    gtk_app_state *app = window->app->platform;
+    GtkWidget *bar = NULL, *group = NULL;
+    const char *last = NULL;
+    int menu_height = 0;
+    if (window->menu_count) {
+        bar = gtk_menu_bar_new();
+        for (size_t i = 0; i < window->menu_count; ++i) {
+            const xxwidgets_menu_item *entry = &window->menu_items[i];
+            if (!last || strcmp(last, entry->menu)) {
+                GtkWidget *heading = gtk_menu_item_new_with_label(entry->menu);
+                group = gtk_menu_new();
+                gtk_menu_item_set_submenu(GTK_MENU_ITEM(heading), group);
+                gtk_menu_shell_append(GTK_MENU_SHELL(bar), heading);
+                last = entry->menu;
+            }
+            GtkWidget *item = *entry->label ? gtk_menu_item_new_with_label(entry->label) : gtk_separator_menu_item_new();
+            if (*entry->label) {
+                gtk_widget_set_sensitive(item, entry->enabled);
+                g_object_set_data(G_OBJECT(item), "xxwidgets-menu-index", GSIZE_TO_POINTER(i));
+                g_signal_connect(item, "activate", G_CALLBACK(gtk_menu_activate), window);
+            }
+            gtk_menu_shell_append(GTK_MENU_SHELL(group), item);
+        }
+        gtk_widget_show_all(bar);
+        gtk_widget_get_preferred_height(bar, &menu_height, NULL);
+    }
+    if (state->menu_bar) gtk_widget_destroy(state->menu_bar);
+    state->menu_bar = bar;
+    int old_height = state->menu_height;
+    state->menu_height = menu_height;
+    if (bar) gtk_box_pack_start(GTK_BOX(state->content_box), bar, FALSE, FALSE, 0);
+    if (old_height != menu_height) {
+        state->min_width = state->min_height = -1;
+        window_update_minimum(window);
+        apply_geometry(window, window->rect.x * app->cell_width, window->rect.y * app->cell_height,
+                       window->rect.width * app->cell_width, window->rect.height * app->cell_height);
+    }
+    return XXWIDGETS_OK;
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_init_backend,
                                                     gtk_shutdown_backend,
@@ -2967,4 +3351,4 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_choose_file,
                                                     gtk_has_focus,
                                                     gtk_accept_file_drops,
-                                                    gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font};
+                                                    gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu};

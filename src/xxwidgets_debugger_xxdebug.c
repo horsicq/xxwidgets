@@ -154,7 +154,93 @@ static xxwidgets_status native_disassemble(void *context, uint64_t tid, uint64_t
 
 static int native_execute_breakpoint(const xxdebug_breakpoint *bp)
 {
-    return bp->type == XXDEBUG_BP_SOFTWARE || bp->type == XXDEBUG_BP_HW_EXECUTE;
+    return bp->type == XXDEBUG_BP_SOFTWARE || bp->type == XXDEBUG_BP_HW_EXECUTE || bp->type == XXDEBUG_BP_HIDDEN;
+}
+
+static int native_breakpoint_kind(xxwidgets_debugger_breakpoint_type type,
+    xxwidgets_debugger_breakpoint_access access, xxdebug_bp_type *result)
+{
+    static const xxdebug_bp_type hardware[] = {XXDEBUG_BP_HW_EXECUTE, XXDEBUG_BP_HW_READ, XXDEBUG_BP_HW_WRITE, XXDEBUG_BP_HW_ACCESS};
+    static const xxdebug_bp_type hidden[] = {XXDEBUG_BP_HIDDEN, XXDEBUG_BP_HIDDEN_READ, XXDEBUG_BP_HIDDEN_WRITE, XXDEBUG_BP_HIDDEN_ACCESS};
+    if (access < XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE || access > XXWIDGETS_DEBUGGER_BREAKPOINT_READ_WRITE) return 0;
+    if (type == XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE) {
+        if (access != XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE) return 0;
+        *result = XXDEBUG_BP_SOFTWARE;
+    } else if (type == XXWIDGETS_DEBUGGER_BREAKPOINT_HARDWARE) *result = hardware[access];
+    else if (type == XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN) *result = hidden[access];
+    else return 0;
+    return 1;
+}
+
+static int native_breakpoint_info(const xxdebug_breakpoint *bp, xxwidgets_debugger_breakpoint_info *info)
+{
+    for (int type = XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE; type <= XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN; ++type)
+        for (int access = XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE; access <= XXWIDGETS_DEBUGGER_BREAKPOINT_READ_WRITE; ++access) {
+            xxdebug_bp_type native_type;
+            if (native_breakpoint_kind((xxwidgets_debugger_breakpoint_type)type, (xxwidgets_debugger_breakpoint_access)access, &native_type) &&
+                native_type == bp->type) {
+                *info = (xxwidgets_debugger_breakpoint_info){bp->id, {bp->address,
+                    (xxwidgets_debugger_breakpoint_type)type, (xxwidgets_debugger_breakpoint_access)access,
+                    access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE ? 1u : bp->size}, bp->enabled != 0};
+                return 1;
+            }
+        }
+    return 0;
+}
+
+static xxwidgets_status native_get_breakpoint_support(void *context, uint64_t tid,
+    xxwidgets_debugger_breakpoint_type type, xxwidgets_debugger_breakpoint_access access,
+    xxwidgets_debugger_breakpoint_support *support)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    xxdebug_bp_type native_type;
+    xxdebug_bp_support native_support = {0};
+    if (!support) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    memset(support, 0, sizeof(*support));
+    if (!native_breakpoint_kind(type, access, &native_type)) return native_result(adapter, XXDEBUG_E_UNSUPPORTED);
+    xxdebug_status status = xxdebug_get_breakpoint_support(adapter->debugger, tid, native_type, &native_support);
+    if (status == XXDEBUG_OK) {
+        support->sizes = access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE ? native_support.sizes & 1u : native_support.sizes;
+        support->aligned = native_support.aligned;
+    }
+    return native_result(adapter, status);
+}
+
+static xxwidgets_status native_list_breakpoint_info(void *context, xxwidgets_debugger_breakpoint_info *output,
+    size_t capacity, size_t *count)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    xxdebug_breakpoint *breakpoints = NULL;
+    size_t total = 0, received = 0;
+    xxdebug_status status;
+    if (count) *count = 0;
+    if (!count || (!output && capacity)) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    status = xxdebug_list_breakpoints(adapter->debugger, NULL, 0, &total);
+    if (status != XXDEBUG_OK || !capacity || !total) { *count = total; return native_result(adapter, status); }
+    if (total > SIZE_MAX / sizeof(*breakpoints)) return native_result(adapter, XXDEBUG_E_OUT_OF_MEMORY);
+    breakpoints = malloc(total * sizeof(*breakpoints));
+    if (!breakpoints) return native_result(adapter, XXDEBUG_E_OUT_OF_MEMORY);
+    status = xxdebug_list_breakpoints(adapter->debugger, breakpoints, total, &received);
+    if (status == XXDEBUG_OK && received > total) status = XXDEBUG_E_STATE;
+    if (status == XXDEBUG_OK) for (size_t i = 0; i < received && i < capacity; ++i) {
+        if (!native_breakpoint_info(&breakpoints[i], &output[i])) { status = XXDEBUG_E_UNSUPPORTED; break; }
+    }
+    if (status == XXDEBUG_OK) *count = received;
+    free(breakpoints);
+    return native_result(adapter, status);
+}
+
+static xxwidgets_status native_set_breakpoint_spec(void *context, const xxwidgets_debugger_breakpoint_spec *spec, uint64_t *id)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    xxdebug_bp_type native_type;
+    uint32_t native_id = 0;
+    if (id) *id = 0;
+    if (!spec || !id) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    if (!native_breakpoint_kind(spec->type, spec->access, &native_type)) return native_result(adapter, XXDEBUG_E_UNSUPPORTED);
+    xxdebug_status status = xxdebug_set_breakpoint(adapter->debugger, native_type, spec->address, spec->size, 0, &native_id);
+    if (status == XXDEBUG_OK) *id = native_id;
+    return native_result(adapter, status);
 }
 
 static xxwidgets_status native_list_breakpoints(void *context, xxwidgets_debugger_session_breakpoint *output,
@@ -189,28 +275,117 @@ static xxwidgets_status native_list_breakpoints(void *context, xxwidgets_debugge
     return native_result(adapter, status);
 }
 
-static xxwidgets_status native_set_breakpoint(void *context, uint64_t address, uint64_t *id)
+static xxwidgets_status native_set_breakpoint_typed(void *context, xxwidgets_debugger_breakpoint_type type,
+    uint64_t address, uint64_t *id)
 {
     xxwidgets_debugger_xxdebug *adapter = (xxwidgets_debugger_xxdebug *)context;
     uint32_t native_id = 0;
     xxdebug_status status;
     if (!id) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
     *id = 0;
-    status = xxdebug_set_breakpoint(adapter->debugger, XXDEBUG_BP_SOFTWARE, address, 1u, 0, &native_id);
+    if (type < XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE || type > XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN)
+        return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    const xxdebug_backend *backend = xxdebug_get_backend(adapter->debugger);
+    if (type == XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN && (!backend || !(backend->caps & XXDEBUG_CAP_HIDDEN_BREAKPOINTS)))
+        return native_result(adapter, XXDEBUG_E_UNSUPPORTED);
+    xxdebug_bp_type native_type = type == XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN ? XXDEBUG_BP_HIDDEN :
+        type == XXWIDGETS_DEBUGGER_BREAKPOINT_HARDWARE ? XXDEBUG_BP_HW_EXECUTE : XXDEBUG_BP_SOFTWARE;
+    status = xxdebug_set_breakpoint(adapter->debugger, native_type, address, 1u, 0, &native_id);
     if (status == XXDEBUG_OK) *id = native_id;
+    return native_result(adapter, status);
+}
+
+static xxwidgets_status native_get_breakpoint_policy(void *context, uint64_t id,
+    xxwidgets_debugger_breakpoint_policy *policy, uint64_t *hit_count)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    xxdebug_breakpoint bp;
+    xxdebug_bp_policy native_policy;
+    if (policy) memset(policy, 0, sizeof(*policy));
+    if (hit_count) *hit_count = 0;
+    if (!policy || !hit_count || !id || id > UINT32_MAX) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    xxdebug_status status = xxdebug_get_breakpoint(adapter->debugger, (uint32_t)id, &bp);
+    if (status == XXDEBUG_OK) status = xxdebug_get_breakpoint_policy(adapter->debugger, (uint32_t)id, &native_policy);
+    if (status == XXDEBUG_OK) {
+        policy->mode = (xxwidgets_debugger_breakpoint_hit_mode)native_policy.mode;
+        policy->count = native_policy.count;
+        *hit_count = bp.hit_count;
+    }
+    return native_result(adapter, status);
+}
+
+static xxwidgets_status native_set_breakpoint_with_policy(void *context, const xxwidgets_debugger_breakpoint_spec *spec,
+    const xxwidgets_debugger_breakpoint_policy *policy, uint64_t *id)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    xxdebug_bp_type type;
+    uint32_t native_id = 0;
+    if (id) *id = 0;
+    if (!spec || !policy || !id) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    if (!native_breakpoint_kind(spec->type, spec->access, &type)) return native_result(adapter, XXDEBUG_E_UNSUPPORTED);
+    xxdebug_bp_policy native_policy = {(xxdebug_bp_hit_mode)policy->mode, policy->count};
+    xxdebug_status status = xxdebug_set_breakpoint_with_policy(adapter->debugger, type, spec->address, spec->size, 0, &native_policy, &native_id);
+    if (status == XXDEBUG_OK) *id = native_id;
+    return native_result(adapter, status);
+}
+
+static xxwidgets_status native_set_breakpoint(void *context, uint64_t address, uint64_t *id)
+{
+    return native_set_breakpoint_typed(context, XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE, address, id);
+}
+
+static xxwidgets_status native_get_software_breakpoint_encodings(void *context, uint64_t tid, uint32_t *mask)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    return native_result(adapter, xxdebug_get_software_breakpoint_encodings(adapter->debugger, tid, mask));
+}
+
+static xxwidgets_status native_get_breakpoint_encoding(void *context, uint64_t id, xxwidgets_debugger_software_encoding *encoding)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    xxdebug_sw_encoding native_encoding = XXDEBUG_SW_DEFAULT;
+    if (encoding) *encoding = XXWIDGETS_DEBUGGER_SW_DEFAULT;
+    if (!encoding || !id || id > UINT32_MAX) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    xxdebug_status status = xxdebug_get_breakpoint_encoding(adapter->debugger, (uint32_t)id, &native_encoding);
+    if (status == XXDEBUG_OK) *encoding = (xxwidgets_debugger_software_encoding)native_encoding;
+    return native_result(adapter, status);
+}
+
+static xxwidgets_status native_set_breakpoint_ex(void *context, const xxwidgets_debugger_breakpoint_spec *spec,
+    const xxwidgets_debugger_breakpoint_policy *policy, xxwidgets_debugger_software_encoding encoding, uint64_t *id)
+{
+    xxwidgets_debugger_xxdebug *adapter = context;
+    xxdebug_bp_type type;
+    uint32_t native_id = 0;
+    if (id) *id = 0;
+    if (!spec || !policy || !id) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    if (!native_breakpoint_kind(spec->type, spec->access, &type)) return native_result(adapter, XXDEBUG_E_UNSUPPORTED);
+    xxdebug_bp_policy native_policy = {(xxdebug_bp_hit_mode)policy->mode, policy->count};
+    xxdebug_status status = xxdebug_set_breakpoint_ex(adapter->debugger, type, spec->address, spec->size, 0,
+        &native_policy, (xxdebug_sw_encoding)encoding, &native_id);
+    if (status == XXDEBUG_OK) *id = native_id;
+    return native_result(adapter, status);
+}
+
+static xxwidgets_status native_get_breakpoint_type(void *context, uint64_t id, xxwidgets_debugger_breakpoint_type *type)
+{
+    xxwidgets_debugger_xxdebug *adapter = (xxwidgets_debugger_xxdebug *)context;
+    xxdebug_breakpoint breakpoint;
+    xxwidgets_debugger_breakpoint_info info;
+    xxdebug_status status;
+    if (type) *type = XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE;
+    if (!type || !id || id > UINT32_MAX) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
+    status = xxdebug_get_breakpoint(adapter->debugger, (uint32_t)id, &breakpoint);
+    if (status == XXDEBUG_OK && !native_breakpoint_info(&breakpoint, &info)) status = XXDEBUG_E_UNSUPPORTED;
+    if (status == XXDEBUG_OK) *type = info.spec.type;
     return native_result(adapter, status);
 }
 
 static xxwidgets_status native_remove_breakpoint(void *context, uint64_t id)
 {
     xxwidgets_debugger_xxdebug *adapter = (xxwidgets_debugger_xxdebug *)context;
-    xxdebug_breakpoint breakpoint;
-    xxdebug_status status;
     if (!id || id > UINT32_MAX) return native_result(adapter, XXDEBUG_E_INVALID_ARGUMENT);
-    status = xxdebug_get_breakpoint(adapter->debugger, (uint32_t)id, &breakpoint);
-    if (status == XXDEBUG_OK && !native_execute_breakpoint(&breakpoint)) status = XXDEBUG_E_UNSUPPORTED;
-    if (status == XXDEBUG_OK) status = xxdebug_remove_breakpoint(adapter->debugger, (uint32_t)id);
-    return native_result(adapter, status);
+    return native_result(adapter, xxdebug_remove_breakpoint(adapter->debugger, (uint32_t)id));
 }
 
 static xxwidgets_status native_resume(void *context, int pass_exception)
@@ -290,7 +465,11 @@ static const xxwidgets_debugger_session_ops native_ops = {
     XXWIDGETS_DEBUGGER_SESSION_ABI,
     native_get_state, native_get_target, native_read_memory, native_write_memory,
     native_disassemble, native_list_breakpoints, native_set_breakpoint, native_remove_breakpoint,
-    native_resume, native_step, native_interrupt, native_poll, native_error_code, native_error_message
+    native_resume, native_step, native_interrupt, native_poll, native_error_code, native_error_message,
+    native_set_breakpoint_typed, native_get_breakpoint_type,
+    native_get_breakpoint_support, native_list_breakpoint_info, native_set_breakpoint_spec,
+    native_get_breakpoint_policy, native_set_breakpoint_with_policy,
+    native_get_software_breakpoint_encodings, native_get_breakpoint_encoding, native_set_breakpoint_ex
 };
 
 static void native_init(xxwidgets_debugger_xxdebug *adapter, xxdebug *debugger)

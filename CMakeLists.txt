@@ -27,6 +27,8 @@ option(XXWIDGETS_BUILD_SETTINGS "Build the xxfclib settings adapter for options 
 option(XXWIDGETS_BUILD_INSPECTORS "Build native binary inspection using xxfclib" ${_xxwidgets_top_level})
 option(XXWIDGETS_BUILD_DEBUGGER "Build the optional xxdebug session adapter" OFF)
 option(XXWIDGETS_BUILD_EMULATOR "Build the optional direct xxemul session adapter" OFF)
+option(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER "Build the optional DIE signature debugger" OFF)
+option(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE "Build the actual DIE engine adapter for the signature debugger" ON)
 set(XXWIDGETS_DEBUGGER_MACHO_FIXTURE "" CACHE FILEPATH "Unoptimized ARM64 C++ hello Mach-O for optional debugger runtime tests")
 set(XXWIDGETS_XXDEBUG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xxdebug" CACHE PATH "xxdebug source tree for the optional debugger adapter")
 set(XXWIDGETS_XXEMUL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xxemul" CACHE PATH "xxemul source tree for the optional emulator adapter")
@@ -80,6 +82,27 @@ endif()
 
 include("${XXWIDGETS_XXFCLIB_DIR}/cmake/xxfclib_codepages.cmake")
 include("${XXWIDGETS_XXFCLIB_DIR}/xxio.cmake")
+# File-backed widgets need the complete standalone I/O dependency closure:
+# wide-path conversion uses strings, whose binary readers use data/progress.
+# These runtime sources keep editor builds independent of formats and JS.
+list(APPEND XXIO_SOURCES
+    "${XXWIDGETS_XXFCLIB_DIR}/src/strings/xx_string.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/data/xx_data_io.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/data/xx_data_raw.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/data/xx_pd.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/data/platforms/xx_data_sse2.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/data/platforms/xx_data_avx2.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/data/platforms/xx_data_neon.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/rt/xx_rt.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/rt/xx_rt_fp.c"
+    "${XXWIDGETS_XXFCLIB_DIR}/src/rt/xx_rt_math.c")
+if(WIN32)
+    list(APPEND XXIO_SOURCES "${XXWIDGETS_XXFCLIB_DIR}/src/rt/platforms/xx_rt_windows.c")
+endif()
+if(MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x86|x64|AMD64)$")
+    set_property(SOURCE "${XXWIDGETS_XXFCLIB_DIR}/src/data/platforms/xx_data_avx2.c"
+        APPEND PROPERTY COMPILE_OPTIONS "/arch:AVX2")
+endif()
 add_library(xxwidgets_io OBJECT ${XXIO_SOURCES})
 target_compile_features(xxwidgets_io PRIVATE c_std_11)
 target_compile_definitions(xxwidgets_io PRIVATE XXFC_STATIC ${XXIO_COMPILE_DEFINITIONS})
@@ -127,6 +150,14 @@ add_library(xxwidgets
     $<TARGET_OBJECTS:xxwidgets_scan_colors>
     $<TARGET_OBJECTS:xxwidgets_codepages>
     include/xxwidgets/xxwidgets.h
+    include/xxwidgets/die_engine/xxwidgets_die_signature_edit.h
+    include/xxwidgets/die_engine/xxwidgets_die_signature_editor.h
+    include/xxwidgets/die_engine/xxwidgets_die_signature_debug_session.h
+    include/xxwidgets/die_engine/xxwidgets_die_signature_debugger.h
+    include/xxwidgets/die_engine/xxwidgets_die_signature_debug_die_engine.h
+    src/die_engine/xxwidgets_die_signature_edit_internal.h
+    src/die_engine/xxwidgets_die_signature_edit.c
+    src/die_engine/xxwidgets_die_signature_editor.c
     include/xxwidgets/xxwidgets_combobox.h
     include/xxwidgets/xxwidgets_data_struct_table.h
     include/xxwidgets/xxwidgets_data_struct_view.h
@@ -134,6 +165,9 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_debugger_arch.h
     include/xxwidgets/xxwidgets_debugger_session.h
     include/xxwidgets/xxwidgets_debugger_tables.h
+    include/xxwidgets/debugger/xxwidgets_debugger_project_dialog.h
+    include/xxwidgets/debugger/xxwidgets_debugger_trace_dialog.h
+    include/xxwidgets/debugger/xxwidgets_debugger_arguments.h
     include/xxwidgets/xxwidgets_canvas.h
     include/xxwidgets/xxwidgets_entropy.h
     include/xxwidgets/xxwidgets_hex_options.h
@@ -156,6 +190,10 @@ add_library(xxwidgets
     src/xxwidgets.c
     src/xxwidgets_edit.c
     src/xxwidgets_window.c
+    src/xxwidgets_menu.c
+    src/debugger/xxwidgets_debugger_project_dialog.c
+    src/debugger/xxwidgets_debugger_trace_dialog.c
+    src/debugger/xxwidgets_debugger_arguments.c
     src/xxwidgets_listbox.c
     src/xxwidgets_archiveview.c
     src/xxwidgets_hex_options.c
@@ -246,6 +284,99 @@ else()
     target_compile_options(xxwidgets PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# Configure the full engine before the inspectors can select a formats-only
+# xxfclib profile. EXCLUDE_FROM_ALL builds only its focused DIE dependency
+# closure when the signature debugger is requested.
+if(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER)
+    if(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE)
+        if(NOT TARGET xxfclib::die_engine)
+            if(TARGET xxfclib::xxfclib)
+                message(FATAL_ERROR "Enable XXFC_BUILD_DIE_ENGINE in the parent xxfclib build before adding the signature debugger, or disable XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE")
+            endif()
+            function(xxwidgets_add_signature_engine_dependency)
+                set(BUILD_SHARED_LIBS OFF)
+                set(BUILD_TESTING OFF)
+                set(XXFC_BUILD_PROFILE full)
+                set(XXFC_BUILD_DIE_ENGINE ON)
+                set(XXFC_BUILD_BOTH OFF)
+                set(XXFC_BUILD_TESTS OFF)
+                set(XXFC_BUILD_SAMPLES OFF)
+                # Signature APIs inspect formats directly; they do not use
+                # the optional structure-description catalog.
+                set(XXFC_ENABLE_STREAM_DATASTRUCTS OFF)
+                add_subdirectory("${XXWIDGETS_XXFCLIB_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/xxfclib-signatures" EXCLUDE_FROM_ALL)
+            endfunction()
+            xxwidgets_add_signature_engine_dependency()
+        endif()
+        set(_xxwidgets_signature_js_target xxfclib::die_engine)
+    else()
+        # The generic session needs the interpreter, buffers, lists and cache
+        # checksums; its remaining runtime comes from base xxwidgets.
+        add_library(xxwidgets_signature_js STATIC
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_builtins.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_bytecode.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_deps.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_engine.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_interp.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_lex.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_parse.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_regexp.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_value.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/buf/xx_buf.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/list/xx_list.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/xx_crc.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/xx_crc8.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/xx_crc16.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/xx_crc32.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/xx_crc64.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/platforms/xx_crc32_arm.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/platforms/xx_crc32_arm_pmull.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/platforms/xx_crc32c_sse42.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/platforms/xx_crc64_sse2.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/platforms/xx_crc64_avx2.c")
+        include("${XXWIDGETS_XXFCLIB_DIR}/cmake/xxfclib_arm_accel.cmake")
+        xxfclib_configure_arm_accel_sources("${XXWIDGETS_XXFCLIB_DIR}")
+        if(MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x86|x64|AMD64)$")
+            set_property(SOURCE "${XXWIDGETS_XXFCLIB_DIR}/src/algo/crc/platforms/xx_crc64_avx2.c"
+                APPEND PROPERTY COMPILE_OPTIONS "/arch:AVX2")
+        endif()
+        target_compile_features(xxwidgets_signature_js PUBLIC c_std_11)
+        target_compile_definitions(xxwidgets_signature_js PUBLIC XXFC_STATIC)
+        target_include_directories(xxwidgets_signature_js PUBLIC "${XXWIDGETS_XXFCLIB_DIR}/include")
+        set_target_properties(xxwidgets_signature_js PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_link_libraries(xxwidgets_signature_js PUBLIC xxwidgets::xxwidgets)
+        set(_xxwidgets_signature_js_target xxwidgets_signature_js)
+    endif()
+    add_library(xxwidgets_signature_debugger STATIC
+        src/die_engine/xxwidgets_die_signature_debug_session.c
+        src/die_engine/xxwidgets_die_signature_debugger.c)
+    add_library(xxwidgets::signature_debugger ALIAS xxwidgets_signature_debugger)
+    set_target_properties(xxwidgets_signature_debugger PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_compile_features(xxwidgets_signature_debugger PUBLIC c_std_11)
+    target_compile_definitions(xxwidgets_signature_debugger PUBLIC XXWIDGETS_STATIC PRIVATE XXFC_STATIC)
+    target_link_libraries(xxwidgets_signature_debugger PUBLIC xxwidgets::xxwidgets PRIVATE ${_xxwidgets_signature_js_target} Threads::Threads)
+    if(MSVC)
+        target_compile_options(xxwidgets_signature_debugger PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(xxwidgets_signature_debugger PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    if(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE)
+        add_library(xxwidgets_signature_debugger_die_engine STATIC src/die_engine/xxwidgets_die_signature_debug_die_engine.c)
+        add_library(xxwidgets::signature_debugger_die_engine ALIAS xxwidgets_signature_debugger_die_engine)
+        set_target_properties(xxwidgets_signature_debugger_die_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_compile_features(xxwidgets_signature_debugger_die_engine PUBLIC c_std_11)
+        target_compile_definitions(xxwidgets_signature_debugger_die_engine PUBLIC XXWIDGETS_STATIC PRIVATE XXFC_STATIC)
+        target_link_libraries(xxwidgets_signature_debugger_die_engine PUBLIC xxwidgets::signature_debugger xxfclib::die_engine)
+        if(MSVC)
+            target_compile_options(xxwidgets_signature_debugger_die_engine PRIVATE /W4 /utf-8)
+        else()
+            target_compile_options(xxwidgets_signature_debugger_die_engine PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endif()
+    # Like the native debugger adapters, these are source-tree integration
+    # targets; no installed xxfclib CMake package is required by base xxwidgets.
+endif()
+
 if(XXWIDGETS_BUILD_INSPECTORS)
     if(NOT TARGET xxfclib::xxfclib)
         set(XXFC_ENABLE_STREAM_DATASTRUCTS OFF)
@@ -284,7 +415,8 @@ if(XXWIDGETS_BUILD_DEBUGGER)
         endfunction()
         xxwidgets_add_debugger_dependency()
     endif()
-    add_library(xxwidgets_debugger STATIC src/xxwidgets_debugger_xxdebug.c)
+    add_library(xxwidgets_debugger STATIC src/xxwidgets_debugger_xxdebug.c
+        src/debugger/xxwidgets_debugger_project_xxdebug.c)
     add_library(xxwidgets::debugger ALIAS xxwidgets_debugger)
     set_target_properties(xxwidgets_debugger PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_features(xxwidgets_debugger PUBLIC c_std_11)
@@ -373,6 +505,18 @@ function(xxwidgets_add_demo target source)
 endfunction()
 
 if(XXWIDGETS_BUILD_EXAMPLES)
+    xxwidgets_add_demo(xxwidgets_die_signature_editor_demo examples/die_engine/signature_editor_demo.c)
+    list(REMOVE_ITEM _xxwidgets_demo_targets xxwidgets_die_signature_editor_demo)
+    if(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER)
+        xxwidgets_add_demo(xxwidgets_die_signature_debugger_demo examples/die_engine/signature_debugger_demo.c)
+        if(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE)
+            target_link_libraries(xxwidgets_die_signature_debugger_demo PRIVATE xxwidgets::signature_debugger_die_engine)
+            target_compile_definitions(xxwidgets_die_signature_debugger_demo PRIVATE XXWIDGETS_SIGNATURE_DEBUGGER_DIE_ENGINE)
+        else()
+            target_link_libraries(xxwidgets_die_signature_debugger_demo PRIVATE xxwidgets::signature_debugger)
+        endif()
+        list(REMOVE_ITEM _xxwidgets_demo_targets xxwidgets_die_signature_debugger_demo)
+    endif()
     xxwidgets_add_demo(xxwidgets_debugger_demo examples/debugger_demo.c)
     # Interactive architecture/pane demonstration; no generic smoke entry.
     list(REMOVE_ITEM _xxwidgets_demo_targets xxwidgets_debugger_demo)
@@ -421,6 +565,44 @@ endif()
 if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     include(CTest)
     if(BUILD_TESTING)
+        add_executable(xxwidgets_debugger_arguments_tests
+            tests/test_debugger_arguments.c src/debugger/xxwidgets_debugger_arguments.c)
+        target_include_directories(xxwidgets_debugger_arguments_tests PRIVATE include)
+        target_compile_features(xxwidgets_debugger_arguments_tests PRIVATE c_std_11)
+        target_compile_definitions(xxwidgets_debugger_arguments_tests PRIVATE XXWIDGETS_STATIC)
+        add_test(NAME xxwidgets_debugger_arguments COMMAND xxwidgets_debugger_arguments_tests)
+        if(TARGET xxwidgets_debugger AND UNIX AND NOT CMAKE_CROSSCOMPILING)
+            add_executable(xxwidgets_debugger_project_probe_tests tests/test_debugger_project_probe.c)
+            target_compile_features(xxwidgets_debugger_project_probe_tests PRIVATE c_std_11)
+            target_link_libraries(xxwidgets_debugger_project_probe_tests PRIVATE xxwidgets::debugger)
+            add_test(NAME xxwidgets_debugger_project_probe
+                COMMAND xxwidgets_debugger_project_probe_tests
+                    "${XXWIDGETS_XXDEBUG_DIR}/tests/fixtures/bin/test.com"
+                    "${XXWIDGETS_XXDEBUG_DIR}/tests/fixtures/bin/test_elf64")
+            set_tests_properties(xxwidgets_debugger_project_probe PROPERTIES TIMEOUT 15)
+        endif()
+        if(_xxwidgets_native STREQUAL "gtk3" AND NOT CMAKE_CROSSCOMPILING)
+            find_program(XXWIDGETS_XVFB_RUN xvfb-run)
+            if(XXWIDGETS_XVFB_RUN)
+                add_executable(xxwidgets_menu_gtk_tests tests/test_menu_gtk.c)
+                target_link_libraries(xxwidgets_menu_gtk_tests PRIVATE xxwidgets::xxwidgets PkgConfig::XXWIDGETS_GTK3)
+                target_compile_features(xxwidgets_menu_gtk_tests PRIVATE c_std_11)
+                add_test(NAME xxwidgets_menu_gtk
+                    COMMAND "${XXWIDGETS_XVFB_RUN}" -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:xxwidgets_menu_gtk_tests>)
+                set_tests_properties(xxwidgets_menu_gtk PROPERTIES TIMEOUT 30)
+                find_package(Python3 QUIET COMPONENTS Interpreter)
+                find_program(XXWIDGETS_XDOTOOL xdotool)
+                if(Python3_Interpreter_FOUND AND XXWIDGETS_XDOTOOL)
+                    add_executable(xxwidgets_debugger_dialog_tests tests/test_debugger_dialog.c)
+                    target_link_libraries(xxwidgets_debugger_dialog_tests PRIVATE xxwidgets::xxwidgets)
+                    target_compile_features(xxwidgets_debugger_dialog_tests PRIVATE c_std_11)
+                    add_test(NAME xxwidgets_debugger_dialog
+                        COMMAND "${XXWIDGETS_XVFB_RUN}" -a "${Python3_EXECUTABLE}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_debugger_dialog.py" $<TARGET_FILE:xxwidgets_debugger_dialog_tests>)
+                    set_tests_properties(xxwidgets_debugger_dialog PROPERTIES TIMEOUT 45)
+                endif()
+            endif()
+        endif()
         # Deterministic API/lifecycle tests don't require a display or terminal.
         add_executable(xxwidgets_core_tests
             $<TARGET_OBJECTS:xxwidgets_io>
@@ -433,6 +615,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             src/xxwidgets.c
             src/xxwidgets_edit.c
             src/xxwidgets_window.c
+            src/xxwidgets_menu.c
             src/xxwidgets_listbox.c
             src/xxwidgets_archiveview.c
             src/xxwidgets_hex_options.c
@@ -463,7 +646,8 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         if(UNIX)
             target_compile_definitions(xxwidgets_core_tests PRIVATE _POSIX_C_SOURCE=200809L)
         endif()
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_shortcuts.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_shortcuts.c
+            src/die_engine/xxwidgets_die_signature_edit.c src/die_engine/xxwidgets_die_signature_editor.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_scanresults.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_data_struct_table.c src/xxwidgets_data_struct_view.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_debugger_tables.c src/xxwidgets_debugger.c)
@@ -679,6 +863,8 @@ install(FILES docs/process-dialog-reference.md DESTINATION ${CMAKE_INSTALL_DOCDI
 install(FILES docs/search-dialog-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/strings-viewer-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/forms-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(FILES docs/die-signature-editor-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(FILES docs/die-signature-debugger-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/debugger-widget-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(EXPORT xxwidgetsTargets FILE xxwidgetsTargets.cmake
     NAMESPACE xxwidgets:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xxwidgets)
