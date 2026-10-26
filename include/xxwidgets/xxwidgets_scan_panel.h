@@ -40,6 +40,10 @@ typedef enum xxwidgets_scan_panel_control_id {
     XXWIDGETS_SCAN_PANEL_DATABASES_LABEL,
     XXWIDGETS_SCAN_PANEL_FILE_TYPE,
     XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL,
+    XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS,
+    XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
+    XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL,
+    XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL,
     XXWIDGETS_SCAN_PANEL_CONTROL_COUNT
 } xxwidgets_scan_panel_control_id;
 
@@ -57,7 +61,7 @@ enum {
 /* Complete scan UI: a file-type combo box, labeled checkbox combo boxes,
  * Scan/Report push buttons, and a hierarchical result tree. The application
  * supplies the scan engine. Bounds use text cells, require width >= 44 and
- * height >= 11. Children belong
+ * height >= 14. Children belong
  * to the owner WINDOW and events use its app callback. Destroy the panel before
  * its owner/app; borrowed control handles must not be destroyed separately.
  * BUTTON clicks are handled by the application; call show_report after polling.
@@ -80,6 +84,16 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_flags(xxwidgets_scan_pan
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_flags(const xxwidgets_scan_panel *panel, unsigned int *flags);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_databases(xxwidgets_scan_panel *panel, unsigned int databases);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_databases(const xxwidgets_scan_panel *panel, unsigned int *databases);
+
+/* Populates the include/exclude checkbox combo boxes from a semicolon-separated
+ * UTF-8 tag catalog. A successful replacement updates both controls atomically
+ * and clears both selections. An empty catalog disables both controls; a
+ * nonempty catalog enables them. The getters join checked tags with semicolons;
+ * required includes the terminating NUL. A NULL buffer with zero capacity
+ * queries the required size. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_available_tags(xxwidgets_scan_panel *panel, const char *tags);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_include_tags(const xxwidgets_scan_panel *panel, char *buffer, size_t capacity, size_t *required);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_exclude_tags(const xxwidgets_scan_panel *panel, char *buffer, size_t capacity, size_t *required);
 
 /* Compact format root -> Type: Name (Version) [Info] leaves. file_label is
  * the detected format, e.g. PE32. NULL fields are empty. For nested scans use

@@ -259,6 +259,11 @@ const char *xxwidgets_combobox_caption(xxwidgets_widget *widget);
 int xxwidgets_checkcombobox_checked(const xxwidgets_widget *widget, size_t index);
 xxwidgets_status xxwidgets_checkcombobox_user_toggle(xxwidgets_widget *widget, size_t index);
 xxwidgets_status xxwidgets_checkcombobox_set_mask(xxwidgets_widget *widget, unsigned int mask, size_t count);
+/* Replace two check-combo models and their enabled state as one logical
+ * transaction. This is used by composite widgets whose paired selectors must
+ * never expose catalogs from different generations. */
+xxwidgets_status xxwidgets_checkcombobox_set_shared_records(xxwidgets_widget *first, xxwidgets_widget *second,
+    const xx_meta_string *records, size_t count, int enabled);
 
 static inline int xxwidgets_entropy_table(const xxwidgets_widget *widget)
 { return widget && (widget->kind == XXWIDGETS_ENTROPY_REGIONS || widget->kind == XXWIDGETS_ENTROPY_BYTES); }

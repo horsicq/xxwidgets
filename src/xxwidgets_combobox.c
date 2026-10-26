@@ -164,16 +164,26 @@ static xxwidgets_status sync_combo(xxwidgets_widget *widget)
     return status;
 }
 
-xxwidgets_status xxwidgets_combobox_set_records(xxwidgets_widget *widget, const xx_meta_string *records, size_t count)
+static void dispose_items(char **items, size_t count)
 {
-    struct xxwidgets_combo_state *state, *previous;
-    char **items, **old_items;
-    size_t i, old_count;
-    int old_value;
-    uint64_t revision;
+    size_t i;
+    if (items)
+        for (i = 0; i < count; ++i) free(items[i]);
+    free(items);
+}
+
+static xxwidgets_status prepare_state(const xx_meta_string *records, size_t count,
+    struct xxwidgets_combo_state **out_state, char ***out_items)
+{
+    struct xxwidgets_combo_state *state = NULL;
+    char **items = NULL;
+    size_t i;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!widget || !xxwidgets_combo_kind(widget) || (!records && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*records) || count > SIZE_MAX / sizeof(*items))
+    if (!out_state || !out_items || (!records && count) || count > INT_MAX ||
+        count > SIZE_MAX / sizeof(*records) || count > SIZE_MAX / sizeof(*items))
         return XXWIDGETS_INVALID_ARGUMENT;
+    *out_state = NULL;
+    *out_items = NULL;
     state = (struct xxwidgets_combo_state *)calloc(1, sizeof(*state));
     if (!state) return XXWIDGETS_OUT_OF_MEMORY;
     items = count ? (char **)calloc(count, sizeof(*items)) : NULL;
@@ -212,6 +222,26 @@ xxwidgets_status xxwidgets_combobox_set_records(xxwidgets_widget *widget, const 
         status = copy_var(&state->records[i].var, &records[i].var);
         if (status != XXWIDGETS_OK) goto fail;
     }
+    *out_state = state;
+    *out_items = items;
+    return XXWIDGETS_OK;
+fail:
+    dispose_items(items, count);
+    dispose_state(state);
+    return status;
+}
+
+xxwidgets_status xxwidgets_combobox_set_records(xxwidgets_widget *widget, const xx_meta_string *records, size_t count)
+{
+    struct xxwidgets_combo_state *state = NULL, *previous;
+    char **items = NULL, **old_items;
+    size_t old_count;
+    int old_value;
+    uint64_t revision;
+    xxwidgets_status status;
+    if (!widget || !xxwidgets_combo_kind(widget)) return XXWIDGETS_INVALID_ARGUMENT;
+    status = prepare_state(records, count, &state, &items);
+    if (status != XXWIDGETS_OK) return status;
     previous = widget->combo;
     old_items = widget->items;
     old_count = widget->item_count;
@@ -232,19 +262,82 @@ xxwidgets_status xxwidgets_combobox_set_records(xxwidgets_widget *widget, const 
         ++widget->combo_revision;
         sync_combo(widget);
         widget->combo_revision = revision + 2;
-        goto fail;
+        dispose_items(items, count);
+        dispose_state(state);
+        return status;
     }
     dispose_state(previous);
-    for (i = 0; i < old_count; ++i) free(old_items[i]);
-    free(old_items);
+    dispose_items(old_items, old_count);
     return XXWIDGETS_OK;
-fail:
-    if (items) {
-        for (i = 0; i < count; ++i) free(items[i]);
-        free(items);
+}
+
+xxwidgets_status xxwidgets_checkcombobox_set_shared_records(xxwidgets_widget *first, xxwidgets_widget *second,
+    const xx_meta_string *records, size_t count, int enabled)
+{
+    xxwidgets_widget *widgets[2] = {first, second};
+    struct xxwidgets_combo_state *states[2] = {NULL, NULL}, *previous[2];
+    char **items[2] = {NULL, NULL}, **old_items[2];
+    size_t old_count[2], i;
+    int old_value[2], old_enabled[2], attempted = 0;
+    uint64_t revision[2];
+    xxwidgets_status status;
+    if (!first || !second || first == second || first->kind != XXWIDGETS_CHECKCOMBOBOX ||
+        second->kind != XXWIDGETS_CHECKCOMBOBOX || first->app != second->app)
+        return XXWIDGETS_INVALID_ARGUMENT;
+    status = prepare_state(records, count, states, items);
+    if (status != XXWIDGETS_OK) return status;
+    status = prepare_state(records, count, states + 1, items + 1);
+    if (status != XXWIDGETS_OK) {
+        dispose_items(items[0], count);
+        dispose_state(states[0]);
+        return status;
     }
-    dispose_state(state);
-    return status;
+    for (i = 0; i < 2; ++i) {
+        previous[i] = widgets[i]->combo;
+        old_items[i] = widgets[i]->items;
+        old_count[i] = widgets[i]->item_count;
+        old_value[i] = widgets[i]->value;
+        old_enabled[i] = widgets[i]->enabled;
+        revision[i] = widgets[i]->combo_revision;
+        widgets[i]->combo = states[i];
+        widgets[i]->items = items[i];
+        widgets[i]->item_count = count;
+        widgets[i]->value = count ? 0 : -1;
+        widgets[i]->enabled = enabled != 0;
+        ++widgets[i]->combo_revision;
+    }
+    for (i = 0; i < 2; ++i) {
+        attempted = (int)i + 1;
+        status = sync_combo(widgets[i]);
+        if (status != XXWIDGETS_OK) break;
+    }
+    if (status != XXWIDGETS_OK) {
+        for (i = 0; i < 2; ++i) {
+            widgets[i]->combo = previous[i];
+            widgets[i]->items = old_items[i];
+            widgets[i]->item_count = old_count[i];
+            widgets[i]->value = old_value[i];
+            widgets[i]->enabled = old_enabled[i];
+        }
+        /* Rebuild every native control that observed the replacement. Logical
+         * rollback remains unconditional if native recovery also fails. */
+        for (i = 0; i < (size_t)attempted; ++i) {
+            ++widgets[i]->combo_revision;
+            (void)sync_combo(widgets[i]);
+            widgets[i]->combo_revision = revision[i] + 2;
+        }
+        for (; i < 2; ++i) widgets[i]->combo_revision = revision[i];
+        for (i = 0; i < 2; ++i) {
+            dispose_items(items[i], count);
+            dispose_state(states[i]);
+        }
+        return status;
+    }
+    for (i = 0; i < 2; ++i) {
+        dispose_items(old_items[i], old_count[i]);
+        dispose_state(previous[i]);
+    }
+    return XXWIDGETS_OK;
 }
 
 size_t xxwidgets_combobox_count(const xxwidgets_widget *widget)

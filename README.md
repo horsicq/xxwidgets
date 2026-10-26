@@ -1313,3 +1313,7 @@ xxwidgets_entropy_demo --native --file sample.png
 xxwidgets_entropy_demo --tui --file sample.bin
 xxwidgets_entropy_demo --native --smoke-test --file sample.png --csv entropy.csv --svg entropy.svg
 ```
+
+### Stored checksums and hashes
+
+Data-structure fields use the `checksum` role for stored checksums, computed hashes, and message digests. The `signature` role identifies format magic. The role describes the field; it does not report whether the value has been verified. Numeric checksums remain hexadecimal; digest arrays retain their physical bytes.

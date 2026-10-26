@@ -254,7 +254,7 @@ static xxwidgets_status show_item(xxwidgets_data_struct_view *view, size_t index
         if (status == XXWIDGETS_OK) view->selection = SIZE_MAX;
         return status;
     }
-    if (view->items[index].data_struct.type == XX_DATA_STRUCT_TYPE_STRUCT) {
+    if (view->items[index].data_struct.type == XX_DATA_STRUCT_TYPE_STRUCT && view->items[index].field_count > 0) {
         status = xxwidgets_data_struct_table_set_fields(table, view->items[index].fields, view->items[index].field_count);
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(details, 0);
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(table, 1);

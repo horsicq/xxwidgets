@@ -148,6 +148,7 @@ typedef struct property_name {
 static xxwidgets_status property_cell(xx_data_struct_record_property_t property, char **out, size_t *columns)
 {
     static const property_name names[] = {{XX_DATA_STRUCT_RECORD_PROPERTY_SIGNATURE, "signature"},
+    {XX_DATA_STRUCT_RECORD_PROPERTY_CHECKSUM, "checksum"},
                                           {XX_DATA_STRUCT_RECORD_PROPERTY_ID, "id"},
                                           {XX_DATA_STRUCT_RECORD_PROPERTY_VIRTUAL_ADDRESS, "address"},
                                           {XX_DATA_STRUCT_RECORD_PROPERTY_OFFSET, "offset"},
