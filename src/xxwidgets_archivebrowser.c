@@ -785,9 +785,9 @@ size_t xxwidgets_archivebrowser_column_count(const xxwidgets_widget *widget)
 
 const char *xxwidgets_archivebrowser_column_title(const xxwidgets_widget *widget, size_t column)
 {
-    static const char *titles[] = {"Name", "Size", "Packed Size", "Modified", "Attributes"};
+    static const char *titles[] = {XXW_N_("Name"), XXW_N_("Size"), XXW_N_("Packed Size"), XXW_N_("Modified"), XXW_N_("Attributes")};
     if (!browser_widget(widget) || column >= xxwidgets_archivebrowser_column_count(widget)) return "";
-    if (column < 5) return titles[column];
+    if (column < 5) return XXW_TR(widget->app, titles[column]);
     return widget->browser->storage->titles[column - 5];
 }
 

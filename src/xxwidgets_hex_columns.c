@@ -129,9 +129,9 @@ const char *xxwidgets_hexview_title(const xxwidgets_widget *w, size_t column)
     char *s = ((xxwidgets_widget *)w)->hex_title;
     size_t i, pos = 1, unit = unit_size(w->hex_display.mode);
     if (!column)
-        return w->hex_display.offsets ? "Offset" : "Address";
+        return XXW_TR(w->app, w->hex_display.offsets ? XXW_N_("Offset") : XXW_N_("Address"));
     if (column == 2) {
-        snprintf(s, sizeof(w->hex_title), "Symbols (%s)", w->hex_display.encoding);
+        snprintf(s, sizeof(w->hex_title), "%s (%s)", XXW_TR(w->app, "Symbols"), w->hex_display.encoding);
         return s;
     }
     if (column != 1)
@@ -403,10 +403,10 @@ xxwidgets_hex_menu_item xxwidgets_hexview_menu_item(const xxwidgets_widget *w, u
     if (index >= xxwidgets_hexview_menu_count(column))
         return item;
     if (column == 3) {
-        static const char *const titles[] = {"Dump to file", "Beginning", "End",  "Selection start", "Selection end", "All", "Row",
-                                             "Clear",        "Hex",       "Text", "C array",         "Offset", "Insert bytes...", "Delete selected bytes", "Undo", "Redo", "Overwrite bytes...", "Paste bytes", "Cut bytes", "Insert pasted bytes"};
-        item.title = titles[index];
-        item.group = !index ? "" : index < 5 ? "Go to" : index < 8 ? "Select" : index < 12 ? "Copy" : "Edit";
+        static const char *const titles[] = {XXW_N_("Dump to file"), XXW_N_("Beginning"), XXW_N_("End"),  XXW_N_("Selection start"), XXW_N_("Selection end"), XXW_N_("All"), XXW_N_("Row"),
+                                             XXW_N_("Clear"),        XXW_N_("Hex"),       XXW_N_("Text"), XXW_N_("C array"),         XXW_N_("Offset"), XXW_N_("Insert bytes..."), XXW_N_("Delete selected bytes"), XXW_N_("Undo"), XXW_N_("Redo"), XXW_N_("Overwrite bytes..."), XXW_N_("Paste bytes"), XXW_N_("Cut bytes"), XXW_N_("Insert pasted bytes")};
+        item.title = XXW_TR(w->app, titles[index]);
+        item.group = !index ? "" : XXW_TR(w->app, index < 5 ? XXW_N_("Go to") : index < 8 ? XXW_N_("Select") : index < 12 ? XXW_N_("Copy") : XXW_N_("Edit"));
         if (index == 19) {
             item.disabled = !xxwidgets_hexview_can_paste_insert(w);
             return item;
@@ -433,12 +433,12 @@ xxwidgets_hex_menu_item xxwidgets_hexview_menu_item(const xxwidgets_widget *w, u
                         !(w->hex_source_read ? w->hex_source_length : w->hex_selection_length)) ||
                         (index == 6 && w->hex_cursor >= w->hex_size) || (index >= 8 && !w->app->ops->copy_text && !w->hex_copy_handler);
     } else if (!column) {
-        static const char *const titles[] = {"10", "16", "Address", "Offset"};
-        item.group = index < 2 ? "Base" : "Location";
-        item.title = titles[index];
+        static const char *const titles[] = {"10", "16", XXW_N_("Address"), XXW_N_("Offset")};
+        item.group = XXW_TR(w->app, index < 2 ? XXW_N_("Base") : XXW_N_("Location"));
+        item.title = XXW_TR(w->app, titles[index]);
         item.checked = index < 2 ? w->hex_display.radix == (index ? 16 : 10) : w->hex_display.offsets == (index == 3);
     } else if (column == 1) {
-        item.group = index < 13 ? "Mode" : "Width";
+        item.group = XXW_TR(w->app, index < 13 ? XXW_N_("Mode") : XXW_N_("Width"));
         item.title = index < 13 ? modes[index] : width_names[index - 13];
         item.checked = index < 13 ? (size_t)w->hex_display.mode == index : w->hex_columns == widths[index - 13];
     } else {

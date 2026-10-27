@@ -215,6 +215,7 @@ xxwidgets_status xxwidgets_app_destroy(xxwidgets_app *app)
     if (app->dispatch_depth || app->polling) return XXWIDGETS_BUSY;
     while (app->widgets) xxwidgets_widget_destroy(app->widgets);
     app->ops->shutdown(app);
+    xx_translation_destroy(app->translation);
     free(app);
     return XXWIDGETS_OK;
 }
@@ -288,7 +289,7 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     xxwidgets_status status;
     if (!out_widget) return XXWIDGETS_INVALID_ARGUMENT;
     *out_widget = NULL;
-    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_DIE_SIGNATURE_EDIT || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
+    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_MEMORY_MAP || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
         (kind == XXWIDGETS_WINDOW ? parent != NULL : (!parent || parent->app != app || parent->kind != XXWIDGETS_WINDOW)))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (app->dispatch_depth || app->polling) return XXWIDGETS_BUSY;
@@ -391,6 +392,11 @@ void xxwidgets_widget_set_user_data(xxwidgets_widget *widget, void *user_data)
 void *xxwidgets_widget_user_data(const xxwidgets_widget *widget)
 {
     return widget ? widget->user_data : NULL;
+}
+
+xxwidgets_app *xxwidgets_widget_app(const xxwidgets_widget *widget)
+{
+    return widget ? widget->app : NULL;
 }
 
 xxwidgets_status xxwidgets_widget_set_text(xxwidgets_widget *widget, const char *text)

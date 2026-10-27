@@ -40,6 +40,7 @@ appearance, keyboard behavior, accessibility, and input methods.
 - Native file drag-and-drop on Windows, macOS and GTK, including drops over child controls
 - Native Open/Save file choosers on Windows, macOS and GTK
 - Entropy/byte analysis with region tables, curves, histograms and CSV/SVG export
+- Hash browser with copied digest rows, selection and clipboard support
 - A shared demo that runs with either native controls or TUI
 - A HexView demo with sample bytes or file loading
 - An ArchiveView demo with copied archive-entry metadata
@@ -447,6 +448,29 @@ object pointer for native controls; TUI returns NULL. The caller does not own
 that handle and must not destroy native objects directly.
 
 See `examples/widgets_demo.c` for the complete common application.
+
+## File Information
+
+`xxwidgets_file_information_*` composes the existing structure browser and
+nine-column field table into a read-only file inspection form. Include
+`xxwidgets/xxwidgets_file_information.h`. The host supplies the file path,
+format name, size and `xxwidgets_data_struct_item` array from its native
+DataStructs reader. The component links no parser or signature engine.
+
+Use `xxwidgets_file_information_create` and `set_data` for an embedded form,
+forward events to `handle_event`, resize with `set_rect`, and destroy the form
+before its owner. Input is deep-copied and failed replacement preserves the
+previous data. `xxwidgets_file_information_view` exposes programmatic structure
+selection and borrowed controls. Typed ENTRY records display their fields;
+raw descriptors and entries without fields show range metadata.
+
+For a complete resizable modal browser, call
+`xxwidgets_file_information_dialog(owner, title, path, type, size, items, count)`
+on the UI thread outside event dispatch. Close/Escape dismiss it. The owner is
+disabled while open and its event callback/enabled state is restored on exit.
+The host should load expensive files on a cancellable worker, then pass the
+completed model to the UI. CDIE uses this component with native PE, ELF and
+thin Mach-O DataStructs only, sharing its reader with the console commands.
 
 ## Debugger widget
 
@@ -1309,6 +1333,256 @@ terminal controls. Include `xxwidgets/xxwidgets_strings.h`; see the
 [strings viewer reference](docs/strings-viewer-reference.md) for ownership,
 event routing and integration details. The widget is independent of a scanner.
 
+## File Hex View browser
+
+`xxwidgets/xxwidgets_hexview_browser.h` adds `xxwidgets_hexview_browser_*`
+around the existing `XXWIDGETS_HEXVIEW` device-backed control. It provides copied
+path/size metadata, Go, Previous/Next, Refresh, encoding and byte-row choices,
+Copy hex/text and Save selection. It borrows a seekable known-size device;
+the host opens/closes it and should open read-only. Only a 64 KiB window is
+retained. Empty files and offsets at EOF are valid. Failed replacement leaves
+the prior device, copied bytes and metadata installed.
+
+Create at least 96 × 20 cells, forward input to `handle_event`, and call
+`process` after `app_poll`. Actions that read/copy/export are queued out of
+input dispatch. `go_to` accepts decimal or 0x hex with surrounding whitespace;
+invalid syntax, overflow and offsets beyond EOF fail. `refresh` reloads and
+clamps to EOF after a shrink. Byte/text copies are capped at 1 MiB; offset
+copies are exempt. The existing streamed dump dialog handles export. No file
+parser, signature engine or DataStructs is part of this component.
+
+`xxwidgets_hexview_dialog(owner, title, path, device)` wraps that browser in a
+resizable modal (minimum 98 × 26), with Close/Esc, F5 and Ctrl/Meta+G. It restores
+owner/callback/default state and leaves the borrowed device open on every exit.
+Destroy embedded browsers before their owner and before closing the device.
+CDIE uses this form for its native GUI Hex View action.
+
+## Disassembly browser
+
+Include `xxwidgets/xxwidgets_disasm.h` for `xxwidgets_disasm_browser_*` and
+`xxwidgets_disasm_dialog`. They reuse `XXWIDGETS_DEBUGGER_DISASM` for copied
+address/bytes/instruction/comment rows and add path/size metadata, Go, Back/Next,
+Refresh, mode selection and Copy row. The component links no parser or decoder.
+
+The host supplies a borrowed `xxwidgets_disasm_source` with a page callback,
+initial physical offset, file size and up to 16 short ASCII mode names. Each
+successful callback returns borrowed rows valid until the next load. The browser
+immediately validates and copies at most 512 contiguous records (1–15 bytes each)
+into its owned table. Empty pages are valid only at EOF. Return UNAVAILABLE to
+prompt for a manual mode; errors preserve the previous page and mode. The host
+retains ownership of source/device/decoder state until after browser destruction
+or modal return. No source I/O occurs during destruction.
+
+Create embedded browsers at least 96 × 20 cells. Forward events to
+`handle_event` and call `process` after `app_poll` so provider and clipboard
+operations execute outside dispatch. Public `go_to` also requires that context;
+it accepts decimal or `0x` hex with surrounding whitespace, rejecting overflow.
+Next follows the provider's next offset; Back retains up to 256 prior starts.
+Go and mode changes clear history. Refresh requests the current physical offset
+again; the provider determines how changed files and cached metadata are handled.
+
+The modal has a minimum size of 98 × 26 and adds Close/Esc, F5 and Ctrl/Meta+G.
+It restores callbacks, default action, owner enabled state and focus. CDIE uses
+the browser with native file metadata and cdisasm decoding.
+
+## Memory Map table and browser
+
+Include `xxwidgets/xxwidgets_memory_map.h`. The `XXWIDGETS_MEMORY_MAP` kind
+reuses the shared tabular storage/rendering engine for six columns: File offset,
+Address, Size, Type, Name and Attributes. `xxwidgets_memory_map_table_*` copies
+at most 1024 records transactionally. File offsets are signed with `-1` for
+virtual-only rows; addresses use `UINT64_MAX` for unknown. Flags represent
+virtual-only/invisible status, not permissions. Range overflow, UTF-8 and
+name/type bounds are validated; order and overlapping ranges are retained.
+
+`xxwidgets_memory_map_*` adds a browser (minimum 96 × 20) with copied path,
+format, file size, image base/entry metadata, selection details, lookup and
+Copy row/all. `set_data` also validates physical ranges against the file size
+and replaces metadata/buttons/table together. Failed replacement preserves the
+old snapshot and selection. The host can free all inputs immediately afterward.
+It owns no device/parser and performs no file reads.
+
+`find` accepts decimal or 0x numbers and selects the first containing half-open
+range. File lookup skips virtual-only rows; address lookup includes them.
+Invalid/unmatched input leaves selection unchanged. Forward events to
+`handle_event`, then call `process` after polling for deferred lookup/clipboard
+actions. Enter in Find uses physical offsets. `export_text` returns TSV with
+escaped single-line cells; SIZE_MAX exports all rows, otherwise one row.
+NULL/0 queries the NUL-inclusive size and short buffers return BUFFER_TOO_SMALL.
+
+`xxwidgets_memory_map_dialog` provides a resizable snapshot modal with Close/Esc
+and Ctrl/Meta+G for lookup, restoring callback/default/owner state on close.
+CDIE loads a detached native format map on a worker and uses this shared form.
+
+## Imports browser and modal
+
+Include `xxwidgets/xxwidgets_imports.h` for the reusable `xxwidgets_imports_*`
+browser and modal around the existing `XXWIDGET_IMPORTSVIEWER`. It adds copied
+path/format/file-size metadata, visible/total counts, library/name filtering,
+selection details and deferred Copy row/visible. The component owns no parser
+or device and links no native inspection implementation.
+
+Create embedded browsers at least 96 × 20 cells. `set_data` copies all records
+and strings transactionally, resets the filter and selects the first row.
+Bounds are 10,000 records, 16 KiB per UTF-8 name and 8 MiB of aggregate
+NUL-inclusive names. NULL names become empty cells. Offsets use -1 for unknown;
+known offsets must lie inside the file. Addresses use UINT64_MAX for unknown.
+Failed replacement retains the preceding source/visible records and metadata.
+Inputs may be freed immediately after successful replacement.
+
+`set_filter` matches library/name substrings with ASCII case folding, selecting
+the first visible row. Filter is valid UTF-8 up to 256 bytes. Total source count
+and visible count have separate getters. Forward events to `handle_event` and
+call `process` after polling to execute queued filter/clipboard work. Failed
+interactive filtering restores the last applied filter and preceding results.
+
+`export_text` produces TSV of visible rows, or one visible row by index, with
+complete escaped Library/Name/Ordinal/Hint/File offset/Address/Kind values.
+SIZE_MAX selects all visible rows; NULL/0 queries NUL-inclusive size. Short
+buffers return BUFFER_TOO_SMALL and are terminated; export is capped at 32 MiB.
+Table getters borrow strings until filtering/replacement/destruction. The
+resizable modal adds Close/Esc and Ctrl/Meta+F, restoring the owner's state.
+CDIE supplies a worker-loaded native imports snapshot to this shared form.
+
+## Exports browser and modal
+
+Include `xxwidgets/xxwidgets_exports.h` for `xxwidgets_exports_*`, a copied
+snapshot browser/modal around the existing `XXWIDGET_EXPORTSVIEWER` table.
+Name/Ordinal/Address/Forwarder columns retain complete typed metadata;
+selection details add the physical offset. UINT64_MAX ordinal/address and -1
+offset display as unknown. The table's ordinal sentinel is also supported by
+the existing `xxwidget_exportsviewer_set_records` API.
+
+The component owns no parser/device and reads no file bytes. Create at least
+96 × 20 cells; `set_data` validates and copies up to 10,000 records, 16 KiB per
+UTF-8 name/forwarder and 8 MiB aggregate NUL-inclusive text. NULL names/forwarders
+become empty. Known file offsets must be inside the file. Replacement resets
+the filter and atomically installs metadata, buttons and rows, retaining the
+previous model on failure. Inputs may be freed immediately afterward.
+
+Filtering matches name/forwarder substrings with ASCII case folding, accepting
+up to 256 UTF-8 bytes and selecting the first visible row. Separate count APIs
+report source and visible totals. Forward events to `handle_event`, then call
+`process` after polling for deferred filtering/clipboard actions. Failed
+interactive filtering restores the last applied filter and preceding rows.
+
+`export_text` returns full escaped TSV with Name/Ordinal/File offset/Address/
+Forwarder, bounded to 32 MiB. SIZE_MAX selects all visible rows; otherwise the
+index selects one visible row. NULL/0 queries NUL-inclusive size; short buffers
+are terminated and return BUFFER_TOO_SMALL. Table getters borrow strings until
+filtering/replacement/destruction. The resizable modal adds Close/Esc and
+Ctrl/Meta+F, restoring the owner's state. CDIE supplies the native worker result.
+
+## Resources browser and modal
+
+Include `xxwidgets/xxwidgets_resources.h` for the reusable
+`xxwidgets_resources_*` browser/modal around `XXWIDGET_RESOURCESVIEWER`.
+It adds copied path/format/file-size metadata, source/visible totals, filtering,
+selection details with all numeric IDs/code page and deferred metadata copying.
+No parser/device is owned and no file I/O is performed.
+
+Create embedded browsers at least 96 × 20 cells. `set_data` validates and copies
+up to 10,000 typed resource records, 16 KiB per UTF-8 type/name/language string
+and 8 MiB aggregate NUL-inclusive text. NULL strings become empty. UINT32_MAX
+IDs and -1 offsets/sizes are unknown; complete known physical ranges must fit
+inside file_size, including zero-length ranges at EOF. Replacement resets the
+filter and installs metadata/buttons/table transactionally, retaining the old
+snapshot on failure. Inputs may be freed immediately afterward.
+
+Filters match displayed type/name/language text, or decimal IDs when a name is
+absent, using ASCII case folding. Input is valid UTF-8 up to 256 bytes. The
+first visible row is selected. Forward events to `handle_event`, then call
+`process` after polling for deferred filter/clipboard work. Invalid interactive
+filters restore the last applied filter and preceding rows.
+
+`export_text` returns escaped TSV with Type/Type ID/Name/Name ID/Language/
+Language ID/Size/File offset/Code page, capped at 32 MiB. SIZE_MAX selects all
+visible rows, otherwise one visible row. NULL/0 queries NUL-inclusive size;
+short buffers are terminated and return BUFFER_TOO_SMALL. Table getters borrow
+strings until filtering/replacement/destruction. The resizable modal adds
+Close/Esc and Ctrl/Meta+F and restores owner state. CDIE supplies a worker-loaded
+native snapshot; the widget retains metadata only.
+
+## Database paths dialog
+
+The shared `xxwidgets_database_paths_dialog` in
+`xxwidgets/xxwidgets_database_paths.h` supplies editable main/extra/custom UTF-8
+folder paths, Browse, Defaults, OK and Cancel. The host provides an optional
+folder picker and a transactional apply callback, keeping database parsing out
+of the widget library. Failed applies show the host's error and allow retry;
+Cancel never invokes apply. Paths are bounded to 16383 UTF-8 bytes each. The GTK
+backend also implements the native picker used by `xxwidgets_font_options_dialog`.
+
+## Symbols browser and modal
+
+Include `xxwidgets/xxwidgets_symbols.h` for the reusable `xxwidgets_symbols_*`
+browser/modal around `XXWIDGET_SYMBOLSVIEWER`. It adds copied file metadata,
+source/visible totals, name/filename filtering, selection details and deferred
+metadata copying. It owns no parser/device and performs no file I/O.
+
+Create embedded browsers at least 96 × 20 cells. `set_data` validates and copies
+up to 10,000 typed symbols, 16 KiB per UTF-8 name/filename and 8 MiB aggregate
+NUL-inclusive text. NULL strings become empty; -1 offsets and UINT64_MAX
+addresses/table indices are unknown. Target offsets can equal EOF; known record
+offsets must be inside the file. Type/binding values must be valid enums.
+Replacement resets the filter and installs metadata/buttons/table atomically,
+retaining the previous snapshot on failure. Inputs can be freed after success.
+
+Filtering matches name/filename substrings with ASCII case folding, using at
+most 256 valid UTF-8 bytes and selecting the first visible row. Forward events
+to `handle_event`, then call `process` after polling for deferred filter/
+clipboard work. Failed interactive filters restore the last applied filter.
+
+`export_text` returns escaped TSV containing the table fields, filename,
+address, target/record offsets, index, section, native type/class, auxiliary
+count and status flags. SIZE_MAX selects all visible rows, otherwise one visible
+row. NULL/0 queries NUL-inclusive size; short buffers return BUFFER_TOO_SMALL.
+Export is capped at 32 MiB; an oversized filename inserted directly into the
+exposed table returns UNAVAILABLE. Table getters borrow strings until filtering/
+replacement/destruction. The resizable modal adds Close/Esc and Ctrl/Meta+F,
+restoring owner state. CDIE supplies a native worker-loaded snapshot.
+
+## Strings modal
+
+`xxwidgets_strings_dialog(owner, title, path, size, records, count, save, user)`
+wraps the existing `xxwidgets_strings_*` browser with copied metadata, resize
+handling and Close/Esc. It reuses the table, filter, selection, clipboard and
+CSV-export APIs. View (or activating a result) opens the complete selected
+text in an owned text dialog and then returns to the same browser/filter.
+Text dialogs may be owned by the current modal; unrelated nested modals remain
+busy. TUI archive rows now emit ACTIVATE on Enter, as native rows do.
+
+Save CSV is deferred until after input dispatch, asks for a native destination,
+exports the visible records and invokes the optional host callback with a
+borrowed UTF-8 path/CSV and exact byte length. The widget performs no file
+write and links no extraction engine. Save is hidden without a callback or
+native chooser. Errors are displayed without closing the browser. Clipboard
+unavailability also leaves the browser open. Modal bounds are at least 74 × 24
+cells, with owner/event/default-action restoration on all exits.
+
+## Hash browser
+
+`xxwidgets_hash_*` (`xxwidgets/xxwidgets_hash.h`) composes a read-only hash
+browser from existing tree, label, button and clipboard controls. The host
+supplies path, 64-bit file size and `{algorithm, value}` entries; no file I/O,
+parser, hash implementation or DataStructs is linked into the component.
+All model text is copied. Input and allocation failures preserve the preceding
+model. Up to 64 algorithms are accepted, with printable ASCII names of 1–64
+bytes and even-length hexadecimal digests of 2–512 bytes. Empty models are valid.
+
+Create inside a window at least 72 × 12 cells, forward events to
+`xxwidgets_hash_handle_event`, and destroy before the owner. `set_rect` handles
+resizing. `count`/`get_entry` expose borrowed rows; `control` returns borrowed
+child handles. The tree preserves input order and selects the first row. Copy
+selected copies only its digest; Copy all copies `algorithm: digest` lines.
+`xxwidgets_hash_export_text` supports a required-length query and short buffers.
+Clipboard failures are shown in the Status label without closing the view.
+
+`xxwidgets_hash_dialog(owner, title, path, size, entries, count)` wraps this
+same view with Close/Esc, resizing and modal owner/focus restoration. Call it
+outside input dispatch, polling or another modal. CDIE uses it after its
+cancellable hash worker returns the native digest results.
+
 ## Entropy widget
 
 `xxwidgets_entropy` follows the XEntropyWidget layout: file type and range,
@@ -1329,6 +1603,19 @@ nonzero display base is added exactly once. Format detection and memory-map
 construction belong to the caller's parser. With no region list, the widget
 shows Whole file. The map selector switches between supplied regions and the
 whole buffer. The demo includes a PNG chunk adapter; other files use Binary.
+
+`xxwidgets_entropy_set_statistics` accepts precomputed streaming analysis
+without retaining file bytes: a 64-bit range, a 256-bin histogram, total,
+up to 1024 named regions/values and up to 4096 samples. It validates finite
+entropy values, histogram totals, bounds and complete sample coverage before
+copying and installing the snapshot transactionally. Regions remain relative
+to the display base; samples are absolute. Count/Reload are disabled for
+snapshots and `set_count` returns UNAVAILABLE; install owned bytes or another
+snapshot to recompute. `xxwidgets_entropy_dialog(owner, title, &statistics)`
+wraps the same view with Close/Esc, resize handling and modal-owner restoration.
+Its minimum size is 90 × 33 cells. The modal hides Save controls; embedding
+hosts keep their existing export destination policy. CDIE uses this API for
+its cancellable streaming entropy analysis.
 
 The default block count is `clamp(size / 512, 1, 100)`, like XEntropyWidget.
 Reload accepts 1–1000 blocks. The final block includes remaining bytes; empty
@@ -1357,3 +1644,18 @@ xxwidgets_entropy_demo --native --smoke-test --file sample.png --csv entropy.csv
 ### Stored checksums and hashes
 
 Data-structure fields use the `checksum` role for stored checksums, computed hashes, and message digests. The `signature` role identifies format magic. The role describes the field; it does not report whether the value has been verified. Numeric checksums remain hexadecimal; digest arrays retain their physical bytes.
+
+## Translation
+
+Load UTF-8 GNU PO catalogs with `<xxwidgets/xxwidgets_translation.h>`. Built-in
+controls use the app-owned catalog, with English fallback. See
+[PO translations](docs/translation.md) for APIs, examples and the catalog workflow.
+
+## Directory scanning
+
+Include `<xxwidgets/xxwidgets_scan_directory.h>` for recursive directory scans
+with an application-supplied file scanner, a worker thread, progress, Stop,
+scan options and a file/detection tree on native and TUI backends. See
+[directory scanning](docs/scan-directory.md) and `xxwidgets_scan_directory_demo`.
+ScanPanel, ScanOptions and ScanResults sources now live together in `src/scan`;
+their public header paths are unchanged.

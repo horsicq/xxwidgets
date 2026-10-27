@@ -26,16 +26,16 @@ static const binary_descriptor *descriptor(xxwidgets_kind kind)
 {
     static const binary_descriptor resources = {sizeof(xx_resource_record), 3,
         {offsetof(xx_resource_record, type_name), offsetof(xx_resource_record, name), offsetof(xx_resource_record, language_name)},
-        5, {"Type", "Name", "Language", "Size", "Offset"}, {16, 24, 12, 12, 18}};
+        5, {XXW_N_("Type"), XXW_N_("Name"), XXW_N_("Language"), XXW_N_("Size"), XXW_N_("Offset")}, {16, 24, 12, 12, 18}};
     static const binary_descriptor imports = {sizeof(xx_import_record), 2,
         {offsetof(xx_import_record, library_name), offsetof(xx_import_record, name), 0},
-        5, {"Library", "Name", "Ordinal", "Address", "Kind"}, {24, 32, 12, 18, 16}};
+        5, {XXW_N_("Library"), XXW_N_("Name"), XXW_N_("Ordinal"), XXW_N_("Address"), XXW_N_("Kind")}, {24, 32, 12, 18, 16}};
     static const binary_descriptor exports = {sizeof(xx_export_record), 2,
         {offsetof(xx_export_record, name), offsetof(xx_export_record, forwarder), 0},
-        4, {"Name", "Ordinal", "Address", "Forwarder", NULL}, {32, 12, 18, 32, 0}};
+        4, {XXW_N_("Name"), XXW_N_("Ordinal"), XXW_N_("Address"), XXW_N_("Forwarder"), NULL}, {32, 12, 18, 32, 0}};
     static const binary_descriptor symbols = {sizeof(xx_symbol_record), 2,
         {offsetof(xx_symbol_record, name), offsetof(xx_symbol_record, file_name), 0},
-        5, {"Name", "Value", "Size", "Type", "Binding"}, {32, 18, 12, 12, 12}};
+        5, {XXW_N_("Name"), XXW_N_("Value"), XXW_N_("Size"), XXW_N_("Type"), XXW_N_("Binding")}, {32, 18, 12, 12, 12}};
     switch (kind) {
         case XXWIDGET_RESOURCESVIEWER: return &resources;
         case XXWIDGET_IMPORTSVIEWER: return &imports;
@@ -163,7 +163,7 @@ static const char *cell_text(xxwidgets_kind kind, const void *record, size_t col
     if (kind == XXWIDGET_EXPORTSVIEWER) {
         const xx_export_record *r = (const xx_export_record *)record;
         if (column == 0) return r->name;
-        if (column == 1) { snprintf(buffer, 64, "%" PRIu64, r->ordinal); return buffer; }
+        if (column == 1) { if (r->ordinal == UINT64_MAX) return "-"; snprintf(buffer, 64, "%" PRIu64, r->ordinal); return buffer; }
         if (column == 2) return hex_value(r->address, buffer);
         return r->forwarder;
     }
@@ -276,7 +276,7 @@ size_t xxwidgets_binaryviewer_column_count(const xxwidgets_widget *widget)
 { const binary_descriptor *d = widget ? descriptor(widget->kind) : NULL; return d ? d->columns : 0; }
 
 const char *xxwidgets_binaryviewer_column_title(const xxwidgets_widget *widget, size_t column)
-{ const binary_descriptor *d = widget ? descriptor(widget->kind) : NULL; return d && column < d->columns ? d->titles[column] : ""; }
+{ const binary_descriptor *d = widget ? descriptor(widget->kind) : NULL; return d && column < d->columns ? XXW_TR(widget->app, d->titles[column]) : ""; }
 
 const char *xxwidgets_binaryviewer_cell(const xxwidgets_widget *widget, size_t row, size_t column)
 {

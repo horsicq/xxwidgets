@@ -195,7 +195,7 @@ static xxwidgets_status dump_action(xxwidgets_widget *widget, const xxwidgets_pr
             if (!message) notice = XXWIDGETS_OUT_OF_MEMORY;
             else {
                 snprintf(message, length + 128, "Saved %s to:\n%s", description, path);
-                notice = xxwidgets_text_dialog(owner, "Dump saved", message);
+                notice = xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Dump saved"), message);
             }
         }
     } else {
@@ -215,7 +215,7 @@ static xxwidgets_status dump_action(xxwidgets_widget *widget, const xxwidgets_pr
             "and replacement choice. %s The existing output file is preserved on failure.",
             description, status == XXWIDGETS_UNAVAILABLE ? "process access or output unavailable" :
                 status == XXWIDGETS_BUSY ? "output already exists or process mappings changed" : xxwidgets_status_string(status), hint);
-        notice = xxwidgets_text_dialog(owner, "Dump failed", failure);
+        notice = xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Dump failed"), failure);
     }
     free(message);
     free(path);

@@ -49,9 +49,52 @@ xxwidgets_status xxwidgets_about_dialog_destroy(xxwidgets_about_dialog *dialog)
     if (!dialog) return XXWIDGETS_INVALID_ARGUMENT;
     if (dialog->showing) return XXWIDGETS_BUSY;
     for (i = 0; i < XXWIDGETS_ABOUT_TEXT_COUNT; ++i) free(dialog->texts[i]);
+    xxwidgets_about_dialog_clear_items(dialog);
     free(dialog->image);
     free(dialog);
     return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_about_dialog_add_item(xxwidgets_about_dialog *dialog, xxwidgets_about_item_kind kind, const char *text,
+                                                 const char *value, const char *link)
+{
+    xxwidgets_about_item item = {kind, NULL, NULL, NULL};
+    if (!dialog || (kind != XXWIDGETS_ABOUT_ITEM_SOCIAL && kind != XXWIDGETS_ABOUT_ITEM_INFO && kind != XXWIDGETS_ABOUT_ITEM_LIBRARY) ||
+        !xxwidgets_valid_utf8(text) || (value && !xxwidgets_valid_utf8(value)) || (link && !xxwidgets_valid_utf8(link)) ||
+        (kind == XXWIDGETS_ABOUT_ITEM_SOCIAL && (!text[0] || !link || !link[0])))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    if (dialog->showing) return XXWIDGETS_BUSY;
+    if (dialog->item_count == XXWIDGETS_ABOUT_ITEMS_MAX) return XXWIDGETS_BUFFER_TOO_SMALL;
+    item.text = xxwidgets_strdup(text);
+    item.value = value ? xxwidgets_strdup(value) : NULL;
+    item.link = link ? xxwidgets_strdup(link) : NULL;
+    if (!item.text || (value && !item.value) || (link && !item.link)) {
+        free(item.text);
+        free(item.value);
+        free(item.link);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
+    dialog->items[dialog->item_count++] = item;
+    return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_about_dialog_clear_items(xxwidgets_about_dialog *dialog)
+{
+    size_t i;
+    if (!dialog) return XXWIDGETS_INVALID_ARGUMENT;
+    if (dialog->showing) return XXWIDGETS_BUSY;
+    for (i = 0; i < dialog->item_count; ++i) {
+        free(dialog->items[i].text);
+        free(dialog->items[i].value);
+        free(dialog->items[i].link);
+    }
+    dialog->item_count = 0;
+    return XXWIDGETS_OK;
+}
+
+size_t xxwidgets_about_dialog_item_count(const xxwidgets_about_dialog *dialog)
+{
+    return dialog ? dialog->item_count : 0;
 }
 
 xxwidgets_status xxwidgets_about_dialog_set_text(xxwidgets_about_dialog *dialog, xxwidgets_about_text field, const char *text)
@@ -108,15 +151,34 @@ xxwidgets_status xxwidgets_about_dialog_set_image(xxwidgets_about_dialog *dialog
     return XXWIDGETS_OK;
 }
 
+/* Text-only layouts list the rich items as lines: "caption value <link>". */
+static size_t about_item_line(const xxwidgets_about_item *item, char *out)
+{
+    const char *parts[5] = {item->text, item->value ? " " : "", item->value ? item->value : "", "", ""};
+    size_t length = 0, i;
+    if (item->link && (!item->value || strcmp(item->link, item->value))) {
+        parts[3] = " ";
+        parts[4] = item->link;
+    }
+    for (i = 0; i < 5; ++i) {
+        size_t add = strlen(parts[i]);
+        if (out) memcpy(out + length, parts[i], add);
+        length += add;
+    }
+    return length;
+}
+
 static char *about_body(const xxwidgets_about_dialog *dialog)
 {
-    size_t field, length = 1, used = 0;
+    size_t field, length = 1, used = 0, i;
     char *body;
     for (field = XXWIDGETS_ABOUT_PROGRAM_NAME; field <= XXWIDGETS_ABOUT_CREDITS; ++field) {
         size_t add = strlen(dialog->texts[field]);
         if (add > SIZE_MAX - 2 || length > SIZE_MAX - add - 2) return NULL;
         length += add + 2;
     }
+    /* Items are bounded: 64 entries of copied, validated strings. */
+    for (i = 0; i < dialog->item_count; ++i) length += about_item_line(&dialog->items[i], NULL) + 2;
     body = (char *)malloc(length);
     if (!body) return NULL;
     for (field = XXWIDGETS_ABOUT_PROGRAM_NAME; field <= XXWIDGETS_ABOUT_CREDITS; ++field) {
@@ -128,6 +190,13 @@ static char *about_body(const xxwidgets_about_dialog *dialog)
         }
         memcpy(body + used, dialog->texts[field], add);
         used += add;
+    }
+    for (i = 0; i < dialog->item_count; ++i) {
+        if (used) {
+            body[used++] = '\n';
+            if (!i) body[used++] = '\n';
+        }
+        used += about_item_line(&dialog->items[i], body + used);
     }
     body[used] = 0;
     return body;
@@ -159,7 +228,7 @@ static xxwidgets_status about_text_content(xxwidgets_widget *window, const char 
 {
     xxwidgets_widget *list;
     xxwidgets_rect bounds = {2, 1, 68, 17};
-    xxwidgets_status status = xxwidgets_widget_create(window->app, window, XXWIDGETS_LISTBOX, "About text", bounds, &list);
+    xxwidgets_status status = xxwidgets_widget_create(window->app, window, XXWIDGETS_LISTBOX, XXW_TR(window->app, "About text"), bounds, &list);
     const char *cursor = body;
     if (status != XXWIDGETS_OK) return status;
     while (*cursor) {
@@ -199,18 +268,20 @@ static xxwidgets_status show_content(xxwidgets_about_dialog *dialog, xxwidgets_w
     xxwidgets_event_fn previous_event;
     void *previous_user;
     xxwidgets_widget *previous_focus = NULL, *widget;
+    xxwidgets_widget *previous_modal, *previous_default;
     xxwidgets_rect bounds;
     about_state state = {0};
     xxwidgets_status status, cleanup;
     char *body;
-    int owner_enabled, owner_disabled = 0, attached = 0;
+    int owner_enabled, owner_disabled = 0, attached = 0, rich;
     if (!dialog || !owner || owner->kind != XXWIDGETS_WINDOW) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (dialog->showing || app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
+    if (dialog->showing || app->dispatch_depth || app->polling || app->syncing || (app->modal_window && !(copyable && app->modal_window == owner)) || app->quit) return XXWIDGETS_BUSY;
     body = about_body(dialog);
     if (!body) return XXWIDGETS_OUT_OF_MEMORY;
     state.body = body;
     dialog->showing = 1;
+    previous_modal = app->modal_window; previous_default = app->modal_default;
     previous_event = app->on_event;
     previous_user = app->user_data;
     owner_enabled = owner->enabled;
@@ -223,8 +294,9 @@ static xxwidgets_status show_content(xxwidgets_about_dialog *dialog, xxwidgets_w
     app->user_data = &state;
     bounds.x = owner->rect.x < 32765 ? owner->rect.x + 2 : owner->rect.x;
     bounds.y = owner->rect.y < 32765 ? owner->rect.y + 2 : owner->rect.y;
-    bounds.width = 72;
-    bounds.height = 22;
+    rich = !copyable && dialog->item_count && app->ops->about_rich_content;
+    bounds.width = rich ? XXWIDGETS_ABOUT_RICH_WIDTH : 72;
+    bounds.height = rich ? XXWIDGETS_ABOUT_RICH_HEIGHT : 22;
     if (app->backend == XXWIDGETS_BACKEND_TUI) {
         bounds.x = owner->rect.x + (owner->rect.width > 72 ? (owner->rect.width - 72) / 2 : 0);
         bounds.y = owner->rect.y;
@@ -234,14 +306,18 @@ static xxwidgets_status show_content(xxwidgets_about_dialog *dialog, xxwidgets_w
     app->modal_window = state.window;
     status = xxwidgets_widget_set_visible(state.window, 0);
     if (status != XXWIDGETS_OK) goto finish;
-    if (app->ops->about_content) {
+    if (rich) {
+        ++app->syncing;
+        status = app->ops->about_rich_content(state.window, dialog);
+        --app->syncing;
+    } else if (app->ops->about_content) {
         ++app->syncing;
         status = app->ops->about_content(state.window, dialog, body);
         --app->syncing;
     } else status = about_text_content(state.window, body);
     if (status != XXWIDGETS_OK) goto finish;
-    bounds.x = 58;
-    bounds.y = 19;
+    bounds.x = rich ? XXWIDGETS_ABOUT_RICH_WIDTH - 14 : 58;
+    bounds.y = rich ? XXWIDGETS_ABOUT_RICH_HEIGHT - 3 : 19;
     bounds.width = 12;
     bounds.height = 2;
     status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, dialog->texts[XXWIDGETS_ABOUT_CLOSE_LABEL], bounds, &state.close);
@@ -250,7 +326,7 @@ static xxwidgets_status show_content(xxwidgets_about_dialog *dialog, xxwidgets_w
     if (copyable && app->ops->copy_text) {
         bounds.x = 2;
         bounds.width = 18;
-        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Copy all", bounds, &state.copy);
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Copy all"), bounds, &state.copy);
         if (status != XXWIDGETS_OK) goto finish;
     }
     status = xxwidgets_widget_set_enabled(owner, 0);
@@ -277,8 +353,8 @@ finish:
         cleanup = xxwidgets_widget_destroy(state.window);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    app->modal_window = NULL;
-    app->modal_default = NULL;
+    app->modal_window = previous_modal;
+    app->modal_default = previous_default;
     app->on_event = previous_event;
     app->user_data = previous_user;
     dialog->showing = 0;

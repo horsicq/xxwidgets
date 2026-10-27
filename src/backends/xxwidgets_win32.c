@@ -82,6 +82,7 @@ typedef struct xxwidgets_win32_widget {
     int browser_context_key;
     HBITMAP about_bitmap;
     HWND about_edit;
+    HFONT about_bold_font, about_link_font;
     HFONT preview_font;
     HFONT hex_font;
     HFONT hex_regular_font, hex_bold_font;
@@ -1442,6 +1443,26 @@ static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
         xxwidgets_hexview_activate_column(w, (unsigned)hit.iSubItem);
     return offset;
 }
+/* Per-node scan colors. Pure painting, so it also runs while nodes are being
+ * synchronized: rebuilding the tree paints it then, and no later pass does. */
+static LRESULT win32_tree_draw(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
+{
+    if (draw->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+    if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
+        xxwidgets_tree_color colors = xxwidgets_treeview_node_color(control, (size_t)draw->nmcd.lItemlParam);
+        COLORREF window = GetSysColor(COLOR_WINDOW), text = GetSysColor(COLOR_WINDOWTEXT);
+        int dark = GetRValue(window) + GetGValue(window) + GetBValue(window) <
+            GetRValue(text) + GetGValue(text) + GetBValue(text);
+        uint32_t color = dark ? colors.dark_foreground : colors.foreground;
+        uint32_t background = dark ? colors.dark_background : colors.background;
+        if (color != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
+            draw->clrText = RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
+        if (background != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
+            draw->clrTextBk = RGB((background >> 16) & 255, (background >> 8) & 255, background & 255);
+    }
+    return CDRF_DODEFAULT;
+}
+
 static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)GetWindowLongPtrW(handle, GWLP_USERDATA);
@@ -1495,28 +1516,15 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
             }
             break;
         case WM_NOTIFY:
+            if (lp && ((NMHDR *)lp)->code == NM_CUSTOMDRAW) {
+                xxwidgets_widget *control = win32_find_widget(widget->app, ((NMHDR *)lp)->hwndFrom);
+                if (control && control->kind == XXWIDGETS_TREEVIEW) return win32_tree_draw(control, (NMTVCUSTOMDRAW *)lp);
+            }
             if (lp && !widget->app->syncing) {
                 NMHDR *notification = (NMHDR *)lp;
                 xxwidgets_widget *control = win32_find_widget(widget->app, notification->hwndFrom);
                 if (control && control->kind == XXWIDGETS_HEXVIEW && notification->code == NM_CUSTOMDRAW)
                     return win32_hex_draw(control, (NMLVCUSTOMDRAW *)lp);
-                if (control && control->kind == XXWIDGETS_TREEVIEW && notification->code == NM_CUSTOMDRAW) {
-                    NMTVCUSTOMDRAW *draw = (NMTVCUSTOMDRAW *)lp;
-                    if (draw->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
-                    if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
-                        xxwidgets_tree_color colors = xxwidgets_treeview_node_color(control, (size_t)draw->nmcd.lItemlParam);
-                        COLORREF window = GetSysColor(COLOR_WINDOW), text = GetSysColor(COLOR_WINDOWTEXT);
-                        int dark = GetRValue(window) + GetGValue(window) + GetBValue(window) <
-                            GetRValue(text) + GetGValue(text) + GetBValue(text);
-                        uint32_t color = dark ? colors.dark_foreground : colors.foreground;
-                        uint32_t background = dark ? colors.dark_background : colors.background;
-                        if (color != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
-                            draw->clrText = RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
-                        if (background != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
-                            draw->clrTextBk = RGB((background >> 16) & 255, (background >> 8) & 255, background & 255);
-                        return CDRF_DODEFAULT;
-                    }
-                }
                 if (control && control->parent == widget &&
                     (xxwidgets_tabular_kind(control)) && control->enabled &&
                     notification->code == LVN_ITEMCHANGED) {
@@ -2542,6 +2550,7 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         case XXWIDGET_SYMBOLSVIEWER:
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_MEMORY_MAP:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -2635,6 +2644,8 @@ static void win32_destroy(xxwidgets_widget *widget)
     widget->native = NULL;
     if (native && native->browser_images) ImageList_Destroy(native->browser_images);
     if (native && native->about_bitmap) DeleteObject(native->about_bitmap);
+    if (native && native->about_bold_font) DeleteObject(native->about_bold_font);
+    if (native && native->about_link_font) DeleteObject(native->about_link_font);
     if (native && native->preview_font) DeleteObject(native->preview_font);
     if (native && native->die_font) DeleteObject(native->die_font);
     if (native && native->hex_font) DeleteObject(native->hex_font);
@@ -3773,6 +3784,7 @@ static xxwidgets_status win32_read_value(xxwidgets_widget *widget)
         case XXWIDGET_SYMBOLSVIEWER:
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_MEMORY_MAP:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -4166,6 +4178,450 @@ failure:
     return status;
 }
 
+/* Rich About, in the Detect It Easy layout: the image on the left, Info and
+ * Libraries tabs on the right. The tab control and its pages live in one
+ * container of the private "about" class, so tab changes, link clicks and the
+ * page buttons never reach the xxwidgets window procedure. */
+#define WIN32_ABOUT_CLASS L"xxwidgets_about_rich"
+#define WIN32_ABOUT_TAB 0x7002
+#define WIN32_ABOUT_INFO_PAGE 0x7100
+#define WIN32_ABOUT_LIBRARY_PAGE 0x7200
+#define WIN32_ABOUT_THANKS 0x7301
+#define WIN32_ABOUT_DATE 0x7302
+#define WIN32_ABOUT_UPDATES 0x7303
+#define WIN32_ABOUT_FOLLOW 0x7304
+#define WIN32_ABOUT_SOCIAL 0x7310
+
+typedef struct win32_about_view {
+    xxwidgets_widget *window;            /* The About window, for clipboard copies. */
+    const xxwidgets_about_dialog *about; /* Borrowed: the dialog is showing, so unchanged. */
+    xxwidgets_about_item_kind kind;      /* Lines a page draws. */
+    int container, lines_top, lines_bottom;
+    HWND pages[2];
+    HFONT bold, regular, link;
+    RECT links[XXWIDGETS_ABOUT_ITEMS_MAX];
+    size_t link_items[XXWIDGETS_ABOUT_ITEMS_MAX], link_count;
+} win32_about_view;
+
+static void win32_about_activate(win32_about_view *view, HWND owner, const char *link)
+{
+    wchar_t *wide;
+    if (!link || !link[0]) return;
+    if (!strncmp(link, "http://", 7) || !strncmp(link, "https://", 8) || !strncmp(link, "mailto:", 7)) {
+        if (win32_wide(link, &wide) == XXWIDGETS_OK) {
+            ShellExecuteW(owner, L"open", wide, NULL, NULL, SW_SHOWNORMAL);
+            free(wide);
+        }
+        return;
+    }
+    /* Addresses that are not URLs (PayPal, BTC) are copied, as in DIE. */
+    if (win32_copy_text(view->window, link) == XXWIDGETS_OK &&
+        win32_wide(XXW_TR(view->window->app, "The value copied to clipboard"), &wide) == XXWIDGETS_OK) {
+        wchar_t *title = NULL;
+        if (win32_wide(view->about->texts[XXWIDGETS_ABOUT_TITLE], &title) == XXWIDGETS_OK) {
+            MessageBoxW(owner, wide, title, MB_OK | MB_ICONINFORMATION);
+            free(title);
+        }
+        free(wide);
+    }
+}
+
+static int win32_about_text_width(HDC dc, HFONT font, const char *text)
+{
+    wchar_t *wide;
+    SIZE size = {0, 0};
+    HGDIOBJ previous;
+    if (!text || !text[0] || win32_wide(text, &wide) != XXWIDGETS_OK) return 0;
+    previous = SelectObject(dc, font);
+    GetTextExtentPoint32W(dc, wide, (int)wcslen(wide), &size);
+    SelectObject(dc, previous);
+    free(wide);
+    return size.cx;
+}
+
+static void win32_about_text_out(HDC dc, HFONT font, COLORREF color, int x, int y, const char *text)
+{
+    wchar_t *wide;
+    HGDIOBJ previous;
+    if (!text || !text[0] || win32_wide(text, &wide) != XXWIDGETS_OK) return;
+    previous = SelectObject(dc, font);
+    SetTextColor(dc, color);
+    TextOutW(dc, x, y, wide, (int)wcslen(wide));
+    SelectObject(dc, previous);
+    free(wide);
+}
+
+/* Centered bold captions, each followed by its value, a link when one is set. */
+static void win32_about_paint_lines(win32_about_view *view, HWND handle, HDC dc)
+{
+    RECT client;
+    TEXTMETRICW metrics;
+    HGDIOBJ previous;
+    size_t i, count = 0, row = 0;
+    int line, top, space;
+    GetClientRect(handle, &client);
+    FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
+    SetBkMode(dc, TRANSPARENT);
+    previous = SelectObject(dc, view->bold);
+    GetTextMetricsW(dc, &metrics);
+    space = win32_about_text_width(dc, view->bold, " ");
+    SelectObject(dc, previous);
+    for (i = 0; i < view->about->item_count; ++i) count += view->about->items[i].kind == view->kind;
+    view->link_count = 0;
+    if (!count) return;
+    line = (view->lines_bottom - view->lines_top) / (int)count;
+    if (line > metrics.tmHeight * 2) line = metrics.tmHeight * 2;
+    if (line < metrics.tmHeight) line = metrics.tmHeight;
+    top = view->lines_top + (view->lines_bottom - view->lines_top - line * (int)count) / 2;
+    if (top < view->lines_top) top = view->lines_top;
+    for (i = 0; i < view->about->item_count; ++i) {
+        const xxwidgets_about_item *item = &view->about->items[i];
+        int caption, value, x, y;
+        if (item->kind != view->kind) continue;
+        caption = win32_about_text_width(dc, view->bold, item->text);
+        value = item->value && item->value[0] ? win32_about_text_width(dc, item->link ? view->link : view->regular, item->value) : 0;
+        x = (client.right - caption - (value ? space + value : 0)) / 2;
+        if (x < 2) x = 2;
+        y = top + (int)row++ * line + (line - metrics.tmHeight) / 2;
+        win32_about_text_out(dc, view->bold, GetSysColor(COLOR_WINDOWTEXT), x, y, item->text);
+        if (!value) continue;
+        x += caption + (caption ? space : 0);
+        win32_about_text_out(dc, item->link ? view->link : view->regular, item->link ? GetSysColor(COLOR_HOTLIGHT) : GetSysColor(COLOR_WINDOWTEXT), x, y,
+                             item->value);
+        if (item->link && view->link_count < XXWIDGETS_ABOUT_ITEMS_MAX) {
+            SetRect(&view->links[view->link_count], x, y, x + value, y + metrics.tmHeight);
+            view->link_items[view->link_count++] = i;
+        }
+    }
+}
+
+static int win32_about_link_at(const win32_about_view *view, LPARAM position)
+{
+    POINT point = {(short)LOWORD(position), (short)HIWORD(position)};
+    size_t i;
+    for (i = 0; i < view->link_count; ++i)
+        if (PtInRect(&view->links[i], point)) return (int)i;
+    return -1;
+}
+
+static void win32_about_show_page(win32_about_view *container, int page)
+{
+    ShowWindow(container->pages[0], page == 0 ? SW_SHOW : SW_HIDE);
+    if (container->pages[1]) ShowWindow(container->pages[1], page == 1 ? SW_SHOW : SW_HIDE);
+}
+
+static LRESULT CALLBACK win32_about_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp)
+{
+    win32_about_view *view = (win32_about_view *)GetWindowLongPtrW(handle, GWLP_USERDATA);
+    if (message == WM_NCCREATE) {
+        view = (win32_about_view *)((CREATESTRUCTW *)lp)->lpCreateParams;
+        SetWindowLongPtrW(handle, GWLP_USERDATA, (LONG_PTR)view);
+    }
+    if (!view) return DefWindowProcW(handle, message, wp, lp);
+    switch (message) {
+        case WM_ERASEBKGND: return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT paint;
+            HDC dc = BeginPaint(handle, &paint);
+            if (view->container) FillRect(dc, &paint.rcPaint, GetSysColorBrush(COLOR_BTNFACE));
+            else win32_about_paint_lines(view, handle, dc);
+            EndPaint(handle, &paint);
+            return 0;
+        }
+        case WM_PRINTCLIENT:
+            if (view->container) {
+                RECT client;
+                GetClientRect(handle, &client);
+                FillRect((HDC)wp, &client, GetSysColorBrush(COLOR_BTNFACE));
+            } else win32_about_paint_lines(view, handle, (HDC)wp);
+            return 0;
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLORBTN:
+            if (view->container) break;
+            SetBkColor((HDC)wp, GetSysColor(COLOR_WINDOW));
+            SetTextColor((HDC)wp, GetSysColor(COLOR_WINDOWTEXT));
+            return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+        case WM_NOTIFY:
+            if (view->container && ((NMHDR *)lp)->idFrom == WIN32_ABOUT_TAB && ((NMHDR *)lp)->code == TCN_SELCHANGE) {
+                win32_about_show_page(view, TabCtrl_GetCurSel(((NMHDR *)lp)->hwndFrom));
+                return 0;
+            }
+            break;
+        case WM_COMMAND:
+            if (!view->container && HIWORD(wp) == BN_CLICKED) {
+                int id = LOWORD(wp);
+                const xxwidgets_about_dialog *about = view->about;
+                if (id == WIN32_ABOUT_THANKS) win32_about_activate(view, handle, about->texts[XXWIDGETS_ABOUT_THANKS_URL]);
+                else if (id == WIN32_ABOUT_UPDATES) win32_about_activate(view, handle, about->texts[XXWIDGETS_ABOUT_UPDATES_URL]);
+                else if (id >= WIN32_ABOUT_SOCIAL && (size_t)(id - WIN32_ABOUT_SOCIAL) < about->item_count)
+                    win32_about_activate(view, handle, about->items[id - WIN32_ABOUT_SOCIAL].link);
+                return 0;
+            }
+            break;
+        case WM_SETCURSOR:
+            if (!view->container && LOWORD(lp) == HTCLIENT) {
+                POINT point;
+                GetCursorPos(&point);
+                ScreenToClient(handle, &point);
+                if (win32_about_link_at(view, MAKELPARAM(point.x, point.y)) >= 0) {
+                    SetCursor(LoadCursorW(NULL, MAKEINTRESOURCEW(32649)));
+                    return TRUE;
+                }
+            }
+            break;
+        case WM_LBUTTONUP:
+            if (!view->container) {
+                int link = win32_about_link_at(view, lp);
+                if (link >= 0) win32_about_activate(view, handle, view->about->items[view->link_items[link]].link);
+                return 0;
+            }
+            break;
+        case WM_NCDESTROY:
+            SetWindowLongPtrW(handle, GWLP_USERDATA, 0);
+            free(view);
+            break;
+        default: break;
+    }
+    return DefWindowProcW(handle, message, wp, lp);
+}
+
+static HWND win32_about_child(HWND parent, const wchar_t *class_name, const char *text, DWORD style, int x, int y, int width, int height, int id, HFONT font)
+{
+    wchar_t *wide = NULL;
+    HWND child;
+    if (text && win32_wide(text, &wide) != XXWIDGETS_OK) return NULL;
+    child = CreateWindowExW(0, class_name, wide ? wide : L"", WS_CHILD | WS_VISIBLE | style, x, y, width, height, parent, (HMENU)(INT_PTR)id,
+                            GetModuleHandleW(NULL), NULL);
+    free(wide);
+    if (child && font) SendMessageW(child, WM_SETFONT, (WPARAM)font, FALSE);
+    return child;
+}
+
+static HWND win32_about_view_window(HWND parent, win32_about_view *template_view, int container, xxwidgets_about_item_kind kind, RECT bounds, int id)
+{
+    win32_about_view *view = (win32_about_view *)calloc(1, sizeof(*view));
+    HWND handle;
+    if (!view) return NULL;
+    *view = *template_view;
+    view->container = container;
+    view->kind = kind;
+    view->link_count = 0;
+    view->pages[0] = view->pages[1] = NULL;
+    view->lines_top = 0;
+    view->lines_bottom = bounds.bottom - bounds.top;
+    handle = CreateWindowExW(WS_EX_CONTROLPARENT, WIN32_ABOUT_CLASS, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+                             bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top, parent, (HMENU)(INT_PTR)id,
+                             GetModuleHandleW(NULL), view);
+    if (!handle) free(view);
+    return handle;
+}
+
+/* The image scaled to the content height, smoothly, over the dialog color. */
+static HBITMAP win32_about_scaled_image(const xxwidgets_about_dialog *about, int width, int height)
+{
+    BITMAPINFO info;
+    unsigned char *source_pixels, *pixels;
+    COLORREF background = GetSysColor(COLOR_BTNFACE);
+    HBITMAP source, target;
+    HDC screen = GetDC(NULL), from = CreateCompatibleDC(screen), to = CreateCompatibleDC(screen);
+    unsigned int x, y;
+    HGDIOBJ old_from = NULL, old_to = NULL;
+    memset(&info, 0, sizeof(info));
+    info.bmiHeader.biSize = sizeof(info.bmiHeader);
+    info.bmiHeader.biWidth = (LONG)about->image_width;
+    info.bmiHeader.biHeight = -(LONG)about->image_height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    source = CreateDIBSection(screen, &info, DIB_RGB_COLORS, (void **)&source_pixels, NULL, 0);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    target = CreateDIBSection(screen, &info, DIB_RGB_COLORS, (void **)&pixels, NULL, 0);
+    if (source && target && from && to) {
+        for (y = 0; y < about->image_height; ++y)
+            for (x = 0; x < about->image_width; ++x) {
+                const unsigned char *src = about->image + ((size_t)y * about->image_width + x) * 4;
+                unsigned char *dst = source_pixels + ((size_t)y * about->image_width + x) * 4;
+                unsigned int alpha = src[3];
+                dst[0] = (unsigned char)((src[2] * alpha + GetBValue(background) * (255 - alpha) + 127) / 255);
+                dst[1] = (unsigned char)((src[1] * alpha + GetGValue(background) * (255 - alpha) + 127) / 255);
+                dst[2] = (unsigned char)((src[0] * alpha + GetRValue(background) * (255 - alpha) + 127) / 255);
+                dst[3] = 0;
+            }
+        old_from = SelectObject(from, source);
+        old_to = SelectObject(to, target);
+        SetStretchBltMode(to, HALFTONE);
+        SetBrushOrgEx(to, 0, 0, NULL);
+        StretchBlt(to, 0, 0, width, height, from, 0, 0, (int)about->image_width, (int)about->image_height, SRCCOPY);
+        GdiFlush();
+        for (y = 0; y < (unsigned int)height; ++y)
+            for (x = 0; x < (unsigned int)width; ++x) pixels[((size_t)y * (unsigned int)width + x) * 4 + 3] = 0;
+        SelectObject(from, old_from);
+        SelectObject(to, old_to);
+    } else if (target) {
+        DeleteObject(target);
+        target = NULL;
+    }
+    if (source) DeleteObject(source);
+    if (from) DeleteDC(from);
+    if (to) DeleteDC(to);
+    ReleaseDC(NULL, screen);
+    return target;
+}
+
+static xxwidgets_status win32_about_rich_content(xxwidgets_widget *window, const xxwidgets_about_dialog *about)
+{
+    xxwidgets_win32_app *app = (xxwidgets_win32_app *)window->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)window->platform;
+    HWND handle = (HWND)window->native, tab, container, info, libraries;
+    HFONT font = app->role_fonts[XXWIDGETS_FONT_CONTROLS];
+    INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_TAB_CLASSES};
+    WNDCLASSEXW about_class;
+    win32_about_view base;
+    LOGFONTW description;
+    TCITEMW tab_item;
+    RECT client, page;
+    size_t i, socials = 0, libraries_count = 0;
+    int margin = app->cell_width + 2, button = app->cell_height + 6, content_bottom, left, image_width = 0, widest = 0;
+    LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
+    SetWindowLongPtrW(handle, GWL_STYLE, style & ~(WS_THICKFRAME | WS_MAXIMIZEBOX));
+    if (!SetWindowPos(handle, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER) || !GetClientRect(handle, &client))
+        return XXWIDGETS_PLATFORM_ERROR;
+    InitCommonControlsEx(&controls);
+    memset(&about_class, 0, sizeof(about_class));
+    about_class.cbSize = sizeof(about_class);
+    about_class.lpfnWndProc = win32_about_proc;
+    about_class.hInstance = GetModuleHandleW(NULL);
+    about_class.hCursor = LoadCursorW(NULL, MAKEINTRESOURCEW(32512));
+    about_class.lpszClassName = WIN32_ABOUT_CLASS;
+    if (!RegisterClassExW(&about_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return XXWIDGETS_PLATFORM_ERROR;
+    if (!GetObjectW(font, sizeof(description), &description)) return XXWIDGETS_PLATFORM_ERROR;
+    /* Captions are bold; values regular, and underlined when they are links. */
+    description.lfUnderline = TRUE;
+    native->about_link_font = CreateFontIndirectW(&description);
+    description.lfUnderline = FALSE;
+    description.lfWeight = FW_BOLD;
+    native->about_bold_font = CreateFontIndirectW(&description);
+    if (!native->about_bold_font || !native->about_link_font) return XXWIDGETS_PLATFORM_ERROR;
+    memset(&base, 0, sizeof(base));
+    base.window = window;
+    base.about = about;
+    base.bold = native->about_bold_font;
+    base.regular = font;
+    base.link = native->about_link_font;
+    {
+        HDC dc = GetDC(handle);
+        int space = win32_about_text_width(dc, base.bold, " ");
+        for (i = 0; i < about->item_count; ++i) {
+            const xxwidgets_about_item *item = &about->items[i];
+            int width;
+            socials += item->kind == XXWIDGETS_ABOUT_ITEM_SOCIAL;
+            libraries_count += item->kind == XXWIDGETS_ABOUT_ITEM_LIBRARY;
+            if (item->kind == XXWIDGETS_ABOUT_ITEM_SOCIAL) continue;
+            width = win32_about_text_width(dc, base.bold, item->text);
+            if (item->value && item->value[0]) width += space + win32_about_text_width(dc, item->link ? base.link : base.regular, item->value);
+            if (widest < width) widest = width;
+        }
+        ReleaseDC(handle, dc);
+    }
+    /* Content ends above the Close button row placed by the caller. */
+    content_bottom = (XXWIDGETS_ABOUT_RICH_HEIGHT - 3) * app->cell_height - margin;
+    left = margin;
+    if (about->image) {
+        int height = content_bottom - margin;
+        /* The tabs keep room for the widest line (with page and tab borders);
+         * the picture shrinks to make it. */
+        int available = client.right - 3 * margin - (widest + 4 * margin);
+        HWND picture;
+        image_width = (int)((int64_t)height * about->image_width / about->image_height);
+        if (available < client.right / 4) available = client.right / 4;
+        if (image_width > available) {
+            image_width = available;
+            height = (int)((int64_t)image_width * about->image_height / about->image_width);
+        }
+        native->about_bitmap = win32_about_scaled_image(about, image_width, height);
+        if (!native->about_bitmap) return XXWIDGETS_PLATFORM_ERROR;
+        picture = CreateWindowExW(0, L"STATIC", L"About image", WS_CHILD | WS_VISIBLE | SS_BITMAP, margin, margin, image_width, height, handle,
+                                  (HMENU)(INT_PTR)0x7001, GetModuleHandleW(NULL), NULL);
+        if (!picture) return XXWIDGETS_PLATFORM_ERROR;
+        SendMessageW(picture, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)native->about_bitmap);
+        left = 2 * margin + image_width;
+    }
+    SetRect(&page, left, margin, client.right - margin, content_bottom);
+    container = win32_about_view_window(handle, &base, 1, XXWIDGETS_ABOUT_ITEM_INFO, page, 0x7000);
+    if (!container) return XXWIDGETS_PLATFORM_ERROR;
+    tab = win32_about_child(container, WC_TABCONTROLW, NULL, WS_CLIPSIBLINGS | WS_TABSTOP, 0, 0, page.right - page.left, page.bottom - page.top,
+                            WIN32_ABOUT_TAB, font);
+    if (!tab) return XXWIDGETS_PLATFORM_ERROR;
+    memset(&tab_item, 0, sizeof(tab_item));
+    tab_item.mask = TCIF_TEXT;
+    for (i = 0; i < (libraries_count ? 2u : 1u); ++i) {
+        wchar_t *label;
+        if (win32_wide(XXW_TR(window->app, i ? "Libraries" : "Info"), &label) != XXWIDGETS_OK) return XXWIDGETS_OUT_OF_MEMORY;
+        tab_item.pszText = label;
+        SendMessageW(tab, TCM_INSERTITEMW, (WPARAM)i, (LPARAM)&tab_item);
+        free(label);
+    }
+    SetRect(&page, 0, 0, page.right - page.left, page.bottom - page.top);
+    TabCtrl_AdjustRect(tab, FALSE, &page);
+    info = win32_about_view_window(container, &base, 0, XXWIDGETS_ABOUT_ITEM_INFO, page, WIN32_ABOUT_INFO_PAGE);
+    libraries = libraries_count ? win32_about_view_window(container, &base, 0, XXWIDGETS_ABOUT_ITEM_LIBRARY, page, WIN32_ABOUT_LIBRARY_PAGE) : NULL;
+    if (!info || (libraries_count && !libraries)) return XXWIDGETS_PLATFORM_ERROR;
+    /* Children stack in creation order, first on top: keep the pages above the tab body. */
+    SetWindowPos(tab, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    {
+        win32_about_view *container_view = (win32_about_view *)GetWindowLongPtrW(container, GWLP_USERDATA);
+        win32_about_view *info_view = (win32_about_view *)GetWindowLongPtrW(info, GWLP_USERDATA);
+        int width = page.right - page.left, height = page.bottom - page.top, top = margin, bottom = height - margin;
+        container_view->pages[0] = info;
+        container_view->pages[1] = libraries;
+        if (socials) {
+            int gap = margin, label = app->cell_height, x, count = 0, button_width;
+            HWND group = win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Follow me"), BS_GROUPBOX, margin, top, width - 2 * margin,
+                                           label + button + margin, WIN32_ABOUT_FOLLOW, font);
+            if (!group) return XXWIDGETS_PLATFORM_ERROR;
+            button_width = (width - 4 * margin - (int)(socials - 1) * gap) / (int)socials;
+            x = 2 * margin;
+            for (i = 0; i < about->item_count; ++i) {
+                if (about->items[i].kind != XXWIDGETS_ABOUT_ITEM_SOCIAL) continue;
+                if (!win32_about_child(info, L"BUTTON", about->items[i].text, WS_TABSTOP | BS_PUSHBUTTON, x + count * (button_width + gap),
+                                       top + label, button_width, button, WIN32_ABOUT_SOCIAL + (int)i, font))
+                    return XXWIDGETS_PLATFORM_ERROR;
+                ++count;
+            }
+            top += label + button + 2 * margin;
+        }
+        if (about->texts[XXWIDGETS_ABOUT_THANKS_URL][0] || about->texts[XXWIDGETS_ABOUT_UPDATES_URL][0] || about->texts[XXWIDGETS_ABOUT_BUILD_DATE][0]) {
+            int y = bottom - button, thanks = 0, updates = 0;
+            HDC dc = GetDC(info);
+            int thanks_width = win32_about_text_width(dc, font, XXW_TR(window->app, "Thanks")) + 4 * margin;
+            int updates_width = win32_about_text_width(dc, font, XXW_TR(window->app, "Check updates")) + 2 * margin;
+            ReleaseDC(info, dc);
+            if (about->texts[XXWIDGETS_ABOUT_THANKS_URL][0]) {
+                if (!win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Thanks"), WS_TABSTOP | BS_PUSHBUTTON, margin, y, thanks_width, button,
+                                       WIN32_ABOUT_THANKS, font))
+                    return XXWIDGETS_PLATFORM_ERROR;
+                thanks = thanks_width + margin;
+            }
+            if (about->texts[XXWIDGETS_ABOUT_UPDATES_URL][0]) {
+                if (!win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Check updates"), WS_TABSTOP | BS_PUSHBUTTON,
+                                       width - margin - updates_width, y, updates_width, button, WIN32_ABOUT_UPDATES, font))
+                    return XXWIDGETS_PLATFORM_ERROR;
+                updates = updates_width + margin;
+            }
+            if (about->texts[XXWIDGETS_ABOUT_BUILD_DATE][0] &&
+                !win32_about_child(info, L"STATIC", about->texts[XXWIDGETS_ABOUT_BUILD_DATE], SS_RIGHT | SS_CENTERIMAGE, margin + thanks, y,
+                                   width - 2 * margin - thanks - updates, button, WIN32_ABOUT_DATE, font))
+                return XXWIDGETS_PLATFORM_ERROR;
+            bottom = y - margin;
+        }
+        info_view->lines_top = top;
+        info_view->lines_bottom = bottom;
+        if (libraries) ShowWindow(libraries, SW_HIDE);
+    }
+    return XXWIDGETS_OK;
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_init,
                                                     win32_shutdown,
@@ -4187,4 +4643,5 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_choose_file,
                                                     win32_has_focus,
                                                     win32_accept_file_drops,
-                                                    win32_hexview_page_rows, win32_paste_text, win32_hexview_font, win32_window_menu};
+                                                    win32_hexview_page_rows, win32_paste_text, win32_hexview_font, win32_window_menu,
+                                                    win32_about_rich_content};

@@ -103,8 +103,8 @@ xxwidgets_status xxwidgets_debugger_create(xxwidgets_widget *owner, xxwidgets_re
         XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_SPLITTER, XXWIDGETS_SPLITTER
     };
     static const char *const titles[XXWIDGETS_DEBUGGER_CONTROL_COUNT] = {
-        "Disassembly", "Registers", "Hex", "Stack", "Disassembly", "Registers", "Hex", "Stack",
-        "Resize left and right panes", "Resize upper and lower panes"
+        XXW_N_("Disassembly"), XXW_N_("Registers"), XXW_N_("Hex"), XXW_N_("Stack"), XXW_N_("Disassembly"), XXW_N_("Registers"), XXW_N_("Hex"), XXW_N_("Stack"),
+        XXW_N_("Resize left and right panes"), XXW_N_("Resize upper and lower panes")
     };
     xxwidgets_debugger *view;
     xxwidgets_status status;
@@ -120,7 +120,7 @@ xxwidgets_status xxwidgets_debugger_create(xxwidgets_widget *owner, xxwidgets_re
     view->left = 65; view->top = 60; view->visible = 1;
     for (i = 0; i < 4; ++i) view->panels[i] = 1;
     for (i = 0; i < XXWIDGETS_DEBUGGER_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], titles[i],
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, titles[i]),
             (xxwidgets_rect){bounds.x, bounds.y, 1, 1}, &view->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
         if (i < 4) view->defaults[i] = view->controls[i];
@@ -306,17 +306,19 @@ xxwidgets_status xxwidgets_debugger_set_memory(xxwidgets_debugger *view, uint64_
 
 xxwidgets_status xxwidgets_debugger_set_pane_status(xxwidgets_debugger *view, xxwidgets_debugger_control_id pane, const char *message)
 {
-    static const char *const names[4] = {"Disassembly", "Registers", "Hex", "Stack"};
+    static const char *const names[4] = {XXW_N_("Disassembly"), XXW_N_("Registers"), XXW_N_("Hex"), XXW_N_("Stack")};
     size_t a, b;
     char *caption;
+    const char *name;
     xxwidgets_status status;
     if (!view || !pane_id(pane) || (message && !xxwidgets_valid_utf8(message))) return XXWIDGETS_INVALID_ARGUMENT;
-    if (!message || !*message) return xxwidgets_widget_set_text(view->controls[pane + 4], names[pane]);
-    a = strlen(names[pane]); b = strlen(message);
+    name = XXW_TR(view->owner->app, names[pane]);
+    if (!message || !*message) return xxwidgets_widget_set_text(view->controls[pane + 4], name);
+    a = strlen(name); b = strlen(message);
     if (b > SIZE_MAX - a - 5) return XXWIDGETS_INVALID_ARGUMENT;
     caption = malloc(a + b + 5);
     if (!caption) return XXWIDGETS_OUT_OF_MEMORY;
-    snprintf(caption, a + b + 5, "%s - %s", names[pane], message);
+    snprintf(caption, a + b + 5, "%s - %s", name, message);
     status = xxwidgets_widget_set_text(view->controls[pane + 4], caption);
     free(caption);
     return status;

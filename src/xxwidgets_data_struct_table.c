@@ -417,16 +417,16 @@ const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_
 {
     if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_title(widget, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_title(widget, column);
-    static const char *scan_titles[4] = {"Type", "Name", "Version", "Info"};
-    static const char *data_titles[DATA_STRUCT_COLUMNS] = {"Name", "Type", "Relative offset", "File offset", "Size", "Role", "Raw", "Value", "Comment"};
+    static const char *scan_titles[4] = {XXW_N_("Type"), XXW_N_("Name"), XXW_N_("Version"), XXW_N_("Info")};
+    static const char *data_titles[DATA_STRUCT_COLUMNS] = {XXW_N_("Name"), XXW_N_("Type"), XXW_N_("Relative offset"), XXW_N_("File offset"), XXW_N_("Size"), XXW_N_("Role"), XXW_N_("Raw"), XXW_N_("Value"), XXW_N_("Comment")};
     size_t count = xxwidgets_tabular_column_count(widget);
-    static const char *regions[] = {"Offset", "Size", "Entropy", "Status", "Name"};
-    static const char *bytes[] = {"Byte", "Count", "%"};
+    static const char *regions[] = {XXW_N_("Offset"), XXW_N_("Size"), XXW_N_("Entropy"), XXW_N_("Status"), XXW_N_("Name")};
+    static const char *bytes[] = {XXW_N_("Byte"), XXW_N_("Count"), "%"};
     if (column >= count) return "";
-    if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) return column == 0 ? "Name" : "PID";
+    if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) return XXW_TR(widget->app, column == 0 ? XXW_N_("Name") : XXW_N_("PID"));
     if (widget->kind == XXWIDGETS_HEXVIEW) return xxwidgets_hexview_title(widget, column);
-    if (xxwidgets_entropy_table(widget)) return widget->kind == XXWIDGETS_ENTROPY_BYTES ? bytes[column] : regions[column];
-    return widget->kind == XXWIDGETS_SCANRESULTS ? scan_titles[column] : data_titles[column];
+    if (xxwidgets_entropy_table(widget)) return XXW_TR(widget->app, widget->kind == XXWIDGETS_ENTROPY_BYTES ? bytes[column] : regions[column]);
+    return XXW_TR(widget->app, widget->kind == XXWIDGETS_SCANRESULTS ? scan_titles[column] : data_titles[column]);
 }
 
 const char *xxwidgets_tabular_cell(const xxwidgets_widget *widget, size_t row, size_t column)

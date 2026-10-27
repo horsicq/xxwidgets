@@ -66,6 +66,14 @@ XXWIDGETS_API xxwidgets_status xxwidgets_strings_copy_selection(xxwidgets_string
  * buffers are terminated. No file is written. */
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_export_csv(const xxwidgets_strings *view, char *buffer, size_t capacity, size_t *required);
 
+/* Shared modal browser: copied metadata, filtering, Copy and full-text View.
+ * Save CSV invokes the host callback only after native destination acceptance,
+ * outside event dispatch. NULL callback or absent chooser hides Save CSV.
+ * The callback borrows UTF-8 path/CSV and writes exactly length bytes. */
+typedef xxwidgets_status (*xxwidgets_strings_save_fn)(const char *path, const char *csv, size_t length, void *user);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_dialog(xxwidgets_widget *owner, const char *title,
+    const char *path, uint64_t size, const xxwidgets_string_record *records, size_t count,
+    xxwidgets_strings_save_fn save, void *user);
 #ifdef __cplusplus
 }
 #endif

@@ -88,10 +88,10 @@ xxwidgets_status xxwidgets_options_dialog(xxwidgets_widget *owner, const char *t
     bounds.y = (int)count * 2 + 2;
     bounds.x = 34;
     bounds.width = 10;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "OK", bounds, &state.ok);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "OK"), bounds, &state.ok);
     if (status != XXWIDGETS_OK) goto finish;
     bounds.x = 46;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Cancel", bounds, &state.cancel);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), bounds, &state.cancel);
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;

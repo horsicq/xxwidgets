@@ -159,13 +159,13 @@ xxwidgets_widget *xxwidgets_die_signature_debugger_control(const xxwidgets_die_s
 xxwidgets_status xxwidgets_die_signature_debugger_create(xxwidgets_widget *owner,xxwidgets_rect bounds,xxwidgets_die_signature_debug_session *session,xxwidgets_die_signature_debugger **out)
 {
     static const xxwidgets_kind kinds[]={XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_LABEL,XXWIDGETS_DIE_SIGNATURE_EDIT,XXWIDGETS_LABEL,XXWIDGETS_LISTBOX,XXWIDGETS_LABEL,XXWIDGETS_LISTBOX,XXWIDGETS_LABEL,XXWIDGETS_LISTBOX,XXWIDGETS_EDIT,XXWIDGETS_BUTTON,XXWIDGETS_BUTTON,XXWIDGETS_LISTBOX,XXWIDGETS_DIE_SIGNATURE_EDIT,XXWIDGETS_LABEL};
-    static const char *const labels[]={"Start/Continue","Pause","Stop","Into","Over","Out","Toggle BP","Clear BPs","Source","","Call stack","","Locals","","Watches","","","+","-","","","Ready"};
+    static const char *const labels[]={XXW_N_("Start/Continue"),XXW_N_("Pause"),XXW_N_("Stop"),XXW_N_("Into"),XXW_N_("Over"),XXW_N_("Out"),XXW_N_("Toggle BP"),XXW_N_("Clear BPs"),XXW_N_("Source"),"",XXW_N_("Call stack"),"",XXW_N_("Locals"),"",XXW_N_("Watches"),"","","+","-","","",XXW_N_("Ready")};
     xxwidgets_die_signature_debugger *v;xxwidgets_rect r[XXWIDGETS_DIE_DEBUGGER_CONTROL_COUNT];xxwidgets_status result;
     if(!out)return XXWIDGETS_INVALID_ARGUMENT;*out=NULL;if(!owner||owner->kind!=XXWIDGETS_WINDOW||!session||!valid_bounds(bounds))return XXWIDGETS_INVALID_ARGUMENT;
     if(owner->app->dispatch_depth||owner->app->polling||owner->app->syncing)return XXWIDGETS_BUSY;
     v=calloc(1,sizeof(*v));if(!v)return XXWIDGETS_OUT_OF_MEMORY;v->owner=owner;v->session=session;v->revision=UINT64_MAX;
     v->primary_source=xxwidgets_strdup("");v->primary_name=xxwidgets_strdup("");v->displayed_name=xxwidgets_strdup("");if(!v->primary_source||!v->primary_name||!v->displayed_name){result=XXWIDGETS_OUT_OF_MEMORY;goto failed;}
-    rects(bounds,r);for(int i=0;i<XXWIDGETS_DIE_DEBUGGER_CONTROL_COUNT;++i){result=xxwidgets_widget_create(owner->app,owner,kinds[i],labels[i],r[i],&v->controls[i]);if(result!=XXWIDGETS_OK)goto failed;}
+    rects(bounds,r);for(int i=0;i<XXWIDGETS_DIE_DEBUGGER_CONTROL_COUNT;++i){result=xxwidgets_widget_create(owner->app,owner,kinds[i],XXW_TR(owner->app,labels[i]),r[i],&v->controls[i]);if(result!=XXWIDGETS_OK)goto failed;}
     result=xxwidgets_die_signature_edit_set_read_only(v->controls[XXWIDGETS_DIE_DEBUGGER_SOURCE],1);if(result!=XXWIDGETS_OK)goto failed;
     result=xxwidgets_die_signature_edit_set_read_only(v->controls[XXWIDGETS_DIE_DEBUGGER_OUTPUT],1);if(result!=XXWIDGETS_OK)goto failed;
     result=refresh(v,1);if(result!=XXWIDGETS_OK)goto failed;*out=v;return XXWIDGETS_OK;

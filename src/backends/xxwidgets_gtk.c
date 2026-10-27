@@ -329,6 +329,44 @@ static xxwidgets_status gtk_preview_font(xxwidgets_widget *widget, xxwidgets_fon
     return XXWIDGETS_OK;
 }
 
+static xxwidgets_status gtk_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted)
+{
+    static const char *titles[] = {"Controls font", "Table views font", "Tree views font", "Text edits font"};
+    GtkWidget *dialog = gtk_font_chooser_dialog_new(titles[role], GTK_WINDOW(owner->native));
+    PangoFontDescription *description = gtk_font_description(font);
+    xxwidgets_status status = XXWIDGETS_OK;
+    *accepted = 0;
+    g_object_ref_sink(dialog);
+    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), TRUE);
+    if (description) {
+        gtk_font_chooser_set_font_desc(GTK_FONT_CHOOSER(dialog), description);
+        pango_font_description_free(description);
+    }
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) {
+        description = gtk_font_chooser_get_font_desc(GTK_FONT_CHOOSER(dialog));
+        const char *family = description ? pango_font_description_get_family(description) : NULL;
+        int size = description ? pango_font_description_get_size(description) : 0;
+        /* GtkFontChooser describes point sizes; the public API uses integers. */
+        unsigned int points = size > 0 ? (unsigned int)(size / PANGO_SCALE + (size % PANGO_SCALE >= PANGO_SCALE / 2)) : 0;
+        if (!family || strlen(family) >= sizeof(font->family) || points < 4 || points > 96 ||
+            pango_font_description_get_size_is_absolute(description)) status = XXWIDGETS_INVALID_ARGUMENT;
+        else {
+            xxwidgets_font chosen = {0};
+            memcpy(chosen.family, family, strlen(family) + 1);
+            chosen.point_size = points;
+            chosen.bold = pango_font_description_get_weight(description) >= PANGO_WEIGHT_BOLD;
+            chosen.italic = pango_font_description_get_style(description) != PANGO_STYLE_NORMAL;
+            if (xxwidgets_font_valid(&chosen)) { *font = chosen; *accepted = 1; }
+            else status = XXWIDGETS_INVALID_ARGUMENT;
+        }
+        if (description) pango_font_description_free(description);
+    }
+    gtk_widget_destroy(dialog);
+    g_object_unref(dialog);
+    return status;
+}
+
 static int gtk_hex_cell_width(const xxwidgets_widget *widget)
 {
     const gtk_widget_state *state = widget->platform;
@@ -2486,6 +2524,7 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
         case XXWIDGET_SYMBOLSVIEWER:
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_MEMORY_MAP:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -2960,6 +2999,7 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
         case XXWIDGET_SYMBOLSVIEWER:
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_MEMORY_MAP:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -3344,7 +3384,7 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_about_content,
                                                     gtk_copy_text,
                                                     gtk_apply_fonts,
-                                                    NULL,
+                                                    gtk_choose_font,
                                                     gtk_preview_font,
                                                     NULL,
                                                     NULL,

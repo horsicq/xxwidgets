@@ -2352,23 +2352,23 @@ static xxwidgets_status hex_dump_path(xxwidgets_widget *w, char **path, int *acc
     *accepted = *overwrite = 0;
     app->on_event = hex_dump_event;
     app->user_data = &form;
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, "Dump selected bytes", (xxwidgets_rect){2, 2, 64, 8}, &form.window);
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, XXW_TR(app, "Dump selected bytes"), (xxwidgets_rect){2, 2, 64, 8}, &form.window);
     if (status != XXWIDGETS_OK)
         goto finish;
     app->modal_window = form.window;
-    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_LABEL, "Output file:", (xxwidgets_rect){2, 1, 60, 1}, &label);
+    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_LABEL, XXW_TR(app, "Output file:"), (xxwidgets_rect){2, 1, 60, 1}, &label);
     if (status != XXWIDGETS_OK)
         goto finish;
     status = xxwidgets_widget_create(app, form.window, XXWIDGETS_EDIT, "", (xxwidgets_rect){2, 2, 60, 1}, &edit);
     if (status != XXWIDGETS_OK)
         goto finish;
-    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_CHECKBOX, "Replace existing file", (xxwidgets_rect){2, 4, 60, 1}, &replace);
+    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_CHECKBOX, XXW_TR(app, "Replace existing file"), (xxwidgets_rect){2, 4, 60, 1}, &replace);
     if (status != XXWIDGETS_OK)
         goto finish;
-    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_BUTTON, "Save", (xxwidgets_rect){38, 6, 10, 1}, &form.save);
+    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_BUTTON, XXW_TR(app, "Save"), (xxwidgets_rect){38, 6, 10, 1}, &form.save);
     if (status != XXWIDGETS_OK)
         goto finish;
-    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_BUTTON, "Cancel", (xxwidgets_rect){50, 6, 10, 1}, &form.cancel);
+    status = xxwidgets_widget_create(app, form.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), (xxwidgets_rect){50, 6, 10, 1}, &form.cancel);
     if (status != XXWIDGETS_OK)
         goto finish;
     app->modal_default = form.save;
@@ -2686,7 +2686,7 @@ void xxwidgets_hexview_deferred(xxwidgets_app *app)
         status = xxwidgets_hexview_dump_dialog(w);
         if (status != XXWIDGETS_OK)
             (void)xxwidgets_text_dialog(
-                w->parent, "Dump selected bytes",
+                w->parent, XXW_TR((w->parent)->app, "Dump selected bytes"),
                 "Could not save selected bytes. Check the path and write permissions; enable replacement to overwrite an existing file.");
     }
 }

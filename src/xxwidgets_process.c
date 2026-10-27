@@ -394,7 +394,7 @@ static xxwidgets_status process_create(xxwidgets_app *app, process_state *state)
     rect.x = 48;
     rect.width = 14;
     rect.height = 2;
-    status = xxwidgets_widget_create(app, state->window, XXWIDGETS_BUTTON, "Cancel", rect, &state->cancel);
+    status = xxwidgets_widget_create(app, state->window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), rect, &state->cancel);
     if (status == XXWIDGETS_OK) app->modal_default = state->cancel;
     return status;
 }

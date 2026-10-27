@@ -3,6 +3,7 @@
  */
 #include "xxwidgets_internal.h"
 #include "xxwidgets/xxwidgets_debugger_tables.h"
+#include "xxwidgets/xxwidgets_memory_map.h"
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -12,15 +13,15 @@
 typedef struct debugger_descriptor {
     size_t record_size, string_count, offsets[3], flags_offset, columns;
     unsigned flag_mask;
-    const char *titles[5];
-    size_t widths[5], maximums[5];
+    const char *titles[6];
+    size_t widths[6], maximums[6];
 } debugger_descriptor;
 
 struct xxwidgets_debugger_table_state {
     const debugger_descriptor *descriptor;
     void *records;
     char **cells;
-    size_t count, widths[5];
+    size_t count, widths[6];
 };
 
 static const debugger_descriptor *descriptor(xxwidgets_kind kind)
@@ -29,18 +30,25 @@ static const debugger_descriptor *descriptor(xxwidgets_kind kind)
         sizeof(xxwidgets_debugger_instruction), 3,
         {offsetof(xxwidgets_debugger_instruction, bytes), offsetof(xxwidgets_debugger_instruction, instruction), offsetof(xxwidgets_debugger_instruction, comment)},
         offsetof(xxwidgets_debugger_instruction, flags), 5, XXWIDGETS_DEBUGGER_CURRENT | XXWIDGETS_DEBUGGER_BREAKPOINT,
-        {"", "Address", "Bytes", "Instruction", "Comment"}, {2, 18, 8, 24, 24}, {2, 18, 48, 96, 96}};
+        {"", XXW_N_("Address"), XXW_N_("Bytes"), XXW_N_("Instruction"), XXW_N_("Comment")}, {2, 18, 8, 24, 24}, {2, 18, 48, 96, 96}};
     static const debugger_descriptor registers = {
         sizeof(xxwidgets_debugger_register), 2,
         {offsetof(xxwidgets_debugger_register, name), offsetof(xxwidgets_debugger_register, value), 0},
         offsetof(xxwidgets_debugger_register, flags), 3, XXWIDGETS_DEBUGGER_CHANGED,
-        {"", "Register", "Value", NULL, NULL}, {1, 8, 18, 0, 0}, {1, 24, 96, 0, 0}};
+        {"", XXW_N_("Register"), XXW_N_("Value"), NULL, NULL}, {1, 8, 18, 0, 0}, {1, 24, 96, 0, 0}};
     static const debugger_descriptor stack = {
         sizeof(xxwidgets_debugger_stack_entry), 2,
         {offsetof(xxwidgets_debugger_stack_entry, value), offsetof(xxwidgets_debugger_stack_entry, comment), 0},
         offsetof(xxwidgets_debugger_stack_entry, flags), 4, XXWIDGETS_DEBUGGER_CURRENT | XXWIDGETS_DEBUGGER_CHANGED,
-        {"", "Address", "Value", "Comment", NULL}, {2, 18, 18, 24, 0}, {2, 18, 96, 96, 0}};
+        {"", XXW_N_("Address"), XXW_N_("Value"), XXW_N_("Comment"), NULL}, {2, 18, 18, 24, 0}, {2, 18, 96, 96, 0}};
+    static const debugger_descriptor memory_map = {
+        sizeof(xxwidgets_memory_map_record), 2,
+        {offsetof(xxwidgets_memory_map_record, name), offsetof(xxwidgets_memory_map_record, type), 0},
+        offsetof(xxwidgets_memory_map_record, flags), 6, XXWIDGETS_MEMORY_MAP_VIRTUAL | XXWIDGETS_MEMORY_MAP_INVISIBLE,
+        {XXW_N_("File offset"), XXW_N_("Address"), XXW_N_("Size"), XXW_N_("Type"), XXW_N_("Name"), XXW_N_("Attributes")},
+        {18, 18, 18, 12, 24, 12}, {18, 18, 18, 32, 80, 32}};
     switch (kind) {
+        case XXWIDGETS_MEMORY_MAP: return &memory_map;
         case XXWIDGETS_DEBUGGER_DISASM: return &disasm;
         case XXWIDGETS_DEBUGGER_REGISTERS: return &registers;
         case XXWIDGETS_DEBUGGER_STACK: return &stack;
@@ -111,6 +119,23 @@ static const char *cell_text(xxwidgets_kind kind, const void *record, size_t col
 {
     const debugger_descriptor *d = descriptor(kind);
     unsigned flags = record_flags(record, d);
+    if (kind == XXWIDGETS_MEMORY_MAP) {
+        const xxwidgets_memory_map_record *r = record;
+        if (column == 0) {
+            if (r->offset < 0) return "-";
+            snprintf(buffer, 64, "0x%016" PRIX64, (uint64_t)r->offset); return buffer;
+        }
+        if (column == 1) {
+            if (r->address == UINT64_MAX) return "-";
+            snprintf(buffer, 64, "0x%016" PRIX64, r->address); return buffer;
+        }
+        if (column == 2) { snprintf(buffer, 64, "0x%016" PRIX64, r->size); return buffer; }
+        if (column == 3) return r->type;
+        if (column == 4) return r->name;
+        return (flags & XXWIDGETS_MEMORY_MAP_VIRTUAL)
+            ? (flags & XXWIDGETS_MEMORY_MAP_INVISIBLE ? "Virtual, invisible" : "Virtual")
+            : (flags & XXWIDGETS_MEMORY_MAP_INVISIBLE ? "Physical, invisible" : "Physical");
+    }
     if (column == 0) {
         size_t n = 0;
         if (flags & XXWIDGETS_DEBUGGER_CURRENT) buffer[n++] = '>';
@@ -180,7 +205,7 @@ static xxwidgets_status set_rows(xxwidgets_widget *widget, xxwidgets_kind kind, 
         unsigned char *copy = (unsigned char *)state->records + row * d->record_size;
         unsigned flags = record_flags(input, d);
         if (flags & ~d->flag_mask) { status = XXWIDGETS_INVALID_ARGUMENT; goto failed; }
-        if (!have_current && (flags & XXWIDGETS_DEBUGGER_CURRENT)) { selection = (int)row; have_current = 1; }
+        if (kind != XXWIDGETS_MEMORY_MAP && !have_current && (flags & XXWIDGETS_DEBUGGER_CURRENT)) { selection = (int)row; have_current = 1; }
         memcpy(copy, input, d->record_size);
         for (size_t column = 0; column < d->string_count; ++column) store_string(copy, d->offsets[column], NULL);
         for (size_t column = 0; column < d->string_count; ++column) {
@@ -251,7 +276,7 @@ size_t xxwidgets_debugger_table_column_count(const xxwidgets_widget *widget)
 { const debugger_descriptor *d = widget ? descriptor(widget->kind) : NULL; return d ? d->columns : 0; }
 
 const char *xxwidgets_debugger_table_column_title(const xxwidgets_widget *widget, size_t column)
-{ const debugger_descriptor *d = widget ? descriptor(widget->kind) : NULL; return d && column < d->columns ? d->titles[column] : ""; }
+{ const debugger_descriptor *d = widget ? descriptor(widget->kind) : NULL; return d && column < d->columns ? XXW_TR(widget->app, d->titles[column]) : ""; }
 
 const char *xxwidgets_debugger_table_cell(const xxwidgets_widget *widget, size_t row, size_t column)
 {
@@ -265,3 +290,22 @@ size_t xxwidgets_debugger_table_column_width(const xxwidgets_widget *widget, siz
     if (!d || column >= d->columns) return 0;
     return widget->debugger_table ? widget->debugger_table->widths[column] : d->widths[column];
 }
+
+xxwidgets_status xxwidgets_memory_map_table_set_rows(xxwidgets_widget *w, const xxwidgets_memory_map_record *rows, size_t count)
+{
+    if (count > XXWIDGETS_MEMORY_MAP_MAX_RECORDS || (count && !rows)) return XXWIDGETS_INVALID_ARGUMENT;
+    for (size_t i = 0; i < count; ++i) {
+        const xxwidgets_memory_map_record *r = rows + i;
+        if (!r->name || !r->type || strlen(r->name) > 512 || strlen(r->type) > 128 ||
+            (r->flags & XXWIDGETS_MEMORY_MAP_VIRTUAL ? r->offset != -1 :
+             (r->offset < 0 || r->size > (uint64_t)INT64_MAX - (uint64_t)r->offset)) ||
+            (r->address != UINT64_MAX && r->size > UINT64_MAX - r->address)) return XXWIDGETS_INVALID_ARGUMENT;
+    }
+    return set_rows(w, XXWIDGETS_MEMORY_MAP, rows, count);
+}
+xxwidgets_status xxwidgets_memory_map_table_clear(xxwidgets_widget *w) { return set_rows(w, XXWIDGETS_MEMORY_MAP, NULL, 0); }
+size_t xxwidgets_memory_map_table_count(const xxwidgets_widget *w) { return w && w->kind == XXWIDGETS_MEMORY_MAP ? w->item_count : 0; }
+xxwidgets_status xxwidgets_memory_map_table_get_row(const xxwidgets_widget *w, size_t i, xxwidgets_memory_map_record *out)
+{ return get_row(w, XXWIDGETS_MEMORY_MAP, i, out); }
+xxwidgets_status xxwidgets_memory_map_table_get_selection(xxwidgets_widget *w, size_t *i, xxwidgets_memory_map_record *out)
+{ return get_selection(w, XXWIDGETS_MEMORY_MAP, i, out); }

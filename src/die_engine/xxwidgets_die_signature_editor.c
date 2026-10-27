@@ -95,7 +95,7 @@ xxwidgets_status xxwidgets_die_signature_editor_create(xxwidgets_widget *owner, 
         XXWIDGETS_EDIT, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_EDIT, XXWIDGETS_BUTTON,
         XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_LABEL};
     static const char *const labels[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT] = {
-        "Open", "Save", "Save As", "Read-only", "", "", "", "Find next", "Run", "Clear result", "", ""};
+        XXW_N_("Open"), XXW_N_("Save"), XXW_N_("Save As"), XXW_N_("Read-only"), "", "", "", XXW_N_("Find next"), XXW_N_("Run"), XXW_N_("Clear result"), "", ""};
     xxwidgets_die_signature_editor *editor;
     xxwidgets_rect rects[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT];
     xxwidgets_status status;
@@ -111,7 +111,7 @@ xxwidgets_status xxwidgets_die_signature_editor_create(xxwidgets_widget *owner, 
     if (!editor->path) { free(editor); return XXWIDGETS_OUT_OF_MEMORY; }
     rectangles(bounds, rects);
     for (i = 0; i < XXWIDGETS_DIE_EDITOR_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], labels[i], rects[i], &editor->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, labels[i]), rects[i], &editor->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
     status = xxwidgets_die_signature_edit_set_read_only(editor->controls[XXWIDGETS_DIE_EDITOR_RESULT], 1);

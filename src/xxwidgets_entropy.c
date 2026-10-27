@@ -17,7 +17,9 @@
 
 typedef struct entropy_model {
     unsigned char *data;
-    size_t size, region_count, sample_count, requested_count;
+    uint64_t size;
+    size_t region_count, sample_count, requested_count;
+    int snapshot;
     uint64_t base, counts[256];
     double total;
     char *type;
@@ -42,7 +44,7 @@ static xxwidgets_status sync_control(xxwidgets_widget *widget)
     --widget->app->syncing;
     return status;
 }
-static double counts_entropy(const uint64_t counts[256], size_t size)
+static double counts_entropy(const uint64_t counts[256], uint64_t size)
 {
     double entropy = 0;
     if (size)
@@ -311,6 +313,8 @@ static xxwidgets_status refresh(xxwidgets_entropy *v)
     TRY(xxwidgets_widget_set_value(CONTROL(v, PROGRESS), m ? (int)(m->total * 100 / 8) : 0));
     snprintf(text, sizeof(text), "%s (%d%%)", packed(m ? m->total : 0), m ? (int)(m->total * 100 / 8) : 0);
     TRY(xxwidgets_widget_set_text(CONTROL(v, STATUS), text));
+    TRY(xxwidgets_widget_set_enabled(CONTROL(v, COUNT), !m || !m->snapshot));
+    TRY(xxwidgets_widget_set_enabled(CONTROL(v, RELOAD), !m || !m->snapshot));
     TRY(refresh_table(v, 0));
     TRY(refresh_table(v, 1));
     TRY(xxwidgets_widget_set_text(CONTROL(v, TRACKER), "Select a region or click the diagram"));
@@ -385,11 +389,11 @@ xxwidgets_status xxwidgets_entropy_create(xxwidgets_widget *owner, xxwidgets_rec
         XXWIDGETS_LABEL,         XXWIDGETS_BUTTON,   XXWIDGETS_LABEL,  XXWIDGETS_PROGRESS,    XXWIDGETS_LABEL, XXWIDGETS_BUTTON,
         XXWIDGETS_BUTTON,        XXWIDGETS_BUTTON,   XXWIDGETS_BUTTON, XXWIDGETS_LABEL,       XXWIDGETS_EDIT,  XXWIDGETS_ENTROPY_REGIONS,
         XXWIDGETS_ENTROPY_BYTES, XXWIDGETS_CHECKBOX, XXWIDGETS_LABEL,  XXWIDGETS_ENTROPY_PLOT};
-    static const char *names[] = {"Type", "Map",          "Offset",  "Size",  "Count",  "1", "Block",   "Reload", "0.00000", "", "not packed (0%)",
-                                  "Save", "Save diagram", "Entropy", "Bytes", "Filter", "",  "Regions", "Bytes",  "Grid",    "", "Entropy diagram"};
+    static const char *names[] = {XXW_N_("Type"), XXW_N_("Map"),          XXW_N_("Offset"),  XXW_N_("Size"),  XXW_N_("Count"),  "1", XXW_N_("Block"),   XXW_N_("Reload"), "0.00000", "", XXW_N_("not packed (0%)"),
+                                  XXW_N_("Save"), XXW_N_("Save diagram"), XXW_N_("Entropy"), XXW_N_("Bytes"), XXW_N_("Filter"), "",  XXW_N_("Regions"), XXW_N_("Bytes"),  XXW_N_("Grid"),    "", XXW_N_("Entropy diagram")};
     xxwidgets_status status = XXWIDGETS_OK;
     for (size_t i = 0; i < XXWIDGETS_ENTROPY_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
         if (status != XXWIDGETS_OK)
             goto fail;
         v->controls[i]->entropy = v;
@@ -397,7 +401,7 @@ xxwidgets_status xxwidgets_entropy_create(xxwidgets_widget *owner, xxwidgets_rec
     status = xxwidgets_entropy_set_rect(v, bounds);
     if (status != XXWIDGETS_OK)
         goto fail;
-    const char *maps[] = {"Regions", "Whole file"};
+    const char *maps[] = {XXW_TR(owner->app, "Regions"), XXW_TR(owner->app, "Whole file")};
     status = choice(CONTROL(v, MAP), maps, 2);
     if (status != XXWIDGETS_OK)
         goto fail;
@@ -487,6 +491,61 @@ xxwidgets_status xxwidgets_entropy_set_data(xxwidgets_entropy *v, const void *da
         free_model(old);
     return status;
 }
+xxwidgets_status xxwidgets_entropy_set_statistics(xxwidgets_entropy *v, const xxwidgets_entropy_statistics *s)
+{
+    uint64_t sum = 0, end;
+    entropy_model *m, *old;
+    xxwidgets_status status;
+    if (!v || !s || !s->counts || s->size > UINT64_MAX - s->base ||
+        !xxwidgets_valid_utf8(s->file_type ? s->file_type : "Binary") ||
+        !isfinite(s->total) || s->total < 0 || s->total > 8 ||
+        s->region_count > 1024 || (s->region_count && (!s->regions || !s->region_entropy)) ||
+        s->sample_count > 4096 || (s->sample_count && !s->samples) ||
+        (!s->size != !s->sample_count)) return XXWIDGETS_INVALID_ARGUMENT;
+    for (size_t i = 0; i < 256; ++i) {
+        if (s->counts[i] > s->size - sum) return XXWIDGETS_INVALID_ARGUMENT;
+        sum += s->counts[i];
+    }
+    if (sum != s->size || fabs(counts_entropy(s->counts, s->size) - s->total) > 1e-8) return XXWIDGETS_INVALID_ARGUMENT;
+    end = s->base;
+    for (size_t i = 0; i < s->sample_count; ++i) {
+        const xxwidgets_entropy_sample *sample = s->samples + i;
+        if (sample->offset != end || !sample->size || sample->size > s->size - (end - s->base) ||
+            !isfinite(sample->entropy) || sample->entropy < 0 || sample->entropy > 8) return XXWIDGETS_INVALID_ARGUMENT;
+        end += sample->size;
+    }
+    if (end != s->base + s->size) return XXWIDGETS_INVALID_ARGUMENT;
+    for (size_t i = 0; i < s->region_count; ++i)
+        if (s->regions[i].offset > s->size || s->regions[i].size > s->size - s->regions[i].offset ||
+            !xxwidgets_valid_utf8(s->regions[i].name ? s->regions[i].name : "") ||
+            !isfinite(s->region_entropy[i]) || s->region_entropy[i] < 0 || s->region_entropy[i] > 8)
+            return XXWIDGETS_INVALID_ARGUMENT;
+    m = calloc(1, sizeof(*m));
+    if (!m) return XXWIDGETS_OUT_OF_MEMORY;
+    m->snapshot = 1; m->size = s->size; m->base = s->base; m->total = s->total;
+    m->requested_count = s->sample_count; m->sample_count = s->sample_count;
+    m->type = xxwidgets_strdup(s->file_type ? s->file_type : "Binary");
+    m->regions = calloc(s->region_count ? s->region_count : 1, sizeof(*m->regions));
+    m->region_entropy = calloc(s->region_count ? s->region_count : 1, sizeof(*m->region_entropy));
+    m->samples = s->sample_count ? malloc(s->sample_count * sizeof(*m->samples)) : NULL;
+    if (!m->type || !m->regions || !m->region_entropy || (s->sample_count && !m->samples)) {
+        free_model(m); return XXWIDGETS_OUT_OF_MEMORY;
+    }
+    memcpy(m->counts, s->counts, sizeof(m->counts));
+    if (s->sample_count) memcpy(m->samples, s->samples, s->sample_count * sizeof(*m->samples));
+    for (size_t i = 0; i < s->region_count; ++i) {
+        m->regions[i] = s->regions[i];
+        m->regions[i].name = xxwidgets_strdup(s->regions[i].name ? s->regions[i].name : "");
+        m->region_count = i + 1;
+        if (!m->regions[i].name) { free_model(m); return XXWIDGETS_OUT_OF_MEMORY; }
+        m->region_entropy[i] = s->region_entropy[i];
+    }
+    old = v->model; v->model = m;
+    status = refresh(v);
+    if (status != XXWIDGETS_OK) { v->model = old; refresh(v); free_model(m); }
+    else free_model(old);
+    return status;
+}
 xxwidgets_status xxwidgets_entropy_set_count(xxwidgets_entropy *v, size_t count)
 {
     if (!v || !count || count > 1000)
@@ -494,6 +553,7 @@ xxwidgets_status xxwidgets_entropy_set_count(xxwidgets_entropy *v, size_t count)
     if (!v->model)
         return XXWIDGETS_OK;
     entropy_model *m = v->model;
+    if (m->snapshot) return XXWIDGETS_UNAVAILABLE;
     xxwidgets_entropy_sample *old = m->samples;
     size_t old_count = m->sample_count, old_requested = m->requested_count;
     m->samples = NULL;

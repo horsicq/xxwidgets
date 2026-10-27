@@ -411,7 +411,7 @@ xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner, xxwid
     xxwidgets_context_options *options;
     xxwidgets_rect rects[3];
     const char *strings[4];
-    const char *names[3] = {"Enable Explorer context menu", "Apply", ""};
+    const char *names[3] = {XXW_N_("Enable Explorer context menu"), XXW_N_("Apply"), ""};
     int registered;
     size_t i;
     xxwidgets_status status;
@@ -446,7 +446,7 @@ xxwidgets_status xxwidgets_context_options_create(xxwidgets_widget *owner, xxwid
     rects[1] = (xxwidgets_rect){bounds.x, bounds.y + 2, 10, 2};
     rects[2] = (xxwidgets_rect){bounds.x, bounds.y + 4, bounds.width, bounds.height - 4};
     for (i = 0; i < 3; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], rects[i], &options->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), rects[i], &options->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
     status = xxwidgets_context_options_refresh(options);

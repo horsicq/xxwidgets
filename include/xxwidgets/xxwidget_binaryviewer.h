@@ -17,6 +17,7 @@ extern "C" {
  * Record getters borrow strings until replacement/clear/destruction. Empty
  * selection succeeds with index SIZE_MAX and a zeroed record. Metadata offsets
  * and addresses preserve xxfclib's conventions: -1 / UINT64_MAX are unknown.
+ * ExportsViewer also displays ordinal UINT64_MAX as unknown.
  * All APIs belong to the UI thread. */
 #define XXWIDGET_DECLARE_BINARYVIEWER(name, record) \
     XXWIDGETS_API xxwidgets_status xxwidget_##name##_set_records(xxwidgets_widget *, const record *, size_t count); \

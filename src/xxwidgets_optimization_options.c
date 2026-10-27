@@ -329,9 +329,9 @@ xxwidgets_status xxwidgets_optimization_options_widget_create(xxwidgets_widget *
                                                               xxwidgets_optimization_options_widget **out_widget)
 {
     static const char *const labels[XXWIDGETS_OPTIMIZATION_OPTIONS_CONTROL_COUNT] = {
-        "Buffer size", "File buffer size", "Use SSE2", "Use AVX2", "Use SSE4.2", "Use AES", "Use SHA", "Use VPCLMULQDQ",
-        "Use Arm NEON", "Use Arm CRC32", "Use Arm AES/SHA", "Use Arm Dot Product", "Use Arm PMULL",
-        "Buffer size", "File buffer size", "CPU acceleration"};
+        XXW_N_("Buffer size"), XXW_N_("File buffer size"), XXW_N_("Use SSE2"), XXW_N_("Use AVX2"), XXW_N_("Use SSE4.2"), XXW_N_("Use AES"), XXW_N_("Use SHA"), XXW_N_("Use VPCLMULQDQ"),
+        XXW_N_("Use Arm NEON"), XXW_N_("Use Arm CRC32"), XXW_N_("Use Arm AES/SHA"), XXW_N_("Use Arm Dot Product"), XXW_N_("Use Arm PMULL"),
+        XXW_N_("Buffer size"), XXW_N_("File buffer size"), XXW_N_("CPU acceleration")};
     xxwidgets_optimization_options_widget *widget;
     xxwidgets_optimization_options defaults;
     xxwidgets_rect rects[XXWIDGETS_OPTIMIZATION_OPTIONS_CONTROL_COUNT];
@@ -350,7 +350,7 @@ xxwidgets_status xxwidgets_optimization_options_widget_create(xxwidgets_widget *
     option_rects(bounds, widget->layout, rects);
     for (i = 0; i < XXWIDGETS_OPTIMIZATION_OPTIONS_CONTROL_COUNT; ++i) {
         xxwidgets_kind kind = i < 2 ? XXWIDGETS_COMBOBOX : i < 13 ? XXWIDGETS_CHECKBOX : XXWIDGETS_LABEL;
-        status = xxwidgets_widget_create(owner->app, owner, kind, labels[i], rects[i], &widget->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kind, XXW_TR(owner->app, labels[i]), rects[i], &widget->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
         if ((widget->layout == OPTIMIZATION_LAYOUT_ARM && x86_control((xxwidgets_optimization_options_control_id)i)) ||
             (widget->layout == OPTIMIZATION_LAYOUT_X86 && arm_control((xxwidgets_optimization_options_control_id)i))) {
@@ -467,12 +467,12 @@ xxwidgets_status xxwidgets_optimization_options_dialog(xxwidgets_widget *owner, 
     state.form = form;
     status = xxwidgets_optimization_options_widget_set(form, options);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Defaults", (xxwidgets_rect){2, button_y, 14, 2}, &state.defaults);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Defaults"), (xxwidgets_rect){2, button_y, 14, 2}, &state.defaults);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "OK", (xxwidgets_rect){38, button_y, 10, 2}, &state.ok);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "OK"), (xxwidgets_rect){38, button_y, 10, 2}, &state.ok);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_default = state.ok;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Cancel", (xxwidgets_rect){50, button_y, 12, 2}, &state.cancel);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), (xxwidgets_rect){50, button_y, 12, 2}, &state.cancel);
     if (status != XXWIDGETS_OK) goto finish;
     if (app->ops->optimization_options_layout) {
         status = app->ops->optimization_options_layout(state.window, 1);

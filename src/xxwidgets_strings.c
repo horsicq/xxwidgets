@@ -90,9 +90,9 @@ static void preview(char *buffer, const char *text, size_t limit)
     buffer[length] = 0;
 }
 
-static void describe(const xxwidgets_string_record *record, char *buffer, size_t size)
+static void describe(const xxwidgets_app *app, const xxwidgets_string_record *record, char *buffer, size_t size)
 {
-    if (!record) snprintf(buffer, size, "No string selected");
+    if (!record) snprintf(buffer, size, "%s", XXW_TR(app, "No string selected"));
     else {
         char encoding[4 * 24 + 4];
         preview(encoding, record->encoding, 24);
@@ -135,8 +135,8 @@ static xxwidgets_status replace_rows(xxwidgets_strings *v, const xxwidgets_strin
     if (selected < 0 && used) selected = 0;
     {
         char count_text[96], detail_text[256];
-        snprintf(count_text, sizeof(count_text), "%zu / %zu strings", used, count);
-        describe(selected < 0 ? NULL : records + visible[selected], detail_text, sizeof(detail_text));
+        snprintf(count_text, sizeof(count_text), "%zu / %zu %s", used, count, xxwidgets_app_ngettext(v->owner->app, "string", "strings", count));
+        describe(v->owner->app, selected < 0 ? NULL : records + visible[selected], detail_text, sizeof(detail_text));
         texts[0] = xxwidgets_strdup(filter);
         texts[1] = xxwidgets_strdup(count_text);
         texts[2] = xxwidgets_strdup(detail_text);
@@ -218,8 +218,8 @@ xxwidgets_status xxwidgets_strings_create(xxwidgets_widget *owner, xxwidgets_rec
 {
     static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL, XXWIDGETS_EDIT, XXWIDGETS_LABEL, XXWIDGETS_ARCHIVEVIEW,
         XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON};
-    static const char *names[] = {"Filter", "", "Offset (hex)         Bytes     Chars  Encoding      String", "",
-        "No string selected", "0 / 0 strings", "Copy", "View", "Save CSV"};
+    static const char *names[] = {XXW_N_("Filter"), "", XXW_N_("Offset (hex)         Bytes     Chars  Encoding      String"), "",
+        XXW_N_("No string selected"), XXW_N_("0 / 0 strings"), XXW_N_("Copy"), XXW_N_("View"), XXW_N_("Save CSV")};
     xxwidgets_status status;
     if (!out) return XXWIDGETS_INVALID_ARGUMENT;
     *out = NULL;
@@ -230,7 +230,7 @@ xxwidgets_status xxwidgets_strings_create(xxwidgets_widget *owner, xxwidgets_rec
     v->owner = owner; v->filter = xxwidgets_strdup("");
     if (!v->filter) { free(v); return XXWIDGETS_OUT_OF_MEMORY; }
     for (size_t i = 0; i < XXWIDGETS_STRINGS_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
         if (status != XXWIDGETS_OK) goto fail;
     }
     status = xxwidgets_strings_set_rect(v, bounds);
@@ -338,12 +338,16 @@ xxwidgets_status xxwidgets_strings_handle_event(xxwidgets_strings *v, const xxwi
     if (!v || !event) return XXWIDGETS_INVALID_ARGUMENT;
     if (event->widget == CONTROL(v, FILTER) && event->type == XXWIDGETS_EVENT_CHANGE)
         return xxwidgets_strings_set_filter(v, CONTROL(v, FILTER)->text);
-    if (event->widget == CONTROL(v, COPY) && event->type == XXWIDGETS_EVENT_CLICK)
-        return xxwidgets_strings_copy_selection(v);
+    if (event->widget == CONTROL(v, COPY) && event->type == XXWIDGETS_EVENT_CLICK) {
+        xxwidgets_status status = xxwidgets_strings_copy_selection(v);
+        if (status == XXWIDGETS_UNAVAILABLE)
+            return xxwidgets_widget_set_text(CONTROL(v, DETAILS), "Clipboard unavailable");
+        return status;
+    }
     if (event->widget == CONTROL(v, RESULTS) && (event->type == XXWIDGETS_EVENT_SELECT || event->type == XXWIDGETS_EVENT_ACTIVATE)) {
         char text[256];
         if (event->value < 0 || (size_t)event->value >= v->visible_count) return XXWIDGETS_INVALID_ARGUMENT;
-        describe(v->records + v->visible[event->value], text, sizeof(text));
+        describe(v->owner->app, v->records + v->visible[event->value], text, sizeof(text));
         return xxwidgets_widget_set_text(CONTROL(v, DETAILS), text);
     }
     return XXWIDGETS_OK;

@@ -72,6 +72,38 @@ XXWIDGETS_API xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *o
  * Cancellation is successful with accepted == 0 and leaves font untouched. */
 XXWIDGETS_API xxwidgets_status xxwidgets_font_choose_dialog(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted);
 
+/* Embedded fonts form: per role a label, family and size edits, Bold and
+ * Italic, a Choose button and a preview line drawn in the edited font.
+ * Bounds use text cells and require at least 56 x 15. Children belong to the
+ * owner WINDOW and use its app callback. Destroy before the owner/app;
+ * borrowed controls must not be destroyed separately. */
+typedef struct xxwidgets_font_options_widget xxwidgets_font_options_widget;
+typedef enum xxwidgets_font_options_control_id {
+    XXWIDGETS_FONT_OPTIONS_LABEL = 0,
+    XXWIDGETS_FONT_OPTIONS_FAMILY,
+    XXWIDGETS_FONT_OPTIONS_SIZE,
+    XXWIDGETS_FONT_OPTIONS_BOLD,
+    XXWIDGETS_FONT_OPTIONS_ITALIC,
+    XXWIDGETS_FONT_OPTIONS_CHOOSE,
+    XXWIDGETS_FONT_OPTIONS_PREVIEW,
+    XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT
+} xxwidgets_font_options_control_id;
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
+                                                                    xxwidgets_font_options_widget **out_widget);
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_destroy(xxwidgets_font_options_widget *widget);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_font_options_widget_control(const xxwidgets_font_options_widget *widget, xxwidgets_font_role role,
+                                                                      xxwidgets_font_options_control_id control);
+/* INVALID_ARGUMENT when a family or size edit holds an invalid descriptor. */
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_get(const xxwidgets_font_options_widget *widget, xxwidgets_font_options *options);
+/* Transactional for validation; emits no input events and refreshes previews. */
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_set(xxwidgets_font_options_widget *widget, const xxwidgets_font_options *options);
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_set_rect(xxwidgets_font_options_widget *widget, xxwidgets_rect bounds);
+/* Forward the owner's input events, then call process after polling. Choose
+ * opens the native chooser (the owner must be the active modal window or no
+ * modal may be open); edits refresh their row's preview once valid. */
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_handle_event(xxwidgets_font_options_widget *widget, const xxwidgets_event *event);
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_process(xxwidgets_font_options_widget *widget);
+
 #ifdef __cplusplus
 }
 #endif

@@ -17,6 +17,20 @@ typedef struct xxwidgets_entropy_sample {
     uint64_t offset, size; /* Absolute display offset. */
     double entropy;
 } xxwidgets_entropy_sample;
+/* Precomputed streaming analysis. No source bytes are needed. Offsets in
+ * regions are relative; samples are absolute. Histogram sum must equal size;
+ * ordered samples cover the complete nonempty range. All arrays are copied. */
+typedef struct xxwidgets_entropy_statistics {
+    uint64_t size, base;
+    const char *file_type;
+    double total;
+    const uint64_t *counts; /* 256 bins */
+    const xxwidgets_entropy_region *regions;
+    const double *region_entropy;
+    size_t region_count;
+    const xxwidgets_entropy_sample *samples;
+    size_t sample_count;
+} xxwidgets_entropy_statistics;
 typedef enum xxwidgets_entropy_control_id {
     XXWIDGETS_ENTROPY_TYPE,
     XXWIDGETS_ENTROPY_MAP,
@@ -65,6 +79,14 @@ XXWIDGETS_API xxwidgets_status xxwidgets_entropy_handle_event(xxwidgets_entropy 
  * Invalid data and allocation failures preserve the preceding model. */
 XXWIDGETS_API xxwidgets_status xxwidgets_entropy_set_data(xxwidgets_entropy *view, const void *data, size_t size, uint64_t base,
                                                           const char *file_type, const xxwidgets_entropy_region *regions, size_t count);
+/* Installs a snapshot transactionally, up to 1024 regions and 4096 samples.
+ * Count/Reload are disabled: recomputing requires new source data. Export,
+ * filtering, map selection, byte distribution and plot tracking remain active. */
+XXWIDGETS_API xxwidgets_status xxwidgets_entropy_set_statistics(xxwidgets_entropy *view, const xxwidgets_entropy_statistics *statistics);
+/* Resizable modal using the same composite. Close/Esc dismisses it. Export
+ * buttons are hidden; hosts embedding the composite use the export APIs. */
+XXWIDGETS_API xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *title,
+    const xxwidgets_entropy_statistics *statistics);
 /* Reload the copied data with 1..1000 blocks (clamped to size for small inputs).
  * The final block includes the remainder. Empty inputs have zero samples.
  * Shannon entropy uses [0,8] bits/byte; packed means >= 6.5, as in XBinary. */

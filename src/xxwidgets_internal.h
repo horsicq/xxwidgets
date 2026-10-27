@@ -23,10 +23,18 @@
 #define XXWIDGETS_INTERNAL_H
 
 #include "xxwidgets/xxwidgets.h"
+#include "xxwidgets/xxwidgets_translation.h"
+#include "xxfclib/translation/xx_translation.h"
+
+/* xgettext: --keyword=XXW_TR:2 --keyword=XXW_N_ */
+#define XXW_TR(app, text) xxwidgets_app_gettext((app), (text))
+#define XXW_N_(text) text
 #include "xxwidgets/xxwidgets_font_options.h"
 #include "xxwidgets/xxwidgets_canvas.h"
 #include "die_engine/xxwidgets_die_signature_edit_internal.h"
 #include "xxwidgets/xxwidget_systemprocessesviewer.h"
+
+xxwidgets_status xxwidgets_translated_choices(xxwidgets_widget *, const char *const *, const uint64_t *, size_t);
 
 /* Atomic copied-data/base-address replacement for debugger memory panes. */
 xxwidgets_status xxwidgets_hexview_replace_snapshot(xxwidgets_widget *, uint64_t, const void *, size_t);
@@ -57,16 +65,31 @@ typedef struct xxwidgets_backend_ops {
     xxwidgets_status (*paste_text)(xxwidgets_widget *, char *, size_t, size_t *);
     xxwidgets_status (*hexview_font)(xxwidgets_widget *, const xxwidgets_font *);
     xxwidgets_status (*window_menu)(xxwidgets_widget *);
+    /* Optional Detect It Easy style layout for rich About items, filling the
+     * window above the Close button row (XXWIDGETS_ABOUT_RICH_* cells). */
+    xxwidgets_status (*about_rich_content)(xxwidgets_widget *window, const xxwidgets_about_dialog *about);
 } xxwidgets_backend_ops;
+
+#define XXWIDGETS_ABOUT_ITEMS_MAX 64
+#define XXWIDGETS_ABOUT_RICH_WIDTH 104
+#define XXWIDGETS_ABOUT_RICH_HEIGHT 24
+
+typedef struct xxwidgets_about_item {
+    xxwidgets_about_item_kind kind;
+    char *text, *value, *link;
+} xxwidgets_about_item;
 
 struct xxwidgets_about_dialog {
     char *texts[XXWIDGETS_ABOUT_TEXT_COUNT];
     unsigned char *image;
     unsigned int image_width, image_height;
+    xxwidgets_about_item items[XXWIDGETS_ABOUT_ITEMS_MAX];
+    size_t item_count;
     int showing;
 };
 
 struct xxwidgets_app {
+    xx_translation *translation;
     const xxwidgets_backend_ops *ops;
     xxwidgets_backend backend;
     xxwidgets_event_fn on_event;
@@ -278,7 +301,7 @@ static inline int xxwidgets_entropy_table(const xxwidgets_widget *widget)
 static inline int xxwidgets_binaryviewer_kind(const xxwidgets_widget *widget)
 { return widget && widget->kind >= XXWIDGET_RESOURCESVIEWER && widget->kind <= XXWIDGET_SYMBOLSVIEWER; }
 static inline int xxwidgets_debugger_table_kind(const xxwidgets_widget *widget)
-{ return widget && widget->kind >= XXWIDGETS_DEBUGGER_DISASM && widget->kind <= XXWIDGETS_DEBUGGER_STACK; }
+{ return widget && ((widget->kind >= XXWIDGETS_DEBUGGER_DISASM && widget->kind <= XXWIDGETS_DEBUGGER_STACK) || widget->kind == XXWIDGETS_MEMORY_MAP); }
 static inline int xxwidgets_tabular_kind(const xxwidgets_widget *widget)
 { return widget && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)); }
 /* Plot primitives use top-left coordinates, RGB colors, and borrowed text.

@@ -93,7 +93,8 @@ typedef enum xxwidgets_kind {
     XXWIDGETS_DEBUGGER_DISASM,
     XXWIDGETS_DEBUGGER_REGISTERS,
     XXWIDGETS_DEBUGGER_STACK,
-    XXWIDGETS_DIE_SIGNATURE_EDIT
+    XXWIDGETS_DIE_SIGNATURE_EDIT,
+    XXWIDGETS_MEMORY_MAP
 } xxwidgets_kind;
 
 typedef enum xxwidgets_event_type {
@@ -214,6 +215,8 @@ XXWIDGETS_API xxwidgets_kind xxwidgets_widget_kind(const xxwidgets_widget *widge
 XXWIDGETS_API void *xxwidgets_widget_native_handle(const xxwidgets_widget *widget);
 XXWIDGETS_API void xxwidgets_widget_set_user_data(xxwidgets_widget *widget, void *user_data);
 XXWIDGETS_API void *xxwidgets_widget_user_data(const xxwidgets_widget *widget);
+/* The app that created the widget, e.g. to add controls to a dialog window. */
+XXWIDGETS_API xxwidgets_app *xxwidgets_widget_app(const xxwidgets_widget *widget);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_text(xxwidgets_widget *widget, const char *text);
 /* required includes the NUL byte. A NULL buffer with capacity 0 queries size.
  * Too-small buffers are NUL-terminated when capacity > 0. */
@@ -395,8 +398,24 @@ typedef enum xxwidgets_about_text {
     XXWIDGETS_ABOUT_LICENSE,
     XXWIDGETS_ABOUT_CREDITS,
     XXWIDGETS_ABOUT_CLOSE_LABEL,
+    XXWIDGETS_ABOUT_BUILD_DATE,  /* Shown between Thanks and Check updates. */
+    XXWIDGETS_ABOUT_THANKS_URL,  /* Opened by Thanks; empty hides the button. */
+    XXWIDGETS_ABOUT_UPDATES_URL, /* Opened by Check updates; empty hides it. */
     XXWIDGETS_ABOUT_TEXT_COUNT
 } xxwidgets_about_text;
+
+/* Rich About content, in the Detect It Easy layout: the image on the left,
+ * Info and Libraries tabs on the right. Native backends that support it show
+ * that layout once any item is added; others append the items to the text.
+ * text is a bold caption; value follows it and becomes a link when link is
+ * set. Links starting with http://, https:// or mailto: open in the default
+ * handler; any other link is copied to the clipboard. All strings are copied
+ * UTF-8; value and link may be NULL. Up to 64 items. */
+typedef enum xxwidgets_about_item_kind {
+    XXWIDGETS_ABOUT_ITEM_SOCIAL = 0, /* "Follow me" button: text is its label, link its URL. */
+    XXWIDGETS_ABOUT_ITEM_INFO,       /* Centered line on the Info tab. */
+    XXWIDGETS_ABOUT_ITEM_LIBRARY     /* Centered line on the Libraries tab. */
+} xxwidgets_about_item_kind;
 
 /* Reusable About content, independent of an app/window. Text is copied UTF-8;
  * empty strings hide optional fields. Defaults: About / Application / Close.
@@ -413,6 +432,11 @@ XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_get_text(const xxwidgets_a
  * with its aspect ratio; the terminal dialog presents text only. No OS image
  * handles, file paths, or decoder dependencies cross this API. */
 XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_set_image(xxwidgets_about_dialog *dialog, const void *rgba, unsigned int width, unsigned int height, size_t stride);
+/* Appends a rich item (see xxwidgets_about_item_kind). BUSY while showing. */
+XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_add_item(xxwidgets_about_dialog *dialog, xxwidgets_about_item_kind kind, const char *text,
+                                                               const char *value, const char *link);
+XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_clear_items(xxwidgets_about_dialog *dialog);
+XXWIDGETS_API size_t xxwidgets_about_dialog_item_count(const xxwidgets_about_dialog *dialog);
 /* Modal, on the owner's UI thread, outside input callbacks/polling. The owner
  * is disabled while open, then restored. Content may be shown repeatedly with
  * different owners. Close/Enter/Escape dismiss; nested shows return BUSY. */
@@ -422,6 +446,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_show(xxwidgets_about_dialo
  * desktops. Copy uses the system clipboard and reports success on the button.
  * Terminal backends show a scrolling text list with Close. Modal/reentrancy
  * rules are the same as about_dialog_show. Text is borrowed for this call. */
+/* May be owned by the current modal window; restores that modal on close. */
 XXWIDGETS_API xxwidgets_status xxwidgets_text_dialog(xxwidgets_widget *owner, const char *title, const char *text);
 
 typedef enum xxwidgets_file_dialog_mode {

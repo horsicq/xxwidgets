@@ -816,6 +816,7 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
         case XXWIDGET_SYMBOLSVIEWER:
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_MEMORY_MAP:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -1722,7 +1723,7 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             if (status != XXWIDGETS_OK) return status;
             if (widget->kind != XXWIDGETS_HEXVIEW) widget->value = selection;
             state->dirty = 1;
-            if ((widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) && key == TUI_KEY_ENTER) {
+            if ((widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) && key == TUI_KEY_ENTER) {
                 xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, selection);
                 xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, selection);
                 return XXWIDGETS_OK;

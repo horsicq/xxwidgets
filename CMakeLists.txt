@@ -9,9 +9,11 @@ project(xxwidgets
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 if(WIN32)
+    set(_xxwidgets_scan_directory_source src/scan/xxwidgets_scan_directory_win32.c)
     set(_xxwidgets_process_dump_source src/platform/xxwidget_systemprocessesviewer_dump_win32.c)
     set(_xxwidgets_process_memory_source src/platform/xxwidget_systemprocessesviewer_memory_win32.c)
 else()
+    set(_xxwidgets_scan_directory_source src/scan/xxwidgets_scan_directory_posix.c)
     set(_xxwidgets_process_dump_source src/platform/xxwidget_systemprocessesviewer_dump_posix.c)
     set(_xxwidgets_process_memory_source src/platform/xxwidget_systemprocessesviewer_memory_posix.c)
 endif()
@@ -109,6 +111,13 @@ target_compile_definitions(xxwidgets_io PRIVATE XXFC_STATIC ${XXIO_COMPILE_DEFIN
 target_include_directories(xxwidgets_io PRIVATE "${XXIO_INCLUDE_DIR}")
 set_target_properties(xxwidgets_io PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+include("${XXWIDGETS_XXFCLIB_DIR}/xxtranslation.cmake")
+add_library(xxwidgets_translation OBJECT ${XXTRANSLATION_SOURCES} ${XXTRANSLATION_IO_SOURCES})
+target_compile_features(xxwidgets_translation PRIVATE c_std_11)
+target_compile_definitions(xxwidgets_translation PRIVATE XXFC_STATIC)
+target_include_directories(xxwidgets_translation PRIVATE "${XXTRANSLATION_INCLUDE_DIR}")
+set_target_properties(xxwidgets_translation PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 include("${XXWIDGETS_XXFCLIB_DIR}/xxhistory.cmake")
 add_library(xxwidgets_history OBJECT ${XXHISTORY_SOURCES})
 target_compile_features(xxwidgets_history PRIVATE c_std_11)
@@ -146,10 +155,12 @@ set_target_properties(xxwidgets_scan_colors PROPERTIES POSITION_INDEPENDENT_CODE
 add_library(xxwidgets
     $<TARGET_OBJECTS:xxwidgets_io>
     $<TARGET_OBJECTS:xxwidgets_history>
+    $<TARGET_OBJECTS:xxwidgets_translation>
     $<TARGET_OBJECTS:xxwidgets_threads>
     $<TARGET_OBJECTS:xxwidgets_scan_colors>
     $<TARGET_OBJECTS:xxwidgets_codepages>
     include/xxwidgets/xxwidgets.h
+    include/xxwidgets/xxwidgets_translation.h
     include/xxwidgets/die_engine/xxwidgets_die_signature_edit.h
     include/xxwidgets/die_engine/xxwidgets_die_signature_editor.h
     include/xxwidgets/die_engine/xxwidgets_die_signature_debug_session.h
@@ -161,6 +172,7 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_combobox.h
     include/xxwidgets/xxwidgets_data_struct_table.h
     include/xxwidgets/xxwidgets_data_struct_view.h
+    include/xxwidgets/xxwidgets_file_information.h
     include/xxwidgets/xxwidgets_debugger.h
     include/xxwidgets/xxwidgets_debugger_arch.h
     include/xxwidgets/xxwidgets_debugger_session.h
@@ -169,7 +181,15 @@ add_library(xxwidgets
     include/xxwidgets/debugger/xxwidgets_debugger_trace_dialog.h
     include/xxwidgets/debugger/xxwidgets_debugger_arguments.h
     include/xxwidgets/xxwidgets_canvas.h
+    include/xxwidgets/xxwidgets_hash.h
     include/xxwidgets/xxwidgets_entropy.h
+    include/xxwidgets/xxwidgets_resources.h
+    include/xxwidgets/xxwidgets_symbols.h
+    include/xxwidgets/xxwidgets_exports.h
+    include/xxwidgets/xxwidgets_imports.h
+    include/xxwidgets/xxwidgets_memory_map.h
+    include/xxwidgets/xxwidgets_disasm.h
+    include/xxwidgets/xxwidgets_hexview_browser.h
     include/xxwidgets/xxwidgets_hex_options.h
     include/xxwidgets/xxwidgets_process.h
     include/xxwidgets/xxwidget_systemprocessesviewer.h
@@ -178,16 +198,20 @@ add_library(xxwidgets
     include/xxwidgets/xxwidget_importsviewer.h
     include/xxwidgets/xxwidget_exportsviewer.h
     include/xxwidgets/xxwidget_symbolsviewer.h
+    include/xxwidgets/xxwidgets_scan_directory.h
     include/xxwidgets/xxwidgets_scan_panel.h
     include/xxwidgets/xxwidgets_scan_options.h
     include/xxwidgets/xxwidgets_search.h
     include/xxwidgets/xxwidgets_strings.h
     include/xxwidgets/xxwidgets_forms.h
     include/xxwidgets/xxwidgets_font_options.h
+    include/xxwidgets/xxwidgets_database_paths.h
     include/xxwidgets/xxwidgets_context_options.h
     include/xxwidgets/xxwidgets_optimization_options.h
+    include/xxwidgets/xxwidgets_options_pages.h
     src/xxwidgets_internal.h
     src/xxwidgets.c
+    src/xxwidgets_translation.c
     src/xxwidgets_edit.c
     src/xxwidgets_window.c
     src/xxwidgets_menu.c
@@ -196,6 +220,20 @@ add_library(xxwidgets
     src/debugger/xxwidgets_debugger_arguments.c
     src/xxwidgets_listbox.c
     src/xxwidgets_archiveview.c
+    src/xxwidgets_resources.c
+    src/xxwidgets_resources_dialog.c
+    src/xxwidgets_symbols.c
+    src/xxwidgets_symbols_dialog.c
+    src/xxwidgets_exports.c
+    src/xxwidgets_exports_dialog.c
+    src/xxwidgets_imports.c
+    src/xxwidgets_imports_dialog.c
+    src/xxwidgets_memory_map.c
+    src/xxwidgets_memory_map_dialog.c
+    src/xxwidgets_disasm.c
+    src/xxwidgets_disasm_dialog.c
+    src/xxwidgets_hexview_browser.c
+    src/xxwidgets_hexview_dialog.c
     src/xxwidgets_hex_options.c
     src/xxwidgets_hexview.c
     src/xxwidgets_hex_edit.c
@@ -220,6 +258,7 @@ add_library(xxwidgets
     src/xxwidgets_combobox.c
     src/xxwidgets_data_struct_table.c
     src/xxwidgets_data_struct_view.c
+    src/xxwidgets_file_information.c
     src/xxwidgets_debugger.c
     src/xxwidgets_debugger_tables.c
     src/xxwidgets_debugger_session.c
@@ -231,17 +270,25 @@ add_library(xxwidgets
     src/xxwidgets_debugger/xxwidgets_debugger_arm32.c
     src/xxwidgets_debugger/xxwidgets_debugger_arm64.c
     src/xxwidgets_canvas.c
+    src/xxwidgets_hash.c
+    src/xxwidgets_hash_dialog.c
+    src/xxwidgets_entropy_dialog.c
     src/xxwidgets_entropy.c
-    src/xxwidgets_scanresults.c
+    src/scan/xxwidgets_scanresults.c
     src/xxwidgets_treeview.c
-    src/xxwidgets_scan_panel.c
-    src/xxwidgets_scan_options.c
+    src/scan/xxwidgets_scan_panel.c
+    src/scan/xxwidgets_scan_directory.c
+    ${_xxwidgets_scan_directory_source}
+    src/scan/xxwidgets_scan_options.c
     src/xxwidgets_search.c
+    src/xxwidgets_strings_dialog.c
     src/xxwidgets_strings.c
     src/xxwidgets_forms.c
     src/xxwidgets_font_options.c
+    src/xxwidgets_database_paths.c
     src/xxwidgets_context_options.c
     src/xxwidgets_optimization_options.c
+    src/xxwidgets_options_pages.c
     src/backends/xxwidgets_tui.c
     ${_xxwidgets_backend_source}
 )
@@ -505,6 +552,7 @@ function(xxwidgets_add_demo target source)
 endfunction()
 
 if(XXWIDGETS_BUILD_EXAMPLES)
+    xxwidgets_add_demo(xxwidgets_translation_demo examples/translation_demo.c)
     xxwidgets_add_demo(xxwidgets_die_signature_editor_demo examples/die_engine/signature_editor_demo.c)
     list(REMOVE_ITEM _xxwidgets_demo_targets xxwidgets_die_signature_editor_demo)
     if(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER)
@@ -551,6 +599,7 @@ if(XXWIDGETS_BUILD_EXAMPLES)
         set_target_properties(xxwidgets_hexview_demo PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "org.xxwidgets.hexview-demo" MACOSX_BUNDLE_BUNDLE_NAME "Hex view")
         set_target_properties(xxwidgets_entropy_demo PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER "org.xxwidgets.entropy-demo" MACOSX_BUNDLE_BUNDLE_NAME "Entropy")
     endif()
+    xxwidgets_add_demo(xxwidgets_scan_directory_demo examples/scan_directory_demo.c)
     xxwidgets_add_demo(xxwidgets_scan_panel_demo examples/scan_panel_demo.c)
     xxwidgets_add_demo(xxwidgets_scan_options_demo examples/scan_options_demo.c)
     xxwidgets_add_demo(xxwidgets_font_options_demo examples/font_options_demo.c)
@@ -607,12 +656,15 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         add_executable(xxwidgets_core_tests
             $<TARGET_OBJECTS:xxwidgets_io>
             $<TARGET_OBJECTS:xxwidgets_history>
+            $<TARGET_OBJECTS:xxwidgets_translation>
             $<TARGET_OBJECTS:xxwidgets_threads>
             $<TARGET_OBJECTS:xxwidgets_scan_colors>
     $<TARGET_OBJECTS:xxwidgets_codepages>
             tests/test_core.c
+            tests/test_translation.c
             tests/test_hex_resize.c
             src/xxwidgets.c
+            src/xxwidgets_translation.c
             src/xxwidgets_edit.c
             src/xxwidgets_window.c
             src/xxwidgets_menu.c
@@ -648,7 +700,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         endif()
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_shortcuts.c
             src/die_engine/xxwidgets_die_signature_edit.c src/die_engine/xxwidgets_die_signature_editor.c)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_scanresults.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/scan/xxwidgets_scanresults.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_data_struct_table.c src/xxwidgets_data_struct_view.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_debugger_tables.c src/xxwidgets_debugger.c)
         target_sources(xxwidgets_core_tests PRIVATE tests/test_debugger_session.c src/xxwidgets_debugger_session.c
@@ -658,7 +710,20 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             src/xxwidgets_debugger/xxwidgets_debugger_x86_64.c
             src/xxwidgets_debugger/xxwidgets_debugger_arm32.c
             src/xxwidgets_debugger/xxwidgets_debugger_arm64.c)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_treeview.c src/xxwidgets_scan_panel.c tests/test_scan_panel.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_treeview.c src/scan/xxwidgets_scan_panel.c tests/test_scan_panel.c
+            src/scan/xxwidgets_scan_options.c src/scan/xxwidgets_scan_directory.c ${_xxwidgets_scan_directory_source}
+            tests/test_scan_directory.c)
+        set(_xxwidgets_scan_fixture "${CMAKE_CURRENT_BINARY_DIR}/scan-directory-fixture")
+        file(MAKE_DIRECTORY "${_xxwidgets_scan_fixture}/sub/nested" "${_xxwidgets_scan_fixture}/empty" "${CMAKE_CURRENT_BINARY_DIR}/scan-directory-bulk")
+        foreach(_scan_file root.bin .hidden fail.bin unicode-λ.bin sub/child.bin sub/nested/deep.bin)
+            file(WRITE "${_xxwidgets_scan_fixture}/${_scan_file}" "directory scan fixture\n")
+        endforeach()
+        foreach(_scan_index RANGE 0 127)
+            file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/scan-directory-bulk/file${_scan_index}.bin" "bulk fixture\n")
+        endforeach()
+        target_compile_definitions(xxwidgets_core_tests PRIVATE
+            XXWIDGETS_SCAN_FIXTURE="${_xxwidgets_scan_fixture}"
+            XXWIDGETS_SCAN_BULK="${CMAKE_CURRENT_BINARY_DIR}/scan-directory-bulk")
         target_sources(xxwidgets_core_tests PRIVATE tests/test_shortcuts.c tests/test_hex_columns.c)
         target_sources(xxwidgets_core_tests PRIVATE tests/test_file_drops.c tests/test_canvas.c src/xxwidgets_canvas.c src/xxwidgets_entropy.c tests/test_entropy.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_strings.c tests/test_strings.c)
@@ -670,7 +735,15 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             target_link_libraries(xxwidgets_core_tests PRIVATE xxwidgets_xxsettings)
             target_compile_definitions(xxwidgets_core_tests PRIVATE XXWIDGETS_WITH_SETTINGS)
         endif()
+        if(MSVC)
+            target_compile_options(xxwidgets_core_tests PRIVATE /utf-8)
+        endif()
+        target_compile_definitions(xxwidgets_core_tests PRIVATE
+            XXWIDGETS_TEST_TRANSLATION_PO="${CMAKE_CURRENT_SOURCE_DIR}/po/de.po")
+        add_test(NAME xxwidgets_scan_directory COMMAND xxwidgets_core_tests --scan-directory-only)
         add_test(NAME xxwidgets_core COMMAND xxwidgets_core_tests)
+        set_tests_properties(xxwidgets_core xxwidgets_scan_directory PROPERTIES
+            RESOURCE_LOCK xxwidgets_scan_directory_fixture)
         if(UNIX AND TARGET xxwidgets_emulator)
             add_executable(xxwidgets_debugger_emul_runtime_tests tests/test_debugger_emul_runtime.c)
             target_link_libraries(xxwidgets_debugger_emul_runtime_tests PRIVATE xxwidgets::emulator)
@@ -756,9 +829,11 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             set_tests_properties(xxwidgets_win32 PROPERTIES TIMEOUT 30)
             add_test(NAME xxwidgets_win32_data_struct COMMAND xxwidgets_win32_tests --data-struct-table)
             set_tests_properties(xxwidgets_win32_data_struct PROPERTIES TIMEOUT 15)
+            add_test(NAME xxwidgets_win32_tree_colors COMMAND xxwidgets_win32_tests --tree-colors)
+            set_tests_properties(xxwidgets_win32_tree_colors PROPERTIES TIMEOUT 15)
         endif()
         if(_xxwidgets_native STREQUAL "win32")
-            foreach(_xxwidgets_options IN ITEMS scan_options font_options context_options optimization_options)
+            foreach(_xxwidgets_options IN ITEMS scan_options font_options context_options optimization_options options_pages)
                 add_executable(xxwidgets_${_xxwidgets_options}_tests tests/test_${_xxwidgets_options}.c)
                 target_link_libraries(xxwidgets_${_xxwidgets_options}_tests PRIVATE xxwidgets::xxwidgets)
                 target_link_libraries(xxwidgets_${_xxwidgets_options}_tests PRIVATE user32 gdi32 comctl32 advapi32)
@@ -877,3 +952,23 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/xxwidgetsConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/xxwidgetsConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xxwidgets)
 message(STATUS "xxwidgets native backend: ${_xxwidgets_native}; TUI backend: enabled")
+
+# Optional maintenance tool; catalog loading itself needs no gettext installation.
+find_program(XXWIDGETS_XGETTEXT_EXECUTABLE xgettext)
+if(XXWIDGETS_XGETTEXT_EXECUTABLE)
+    file(GLOB_RECURSE _xxwidgets_translation_inputs RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.m")
+    add_custom_target(xxwidgets_update_translations
+        COMMAND "${XXWIDGETS_XGETTEXT_EXECUTABLE}" --language=C --from-code=UTF-8
+            --keyword=XXW_TR:2 --keyword=XXW_N_ --keyword=xxwidgets_app_gettext:2 --keyword=xxwidgets_app_ngettext:2,3
+            --sort-output --add-comments=TRANSLATORS --package-name=xxwidgets
+            --package-version=${PROJECT_VERSION} --msgid-bugs-address=horsicq@gmail.com
+            --output=po/xxwidgets.pot ${_xxwidgets_translation_inputs} examples/translation_demo.c examples/scan_directory_demo.c
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Extracting xxwidgets PO message template")
+endif()
+install(DIRECTORY po/ DESTINATION ${CMAKE_INSTALL_DATADIR}/xxwidgets/po
+    FILES_MATCHING PATTERN "*.po" PATTERN "*.pot")
+install(FILES docs/translation.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+
+install(FILES docs/scan-directory.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)

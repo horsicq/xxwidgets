@@ -2498,6 +2498,7 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
         case XXWIDGET_SYMBOLSVIEWER:
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_MEMORY_MAP:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -2809,6 +2810,7 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         case XXWIDGET_SYMBOLSVIEWER:
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
+        case XXWIDGETS_MEMORY_MAP:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:

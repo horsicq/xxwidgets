@@ -132,7 +132,7 @@ xxwidgets_status xxwidget_systemprocessesviewer_show_hexview(xxwidgets_widget *v
     if (index == SIZE_MAX) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_process_memory_open(&process, &memory);
     if (status != XXWIDGETS_OK) {
-        (void)xxwidgets_text_dialog(owner, "Hex view unavailable", "Cannot open process memory. The selected process must still exist and allow read access.");
+        (void)xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Hex view unavailable"), "Cannot open process memory. The selected process must still exist and allow read access.");
         return status;
     }
     enabled = owner->enabled;
@@ -210,7 +210,7 @@ done:
     app->modal_window = NULL; app->modal_default = previous_default;
     app->on_event = previous_event; app->user_data = previous_user;
     if (initial_read_failed && !app->quit)
-        (void)xxwidgets_text_dialog(owner, "Hex view unavailable", "The initial memory region could not be read. Process mappings or read permissions may have changed.");
+        (void)xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Hex view unavailable"), "The initial memory region could not be read. Process mappings or read permissions may have changed.");
     if (enabled && !app->quit) (void)xxwidgets_widget_focus(viewer);
     return status;
 }

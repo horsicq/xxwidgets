@@ -108,13 +108,13 @@ static xxwidgets_status read_options(const xxwidgets_search_widget *widget, xxwi
     int *flags[] = {&selected.backward, &selected.wrap, &selected.selection_only, &selected.case_sensitive};
     static const xxwidgets_search_control_id number_ids[] = {XXWIDGETS_SEARCH_START, XXWIDGETS_SEARCH_LENGTH, XXWIDGETS_SEARCH_ALIGNMENT};
     static const xxwidgets_search_control_id flag_ids[] = {XXWIDGETS_SEARCH_BACKWARD, XXWIDGETS_SEARCH_WRAP, XXWIDGETS_SEARCH_SELECTION_ONLY, XXWIDGETS_SEARCH_CASE_SENSITIVE};
-    if (error) *error = "Check the search settings.";
+    if (error) *error = XXW_N_("Check the search settings.");
     if (!widget || !options) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_widget_get_text(widget->controls[XXWIDGETS_SEARCH_PATTERN], selected.pattern, sizeof(selected.pattern), NULL);
-    if (status == XXWIDGETS_BUFFER_TOO_SMALL && error) *error = "Pattern is too long (maximum 4095 UTF-8 bytes).";
+    if (status == XXWIDGETS_BUFFER_TOO_SMALL && error) *error = XXW_N_("Pattern is too long (maximum 4095 UTF-8 bytes).");
     if (status != XXWIDGETS_OK) return status;
     status = xxwidgets_widget_get_text(widget->controls[XXWIDGETS_SEARCH_ENCODING], selected.encoding, sizeof(selected.encoding), NULL);
-    if (status == XXWIDGETS_BUFFER_TOO_SMALL && error) *error = "Encoding name is too long (maximum 63 UTF-8 bytes).";
+    if (status == XXWIDGETS_BUFFER_TOO_SMALL && error) *error = XXW_N_("Encoding name is too long (maximum 63 UTF-8 bytes).");
     if (status != XXWIDGETS_OK) return status;
     status = xxwidgets_widget_get_value(widget->controls[XXWIDGETS_SEARCH_MODE], &mode);
     if (status != XXWIDGETS_OK) return status;
@@ -127,15 +127,15 @@ static xxwidgets_status read_options(const xxwidgets_search_widget *widget, xxwi
         status = xxwidgets_widget_get_text(widget->controls[number_ids[i]], text, sizeof(text), NULL);
         if (status != XXWIDGETS_OK) return status;
         if (!numeric(text, numbers[i], i == 1)) {
-            if (error) *error = "Enter offsets, length, and alignment in decimal or 0x hexadecimal.";
+            if (error) *error = XXW_N_("Enter offsets, length, and alignment in decimal or 0x hexadecimal.");
             return XXWIDGETS_INVALID_ARGUMENT;
         }
     }
     status = xxwidgets_search_options_validate(&selected);
-    if (!selected.alignment && error) *error = "Alignment must be at least 1.";
+    if (!selected.alignment && error) *error = XXW_N_("Alignment must be at least 1.");
     else if (selected.length != UINT64_MAX && selected.length > UINT64_MAX - selected.start && error)
-        *error = "The search range exceeds the maximum source offset.";
-    else if (!selected.encoding[0] && error) *error = "Enter an encoding name, for example UTF-8.";
+        *error = XXW_N_("The search range exceeds the maximum source offset.");
+    else if (!selected.encoding[0] && error) *error = XXW_N_("Enter an encoding name, for example UTF-8.");
     if (status == XXWIDGETS_OK) *options = selected;
     return status;
 }
@@ -199,8 +199,8 @@ finish:
 xxwidgets_status xxwidgets_search_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_search_widget **out_widget)
 {
     static const char *const names[XXWIDGETS_SEARCH_CONTROL_COUNT] = {
-        "", "", "", "Search backward", "Wrap at source boundaries", "Selection only", "Case sensitive", "", "", "",
-        "Search pattern", "Search mode", "Encoding", "Start offset", "Length", "Alignment",
+        "", "", "", XXW_N_("Search backward"), XXW_N_("Wrap at source boundaries"), XXW_N_("Selection only"), XXW_N_("Case sensitive"), "", "", "",
+        XXW_N_("Search pattern"), XXW_N_("Search mode"), XXW_N_("Encoding"), XXW_N_("Start offset"), XXW_N_("Length"), XXW_N_("Alignment"),
         "Number: u32le:123 or f64be:1.5. Regex: . [] () | ? {n,m}; no unbounded repeats."};
     static const xxwidgets_kind kinds[XXWIDGETS_SEARCH_CONTROL_COUNT] = {
         XXWIDGETS_EDIT, XXWIDGETS_COMBOBOX, XXWIDGETS_EDIT, XXWIDGETS_CHECKBOX, XXWIDGETS_CHECKBOX,
@@ -223,7 +223,7 @@ xxwidgets_status xxwidgets_search_widget_create(xxwidgets_widget *owner, xxwidge
     widget->owner = owner;
     rectangles(bounds, rects);
     for (i = 0; i < XXWIDGETS_SEARCH_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], rects[i], &widget->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), rects[i], &widget->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
     for (i = 0; i < 5; ++i) {
@@ -330,12 +330,12 @@ xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *ti
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){2, 17, 70, 1}, &error);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Find", (xxwidgets_rect){36, 19, 10, 1}, &state.find);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Find"), (xxwidgets_rect){36, 19, 10, 1}, &state.find);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_default = state.find;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Find All", (xxwidgets_rect){48, 19, 12, 1}, &state.find_all);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Find All"), (xxwidgets_rect){48, 19, 12, 1}, &state.find_all);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Cancel", (xxwidgets_rect){62, 19, 10, 1}, &state.cancel);
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), (xxwidgets_rect){62, 19, 10, 1}, &state.cancel);
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
@@ -356,7 +356,7 @@ xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *ti
             message = "Enter a search pattern.";
         }
         if (status == XXWIDGETS_INVALID_ARGUMENT || status == XXWIDGETS_BUFFER_TOO_SMALL) {
-            status = xxwidgets_widget_set_text(error, message ? message : "Check the search settings.");
+            status = xxwidgets_widget_set_text(error, XXW_TR(app, message ? message : XXW_N_("Check the search settings.")));
             state.pending = XXWIDGETS_SEARCH_CANCEL;
         } else if (status == XXWIDGETS_OK) { accepted = state.pending; state.done = 1; }
     }

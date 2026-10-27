@@ -71,21 +71,9 @@ static void recover_control(xxwidgets_widget *control)
 
 static xxwidgets_status set_choices(xxwidgets_widget *control)
 {
-    static const wchar_t *const names[] = {L"8 bytes", L"16 bytes", L"24 bytes", L"32 bytes", L"48 bytes", L"64 bytes"};
+    static const char *const names[] = {XXW_N_("8 bytes"), XXW_N_("16 bytes"), XXW_N_("24 bytes"), XXW_N_("32 bytes"), XXW_N_("48 bytes"), XXW_N_("64 bytes")};
     static const uint64_t values[] = {8, 16, 24, 32, 48, 64};
-    xx_meta_string records[6] = {0};
-    xx_str_w_s labels[6] = {0};
-    size_t i;
-    for (i = 0; i < 6; ++i) {
-        labels[i].data = (wchar_t *)names[i];
-        labels[i].length = wcslen(names[i]);
-        labels[i].capacity = labels[i].length + 1;
-        labels[i].is_view = true;
-        records[i].meta_string = labels + i;
-        records[i].var.type = XX_VAR_TYPE_UINT64;
-        records[i].var.val.u64 = values[i];
-    }
-    return xxwidgets_combobox_set_records(control, records, 6);
+    return xxwidgets_translated_choices(control, names, values, 6);
 }
 
 xxwidgets_status xxwidgets_hex_options_init(xxwidgets_hex_options *options)
@@ -186,7 +174,7 @@ xxwidgets_status xxwidgets_hex_options_widget_create(xxwidgets_widget *owner, xx
                                                       xxwidgets_hex_options_widget **out_widget)
 {
     static const char *const labels[XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT] = {
-        "Bytes per row", "Editable", "Bytes per row", "Bold non-zero", "", "0", "Hex font", "Point size", "0 = automatic; 4..96 pt"};
+        XXW_N_("Bytes per row"), XXW_N_("Editable"), XXW_N_("Bytes per row"), XXW_N_("Bold non-zero"), "", "0", XXW_N_("Hex font"), XXW_N_("Point size"), XXW_N_("0 = automatic; 4..96 pt")};
     static const xxwidgets_kind kinds[XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT] = {
         XXWIDGETS_COMBOBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_LABEL, XXWIDGETS_CHECKBOX,
         XXWIDGETS_EDIT, XXWIDGETS_EDIT, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL};
@@ -204,7 +192,7 @@ xxwidgets_status xxwidgets_hex_options_widget_create(xxwidgets_widget *owner, xx
     widget->owner = owner;
     option_rects(bounds, rects);
     for (i = 0; i < XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], labels[i], rects[i], &widget->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, labels[i]), rects[i], &widget->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
     status = set_choices(widget->controls[XXWIDGETS_HEX_OPTIONS_BYTES_PER_ROW]);

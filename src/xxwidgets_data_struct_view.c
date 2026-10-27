@@ -254,7 +254,7 @@ static xxwidgets_status show_item(xxwidgets_data_struct_view *view, size_t index
         if (status == XXWIDGETS_OK) view->selection = SIZE_MAX;
         return status;
     }
-    if (view->items[index].data_struct.type == XX_DATA_STRUCT_TYPE_STRUCT && view->items[index].field_count > 0) {
+    if (view->items[index].data_struct.type != XX_DATA_STRUCT_TYPE_RAW_DATA && view->items[index].field_count > 0) {
         status = xxwidgets_data_struct_table_set_fields(table, view->items[index].fields, view->items[index].field_count);
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(details, 0);
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(table, 1);
@@ -275,7 +275,7 @@ xxwidgets_widget *xxwidgets_data_struct_view_control(const xxwidgets_data_struct
 xxwidgets_status xxwidgets_data_struct_view_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_data_struct_view **out_view)
 {
     static const xxwidgets_kind kinds[XXWIDGETS_DATA_STRUCT_VIEW_CONTROL_COUNT] = {XXWIDGETS_LISTBOX, XXWIDGETS_DATA_STRUCT_TABLE, XXWIDGETS_LISTBOX};
-    static const char *const names[XXWIDGETS_DATA_STRUCT_VIEW_CONTROL_COUNT] = {"Data structures", "Structure fields", "Data structure details"};
+    static const char *const names[XXWIDGETS_DATA_STRUCT_VIEW_CONTROL_COUNT] = {XXW_N_("Data structures"), XXW_N_("Structure fields"), XXW_N_("Data structure details")};
     xxwidgets_data_struct_view *view;
     xxwidgets_rect rects[XXWIDGETS_DATA_STRUCT_VIEW_CONTROL_COUNT];
     xxwidgets_status status;
@@ -290,7 +290,7 @@ xxwidgets_status xxwidgets_data_struct_view_create(xxwidgets_widget *owner, xxwi
     view->selection = SIZE_MAX;
     control_rects(bounds, rects);
     for (i = 0; i < XXWIDGETS_DATA_STRUCT_VIEW_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], rects[i], &view->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), rects[i], &view->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
     status = xxwidgets_widget_set_visible(view->controls[XXWIDGETS_DATA_STRUCT_VIEW_DETAILS], 0);

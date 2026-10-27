@@ -46,8 +46,9 @@ typedef enum xxwidgets_data_struct_view_control_id {
 
 /* Two-panel data-structure browser. Bounds use text cells and require width >=
  * 48 and height >= 4. The left list owns selection. Pass its SELECT event to
- * xxwidgets_data_struct_view_handle_event to update the right panel. STRUCT
- * items use the special nine-column table. Other kinds use a metadata list. Children belong to the
+ * xxwidgets_data_struct_view_handle_event to update the right panel. Typed
+ * items with fields use the nine-column table, including ENTRY records.
+ * Raw descriptors and items without fields use a metadata list. Children belong to the
  * owner WINDOW. Destroy the view before its owner/app and do not destroy
  * borrowed control handles separately. */
 XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_data_struct_view **out_view);
