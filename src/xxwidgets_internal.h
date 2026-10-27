@@ -406,6 +406,11 @@ size_t xxwidgets_treeview_row_of_node(const xxwidgets_widget *widget, size_t ind
 size_t xxwidgets_treeview_depth(const xxwidgets_widget *widget, size_t index);
 int xxwidgets_treeview_has_children(const xxwidgets_widget *widget, size_t index);
 const char *xxwidgets_treeview_display_text(const xxwidgets_widget *widget, size_t index);
+/* User input on a tree mark. click reports a pointer hit on mark of node; key
+ * a typed character for the selected node, returning 1 when it named a mark
+ * there (and the CLICK was emitted). */
+void xxwidgets_treeview_mark_click(xxwidgets_widget *widget, size_t index, size_t mark);
+int xxwidgets_treeview_mark_key(xxwidgets_widget *widget, unsigned int key);
 xxwidgets_status xxwidgets_treeview_select(xxwidgets_widget *widget, int index);
 xxwidgets_status xxwidgets_treeview_user_expand(xxwidgets_widget *widget, size_t index, int expanded);
 /* Cache native expansion without syncing/emitting. Caller follows the cached

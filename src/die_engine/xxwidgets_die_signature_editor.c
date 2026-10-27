@@ -42,18 +42,48 @@ static int outside_dispatch(const xxwidgets_die_signature_editor *editor)
         !editor->owner->app->polling && !editor->owner->app->syncing;
 }
 
-static void rectangles(xxwidgets_rect bounds, xxwidgets_rect *rects)
+static const char *const editor_labels[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT] = {
+    XXW_N_("Open"), XXW_N_("Save"), XXW_N_("Save As"), XXW_N_("Read-only"), "", "", "", XXW_N_("Find next"), XXW_N_("Run"), XXW_N_("Clear result"), "", ""};
+
+/* A toolbar control as wide as its translated label (a check box adds its
+ * box), never narrower than the English layout nor wider than limit unless
+ * that layout needs it. */
+static int label_width(xxwidgets_app *app, xxwidgets_die_signature_editor_control_id id, int minimum, int limit)
+{
+    const unsigned char *s = (const unsigned char *)XXW_TR(app, editor_labels[id]);
+    int cells = id == XXWIDGETS_DIE_EDITOR_READ_ONLY ? 5 : 3;
+    for (; *s; ++s)
+        if ((*s & 0xc0) != 0x80) ++cells;
+    if (limit < minimum) limit = minimum;
+    return cells < minimum ? minimum : cells > limit ? limit : cells;
+}
+
+static void rectangles(xxwidgets_app *app, xxwidgets_rect bounds, xxwidgets_rect *rects)
 {
     int x = bounds.x, y = bounds.y, width = bounds.width, height = bounds.height;
-    rects[XXWIDGETS_DIE_EDITOR_OPEN] = (xxwidgets_rect){x, y, 7, 2};
-    rects[XXWIDGETS_DIE_EDITOR_SAVE] = (xxwidgets_rect){x + 8, y, 7, 2};
-    rects[XXWIDGETS_DIE_EDITOR_SAVE_AS] = (xxwidgets_rect){x + 16, y, 10, 2};
-    rects[XXWIDGETS_DIE_EDITOR_READ_ONLY] = (xxwidgets_rect){x + 27, y, 14, 2};
-    rects[XXWIDGETS_DIE_EDITOR_RUN] = (xxwidgets_rect){x + width - 20, y, 7, 2};
-    rects[XXWIDGETS_DIE_EDITOR_CLEAR_RESULT] = (xxwidgets_rect){x + width - 12, y, 12, 2};
+    /* Whole labels when the row has room; otherwise six equal shares of it
+     * (the English layout always fits the 72-cell minimum). */
+    int limit = width, open, save, save_as, read_only, run, clear, find, pass;
+    for (pass = 0; pass < 2; ++pass) {
+        open = label_width(app, XXWIDGETS_DIE_EDITOR_OPEN, 7, limit);
+        save = label_width(app, XXWIDGETS_DIE_EDITOR_SAVE, 7, limit);
+        save_as = label_width(app, XXWIDGETS_DIE_EDITOR_SAVE_AS, 10, limit);
+        read_only = label_width(app, XXWIDGETS_DIE_EDITOR_READ_ONLY, 14, limit);
+        run = label_width(app, XXWIDGETS_DIE_EDITOR_RUN, 7, limit);
+        clear = label_width(app, XXWIDGETS_DIE_EDITOR_CLEAR_RESULT, 12, limit);
+        if (open + save + save_as + read_only + run + clear + 6 <= width) break;
+        limit = (width - 6) / 6;
+    }
+    find = label_width(app, XXWIDGETS_DIE_EDITOR_FIND_NEXT, 11, width / 3);
+    rects[XXWIDGETS_DIE_EDITOR_OPEN] = (xxwidgets_rect){x, y, open, 2};
+    rects[XXWIDGETS_DIE_EDITOR_SAVE] = (xxwidgets_rect){x + open + 1, y, save, 2};
+    rects[XXWIDGETS_DIE_EDITOR_SAVE_AS] = (xxwidgets_rect){x + open + save + 2, y, save_as, 2};
+    rects[XXWIDGETS_DIE_EDITOR_READ_ONLY] = (xxwidgets_rect){x + open + save + save_as + 3, y, read_only, 2};
+    rects[XXWIDGETS_DIE_EDITOR_RUN] = (xxwidgets_rect){x + width - clear - run - 1, y, run, 2};
+    rects[XXWIDGETS_DIE_EDITOR_CLEAR_RESULT] = (xxwidgets_rect){x + width - clear, y, clear, 2};
     rects[XXWIDGETS_DIE_EDITOR_PATH] = (xxwidgets_rect){x, y + 2, width, 2};
-    rects[XXWIDGETS_DIE_EDITOR_FIND_TEXT] = (xxwidgets_rect){x, y + 4, width - 12, 2};
-    rects[XXWIDGETS_DIE_EDITOR_FIND_NEXT] = (xxwidgets_rect){x + width - 11, y + 4, 11, 2};
+    rects[XXWIDGETS_DIE_EDITOR_FIND_TEXT] = (xxwidgets_rect){x, y + 4, width - find - 1, 2};
+    rects[XXWIDGETS_DIE_EDITOR_FIND_NEXT] = (xxwidgets_rect){x + width - find, y + 4, find, 2};
     rects[XXWIDGETS_DIE_EDITOR_SOURCE] = (xxwidgets_rect){x, y + 6, width, height - 13};
     rects[XXWIDGETS_DIE_EDITOR_RESULT] = (xxwidgets_rect){x, y + height - 7, width, 6};
     rects[XXWIDGETS_DIE_EDITOR_STATUS] = (xxwidgets_rect){x, y + height - 1, width, 1};
@@ -94,8 +124,6 @@ xxwidgets_status xxwidgets_die_signature_editor_create(xxwidgets_widget *owner, 
         XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_CHECKBOX,
         XXWIDGETS_EDIT, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_EDIT, XXWIDGETS_BUTTON,
         XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_LABEL};
-    static const char *const labels[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT] = {
-        XXW_N_("Open"), XXW_N_("Save"), XXW_N_("Save As"), XXW_N_("Read-only"), "", "", "", XXW_N_("Find next"), XXW_N_("Run"), XXW_N_("Clear result"), "", ""};
     xxwidgets_die_signature_editor *editor;
     xxwidgets_rect rects[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT];
     xxwidgets_status status;
@@ -109,9 +137,9 @@ xxwidgets_status xxwidgets_die_signature_editor_create(xxwidgets_widget *owner, 
     editor->owner = owner;
     editor->path = copy_text("");
     if (!editor->path) { free(editor); return XXWIDGETS_OUT_OF_MEMORY; }
-    rectangles(bounds, rects);
+    rectangles(owner->app, bounds, rects);
     for (i = 0; i < XXWIDGETS_DIE_EDITOR_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, labels[i]), rects[i], &editor->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, editor_labels[i]), rects[i], &editor->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
     status = xxwidgets_die_signature_edit_set_read_only(editor->controls[XXWIDGETS_DIE_EDITOR_RESULT], 1);
@@ -151,7 +179,7 @@ xxwidgets_status xxwidgets_die_signature_editor_set_rect(xxwidgets_die_signature
     size_t i, j;
     if (!editor || !valid_bounds(bounds)) return XXWIDGETS_INVALID_ARGUMENT;
     if (editor->executing) return XXWIDGETS_BUSY;
-    rectangles(bounds, rects);
+    rectangles(editor->owner->app, bounds, rects);
     for (i = 0; i < XXWIDGETS_DIE_EDITOR_CONTROL_COUNT; ++i) previous[i] = editor->controls[i]->rect;
     for (i = 0; i < XXWIDGETS_DIE_EDITOR_CONTROL_COUNT; ++i) {
         status = xxwidgets_widget_set_rect(editor->controls[i], rects[i]);
@@ -353,6 +381,149 @@ xxwidgets_status xxwidgets_die_signature_editor_set_result(xxwidgets_die_signatu
 xxwidgets_status xxwidgets_die_signature_editor_clear_result(xxwidgets_die_signature_editor *editor)
 {
     return xxwidgets_die_signature_editor_set_result(editor, "");
+}
+
+typedef struct editor_dialog {
+    xxwidgets_widget *window, *close;
+    xxwidgets_die_signature_editor *editor;
+    int close_requested, relayout, warned, done;
+} editor_dialog;
+
+static void editor_dialog_layout(editor_dialog *state)
+{
+    xxwidgets_rect bounds;
+    if (xxwidgets_widget_get_rect(state->window, &bounds) != XXWIDGETS_OK || bounds.width < 74 || bounds.height < 25) return;
+    (void)xxwidgets_die_signature_editor_set_rect(state->editor, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 4});
+    (void)xxwidgets_widget_set_rect(state->close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
+}
+
+static void editor_dialog_event(xxwidgets_app *app, const xxwidgets_event *event, void *user)
+{
+    editor_dialog *state = (editor_dialog *)user;
+    (void)app;
+    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == state->window) ||
+        (event->type == XXWIDGETS_EVENT_CLICK && event->widget == state->close) ||
+        (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) {
+        state->close_requested = 1;
+        return;
+    }
+    if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == state->window) {
+        state->relayout = 1;
+        return;
+    }
+    if (!state->editor) return;
+    if (event->type == XXWIDGETS_EVENT_SHORTCUT) {
+        xxwidgets_event action = {0};
+        if (event->value == 2) {
+            (void)xxwidgets_widget_focus(state->editor->controls[XXWIDGETS_DIE_EDITOR_FIND_TEXT]);
+            return;
+        }
+        action.type = XXWIDGETS_EVENT_CLICK;
+        action.widget = state->editor->controls[event->value == 3 ? XXWIDGETS_DIE_EDITOR_FIND_NEXT : XXWIDGETS_DIE_EDITOR_SAVE];
+        (void)xxwidgets_die_signature_editor_handle_event(state->editor, &action);
+        return;
+    }
+    (void)xxwidgets_die_signature_editor_handle_event(state->editor, event);
+}
+
+xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, const char *title,
+    const char *source, const char *path, xxwidgets_die_signature_editor_run_fn run, void *user_data)
+{
+    const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}, {"Ctrl+F", 2}, {"Meta+F", 2}, {"F3", 3}, {"Ctrl+S", 4}, {"Meta+S", 4}};
+    editor_dialog state = {0};
+    xxwidgets_app *app;
+    xxwidgets_widget *focus = NULL, *widget, *previous_default;
+    xxwidgets_event_fn previous_event;
+    void *previous_user;
+    xxwidgets_status status, cleanup;
+    int width = 100, height = 36, owner_enabled, disabled = 0, attached = 0;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !source) return XXWIDGETS_INVALID_ARGUMENT;
+    app = owner->app;
+    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
+    if (xxwidgets_app_backend(app) == XXWIDGETS_BACKEND_TUI) {
+        /* A terminal has one screen: take what the owner has, at least the minimum. */
+        width = owner->rect.width - 4 > 74 ? owner->rect.width - 4 : 74;
+        height = owner->rect.height - 2 > 25 ? owner->rect.height - 2 : 25;
+    }
+    if (owner->rect.x > INT_MAX - width - 2 || owner->rect.y > INT_MAX - height - 1) return XXWIDGETS_INVALID_ARGUMENT;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    previous_default = app->modal_default;
+    owner_enabled = owner->enabled;
+    for (widget = app->widgets; widget; widget = widget->next)
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            focus = widget;
+            break;
+        }
+    app->on_event = editor_dialog_event;
+    app->user_data = &state;
+    app->modal_default = NULL;
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
+        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 1, width, height}, &state.window);
+    if (status != XXWIDGETS_OK) goto finish;
+    app->modal_window = state.window;
+    status = xxwidgets_window_set_minimum_size(state.window, 74, 25);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"),
+            (xxwidgets_rect){width - 13, height - 3, 12, 2}, &state.close);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_die_signature_editor_create(state.window, (xxwidgets_rect){1, 1, width - 2, height - 4}, &state.editor);
+    if (status == XXWIDGETS_OK) status = xxwidgets_die_signature_editor_set_source(state.editor, source, path, 1);
+    if (status == XXWIDGETS_OK && run) status = xxwidgets_die_signature_editor_set_run_callback(state.editor, run, user_data);
+    if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(state.window, shortcuts, sizeof(shortcuts) / sizeof(shortcuts[0]));
+    if (status != XXWIDGETS_OK) goto finish;
+    app->modal_default = state.close;
+    status = xxwidgets_widget_set_enabled(owner, 0);
+    if (status != XXWIDGETS_OK) goto finish;
+    disabled = 1;
+    if (app->ops->modal_owner) {
+        status = app->ops->modal_owner(state.window, owner, 1);
+        if (status != XXWIDGETS_OK) goto finish;
+        attached = 1;
+    }
+    status = xxwidgets_widget_focus(state.editor->controls[XXWIDGETS_DIE_EDITOR_SOURCE]);
+    while (status == XXWIDGETS_OK && !state.done && !app->quit) {
+        status = xxwidgets_app_poll(app, 30);
+        if (status != XXWIDGETS_OK || app->quit) break;
+        if (state.relayout) {
+            state.relayout = 0;
+            editor_dialog_layout(&state);
+        }
+        if (state.close_requested) {
+            state.close_requested = 0;
+            if (!xxwidgets_die_signature_editor_modified(state.editor) || state.warned) {
+                state.done = 1;
+                break;
+            }
+            state.warned = 1;
+            (void)xxwidgets_widget_set_text(state.editor->controls[XXWIDGETS_DIE_EDITOR_STATUS],
+                XXW_TR(app, "Unsaved changes. Close again to discard them."));
+        }
+        (void)xxwidgets_die_signature_editor_process_pending(state.editor);
+    }
+finish:
+    if (disabled) {
+        cleanup = xxwidgets_widget_set_enabled(owner, owner_enabled);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (attached) {
+        cleanup = app->ops->modal_owner(state.window, owner, 0);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (state.editor) {
+        cleanup = xxwidgets_die_signature_editor_destroy(state.editor);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (state.window) {
+        cleanup = xxwidgets_widget_destroy(state.window);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    app->modal_window = NULL;
+    app->modal_default = previous_default;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
+    if (focus) (void)xxwidgets_widget_focus(focus);
+    return status;
 }
 
 xxwidgets_status xxwidgets_die_signature_editor_set_run_callback(xxwidgets_die_signature_editor *editor,

@@ -38,6 +38,10 @@ struct xxwidgets_tree_state {
     size_t *first_child, *next_sibling, *depth;
     size_t first_root, count;
     xxwidgets_tree_projection projection;
+    /* Optional trailing buttons: labels per column, and a bit set per node. */
+    char *mark_labels[XXWIDGETS_TREE_MARKS_MAX];
+    size_t mark_count;
+    unsigned int *marks;
 };
 
 static int tree_widget(const xxwidgets_widget *widget)
@@ -70,6 +74,8 @@ static void free_tree(struct xxwidgets_tree_state *tree, int free_rows)
     free(tree->first_child);
     free(tree->next_sibling);
     free(tree->depth);
+    for (i = 0; i < tree->mark_count; ++i) free(tree->mark_labels[i]);
+    free(tree->marks);
     if (free_rows) free_projection(&tree->projection);
     else {
         free(tree->projection.visible);
@@ -376,6 +382,97 @@ xxwidgets_status xxwidgets_treeview_user_expand(xxwidgets_widget *widget, size_t
     status = xxwidgets_treeview_set_expanded(widget, index, expanded);
     if (status == XXWIDGETS_OK && changed) xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, (int)index);
     return status;
+}
+
+xxwidgets_status xxwidgets_treeview_set_marks(xxwidgets_widget *widget, const char *const *labels, size_t label_count,
+                                              const unsigned int *masks, size_t count)
+{
+    struct xxwidgets_tree_state *tree;
+    char *copies[XXWIDGETS_TREE_MARKS_MAX] = {0};
+    unsigned int *bits = NULL, *previous_bits;
+    char *previous_labels[XXWIDGETS_TREE_MARKS_MAX];
+    size_t previous_count, i;
+    xxwidgets_status status;
+    if (!tree_widget(widget) || !widget->tree) return XXWIDGETS_INVALID_ARGUMENT;
+    tree = widget->tree;
+    if (labels) {
+        if (!label_count || label_count > XXWIDGETS_TREE_MARKS_MAX || count != tree->count || (!masks && count)) return XXWIDGETS_INVALID_ARGUMENT;
+        for (i = 0; i < label_count; ++i) {
+            const unsigned char *s = (const unsigned char *)labels[i];
+            if (!s || !*s || !xxwidgets_valid_utf8(labels[i]) || strlen(labels[i]) > 16) return XXWIDGETS_INVALID_ARGUMENT;
+            for (; *s; ++s) if (*s < 32 || *s == 127) return XXWIDGETS_INVALID_ARGUMENT;
+        }
+        for (i = 0; i < count; ++i) if (masks[i] >> label_count) return XXWIDGETS_INVALID_ARGUMENT;
+        if (count) {
+            bits = (unsigned int *)malloc(count * sizeof(*bits));
+            if (!bits) return XXWIDGETS_OUT_OF_MEMORY;
+            memcpy(bits, masks, count * sizeof(*bits));
+        }
+        for (i = 0; i < label_count; ++i) {
+            copies[i] = xxwidgets_strdup(labels[i]);
+            if (!copies[i]) {
+                while (i) free(copies[--i]);
+                free(bits);
+                return XXWIDGETS_OUT_OF_MEMORY;
+            }
+        }
+    } else label_count = 0;
+    previous_count = tree->mark_count;
+    previous_bits = tree->marks;
+    memcpy(previous_labels, tree->mark_labels, sizeof(previous_labels));
+    memcpy(tree->mark_labels, copies, sizeof(copies));
+    tree->mark_count = label_count;
+    tree->marks = bits;
+    status = sync_tree(widget);
+    if (status != XXWIDGETS_OK) {
+        memcpy(tree->mark_labels, previous_labels, sizeof(previous_labels));
+        tree->mark_count = previous_count;
+        tree->marks = previous_bits;
+        sync_tree(widget);
+        for (i = 0; i < label_count; ++i) free(copies[i]);
+        free(bits);
+        return status;
+    }
+    for (i = 0; i < previous_count; ++i) free(previous_labels[i]);
+    free(previous_bits);
+    return XXWIDGETS_OK;
+}
+
+unsigned int xxwidgets_treeview_node_marks(const xxwidgets_widget *widget, size_t index)
+{
+    return tree_widget(widget) && widget->tree && widget->tree->marks && index < widget->tree->count ? widget->tree->marks[index] : 0;
+}
+
+size_t xxwidgets_treeview_mark_count(const xxwidgets_widget *widget)
+{
+    return tree_widget(widget) && widget->tree ? widget->tree->mark_count : 0;
+}
+
+const char *xxwidgets_treeview_mark_label(const xxwidgets_widget *widget, size_t mark)
+{
+    return mark < xxwidgets_treeview_mark_count(widget) ? widget->tree->mark_labels[mark] : NULL;
+}
+
+void xxwidgets_treeview_mark_click(xxwidgets_widget *widget, size_t index, size_t mark)
+{
+    if (mark < XXWIDGETS_TREE_MARKS_MAX && (xxwidgets_treeview_node_marks(widget, index) >> mark & 1u))
+        xxwidgets_emit_point(widget, XXWIDGETS_EVENT_CLICK, (int)index, (int)mark, 0);
+}
+
+int xxwidgets_treeview_mark_key(xxwidgets_widget *widget, unsigned int key)
+{
+    size_t mark, count = xxwidgets_treeview_mark_count(widget);
+    if (!count || widget->value < 0 || key < 32 || key >= 127) return 0;
+    if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
+    for (mark = 0; mark < count; ++mark) {
+        unsigned int first = (unsigned char)widget->tree->mark_labels[mark][0];
+        if (first >= 'A' && first <= 'Z') first += 'a' - 'A';
+        if (first == key && (xxwidgets_treeview_node_marks(widget, (size_t)widget->value) >> mark & 1u)) {
+            xxwidgets_treeview_mark_click(widget, (size_t)widget->value, mark);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 xxwidgets_status xxwidgets_treeview_clear(xxwidgets_widget *widget)

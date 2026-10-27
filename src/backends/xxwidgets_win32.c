@@ -100,6 +100,7 @@ typedef struct xxwidgets_win32_widget {
     size_t tree_count;
     uint64_t tree_content_revision;
     int tree_initialized;
+    int tree_mark_scroll; /* Horizontal scroll position the marks were painted at. */
     HMENU menu;
     int die_cell_width, die_cell_height, die_gutter, die_layouting, die_dragging, die_wheel_delta;
     HFONT die_font;
@@ -1443,11 +1444,80 @@ static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
         xxwidgets_hexview_activate_column(w, (unsigned)hit.iSubItem);
     return offset;
 }
-/* Per-node scan colors. Pure painting, so it also runs while nodes are being
- * synchronized: rebuilding the tree paints it then, and no later pass does. */
+/* Width of one mark column: every column is as wide as the widest label. */
+static int win32_tree_mark_width(xxwidgets_widget *control, HDC dc, int row_height)
+{
+    int width = row_height + row_height / 2;
+    size_t mark, count = xxwidgets_treeview_mark_count(control);
+    for (mark = 0; mark < count; ++mark) {
+        wchar_t *label;
+        SIZE size;
+        if (win32_wide(xxwidgets_treeview_mark_label(control, mark), &label) != XXWIDGETS_OK) continue;
+        if (GetTextExtentPoint32W(dc, label, (int)wcslen(label), &size) && size.cx + row_height > width) width = size.cx + row_height;
+        free(label);
+    }
+    return width;
+}
+
+/* Mark columns sit at the right edge of the client area, so they stay put
+ * while the tree scrolls sideways. Returns the mark under x, or SIZE_MAX. */
+static size_t win32_tree_mark_at(xxwidgets_widget *control, HWND handle, int x, int row_height)
+{
+    RECT client;
+    HDC dc;
+    HFONT font, previous = NULL;
+    int width;
+    size_t count = xxwidgets_treeview_mark_count(control);
+    if (!count || !GetClientRect(handle, &client) || !(dc = GetDC(handle))) return SIZE_MAX;
+    font = (HFONT)SendMessageW(handle, WM_GETFONT, 0, 0);
+    if (font) previous = (HFONT)SelectObject(dc, font);
+    width = win32_tree_mark_width(control, dc, row_height);
+    if (previous) SelectObject(dc, previous);
+    ReleaseDC(handle, dc);
+    if (x >= client.right || x < client.right - width * (int)count) return SIZE_MAX;
+    return count - 1 - (size_t)((client.right - 1 - x) / width);
+}
+
+static void win32_tree_draw_marks(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
+{
+    HWND handle = draw->nmcd.hdr.hwndFrom;
+    HDC dc = draw->nmcd.hdc;
+    RECT client, row = draw->nmcd.rc;
+    size_t mark, count = xxwidgets_treeview_mark_count(control);
+    unsigned int marks = xxwidgets_treeview_node_marks(control, (size_t)draw->nmcd.lItemlParam);
+    int width, height = row.bottom - row.top, left, mode;
+    COLORREF text;
+    if (!count || !GetClientRect(handle, &client) || height <= 0) return;
+    text = SetTextColor(dc, GetSysColor(control->enabled ? COLOR_BTNTEXT : COLOR_GRAYTEXT));
+    mode = SetBkMode(dc, TRANSPARENT);
+    width = win32_tree_mark_width(control, dc, height);
+    left = client.right - width * (int)count;
+    row.left = left; row.right = client.right;
+    FillRect(dc, &row, GetSysColorBrush(COLOR_WINDOW));
+    for (mark = 0; mark < count; ++mark) {
+        RECT button = {left + width * (int)mark + 1, row.top + 1, left + width * (int)(mark + 1) - 1, row.bottom - 1};
+        wchar_t *label;
+        if (!(marks >> mark & 1u)) continue;
+        FillRect(dc, &button, GetSysColorBrush(COLOR_BTNFACE));
+        FrameRect(dc, &button, GetSysColorBrush(COLOR_3DSHADOW));
+        if (win32_wide(xxwidgets_treeview_mark_label(control, mark), &label) != XXWIDGETS_OK) continue;
+        DrawTextW(dc, label, -1, &button, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        free(label);
+    }
+    SetBkMode(dc, mode);
+    SetTextColor(dc, text);
+}
+
+/* Per-node scan colors and marks. Pure painting, so it also runs while nodes
+ * are being synchronized: rebuilding the tree paints it then, and no later
+ * pass does. */
 static LRESULT win32_tree_draw(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
 {
     if (draw->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+    if (draw->nmcd.dwDrawStage == CDDS_ITEMPOSTPAINT) {
+        win32_tree_draw_marks(control, draw);
+        return CDRF_DODEFAULT;
+    }
     if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
         xxwidgets_tree_color colors = xxwidgets_treeview_node_color(control, (size_t)draw->nmcd.lItemlParam);
         COLORREF window = GetSysColor(COLOR_WINDOW), text = GetSysColor(COLOR_WINDOWTEXT);
@@ -1459,6 +1529,7 @@ static LRESULT win32_tree_draw(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
             draw->clrText = RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
         if (background != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
             draw->clrTextBk = RGB((background >> 16) & 255, (background >> 8) & 255, background & 255);
+        if (xxwidgets_treeview_mark_count(control)) return CDRF_NOTIFYPOSTPAINT;
     }
     return CDRF_DODEFAULT;
 }
@@ -2708,6 +2779,53 @@ static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LP
         }
         return 0;
     }
+    if (xxwidgets_treeview_mark_count(widget) && widget->platform) {
+        xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+        if ((message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK) && !widget->app->syncing && xxwidgets_focusable(widget) &&
+            native->tree_initialized && native->tree_content_revision == widget->tree_content_revision) {
+            TVHITTESTINFO hit;
+            RECT bounds;
+            size_t mark;
+            memset(&hit, 0, sizeof(hit));
+            hit.pt.x = (short)LOWORD(lp);
+            hit.pt.y = (short)HIWORD(lp);
+            hit.hItem = (HTREEITEM)SendMessageW(handle, TVM_HITTEST, 0, (LPARAM)&hit);
+            *(HTREEITEM *)&bounds = hit.hItem;
+            if (hit.hItem && SendMessageW(handle, TVM_GETITEMRECT, FALSE, (LPARAM)&bounds) &&
+                (mark = win32_tree_mark_at(widget, handle, hit.pt.x, bounds.bottom - bounds.top)) != SIZE_MAX) {
+                TVITEMW item;
+                memset(&item, 0, sizeof(item));
+                item.mask = TVIF_PARAM;
+                item.hItem = hit.hItem;
+                if (SendMessageW(handle, TVM_GETITEMW, 0, (LPARAM)&item) &&
+                    (xxwidgets_treeview_node_marks(widget, (size_t)item.lParam) >> mark & 1u)) {
+                    /* A button, not the row: select it as feedback, then report the
+                     * press once (the second press of a double click is eaten). */
+                    SetFocus(handle);
+                    if (message == WM_LBUTTONDOWN) {
+                        uint64_t revision = widget->tree_content_revision;
+                        SendMessageW(handle, TVM_SELECTITEM, TVGN_CARET, (LPARAM)hit.hItem);
+                        /* The SELECT callback may have replaced the nodes. */
+                        if (revision == widget->tree_content_revision)
+                            xxwidgets_treeview_mark_click(widget, (size_t)item.lParam, mark);
+                    }
+                    return 0;
+                }
+            }
+        }
+        if (message == WM_CHAR && !widget->app->syncing && xxwidgets_focusable(widget) &&
+            win32_read_value(widget) == XXWIDGETS_OK && xxwidgets_treeview_mark_key(widget, (unsigned int)wp))
+            return 0;
+        if (message == WM_SIZE) InvalidateRect(handle, NULL, FALSE);
+        if (message == WM_PAINT) {
+            /* Sideways scrolling moves the painted marks with the text. */
+            int scroll = GetScrollPos(handle, SB_HORZ);
+            if (scroll != native->tree_mark_scroll) {
+                native->tree_mark_scroll = scroll;
+                InvalidateRect(handle, NULL, FALSE);
+            }
+        }
+    }
     if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_tree_proc, 1);
     return DefSubclassProc(handle, message, wp, lp);
 }
@@ -3627,6 +3745,7 @@ static xxwidgets_status win32_sync_tree(xxwidgets_widget *widget)
     }
     SendMessageW(handle, TVM_SELECTITEM, TVGN_CARET, widget->value < 0 ? 0 : (LPARAM)native->tree_items[widget->value]);
     if (widget->value >= 0) SendMessageW(handle, TVM_ENSUREVISIBLE, 0, (LPARAM)native->tree_items[widget->value]);
+    if (!rebuild) InvalidateRect(handle, NULL, FALSE); /* Marks may have changed. */
 finish:
     if (texts)
         for (i = 0; i < count; ++i) free(texts[i]);

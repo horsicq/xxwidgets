@@ -1398,6 +1398,10 @@ static gboolean treeview_key(GtkWidget *native, GdkEventKey *key, gpointer data)
         xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
         return TRUE;
     }
+    /* A mark's first character presses it on the selected row (S, ?). */
+    if (!(key->state & (GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_META_MASK)) &&
+        xxwidgets_treeview_mark_key(widget, (unsigned int)gdk_keyval_to_unicode(key->keyval)))
+        return TRUE;
     if (key->keyval == GDK_KEY_space) {
         if (xxwidgets_treeview_has_children(widget, (size_t)widget->value) && xxwidgets_treeview_get_expanded(widget, (size_t)widget->value, &expanded) == XXWIDGETS_OK)
             xxwidgets_treeview_user_expand(widget, (size_t)widget->value, !expanded);
@@ -1440,6 +1444,45 @@ static void treeview_cell_color(GtkTreeViewColumn *column, GtkCellRenderer *cell
         backdrop.alpha = 1;
         g_object_set(cell, "cell-background-rgba", &backdrop, "cell-background-set", TRUE, NULL);
     }
+}
+
+/* Mark columns follow the text column; each knows its mark index plus one. */
+static void treeview_mark_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeModel *model, GtkTreeIter *iter, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    size_t mark = (size_t)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(column), "xxwidgets-mark")) - 1;
+    int node = -1;
+    gtk_tree_model_get(model, iter, 1, &node, -1);
+    g_object_set(cell, "text", node >= 0 && (xxwidgets_treeview_node_marks(widget, (size_t)node) >> mark & 1u)
+        ? xxwidgets_treeview_mark_label(widget, mark) : "", NULL);
+}
+
+static gboolean treeview_mark_press(GtkWidget *native, GdkEventButton *button, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    GtkTreePath *path = NULL;
+    GtkTreeViewColumn *column = NULL;
+    GtkTreeIter iter;
+    int node = -1, mark;
+    if (button->type != GDK_BUTTON_PRESS || button->button != 1 || widget->app->syncing || !xxwidgets_focusable(widget) ||
+        !xxwidgets_treeview_mark_count(widget) ||
+        !gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(native), (gint)button->x, (gint)button->y, &path, &column, NULL, NULL))
+        return FALSE;
+    mark = column ? GPOINTER_TO_INT(g_object_get_data(G_OBJECT(column), "xxwidgets-mark")) - 1 : -1;
+    if (mark >= 0 && gtk_tree_model_get_iter(gtk_tree_view_get_model(GTK_TREE_VIEW(native)), &iter, path))
+        gtk_tree_model_get(gtk_tree_view_get_model(GTK_TREE_VIEW(native)), &iter, 1, &node, -1);
+    if (node < 0 || !(xxwidgets_treeview_node_marks(widget, (size_t)node) >> mark & 1u)) {
+        gtk_tree_path_free(path);
+        return FALSE;
+    }
+    {
+        /* A button, not the row: select it as feedback, then report the press. */
+        uint64_t revision = widget->tree_content_revision;
+        gtk_tree_selection_select_path(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), path);
+        gtk_tree_path_free(path);
+        if (revision == widget->tree_content_revision) xxwidgets_treeview_mark_click(widget, (size_t)node, (size_t)mark);
+    }
+    return TRUE;
 }
 
 static void treeview_activated(GtkTreeView *native, GtkTreePath *path, GtkTreeViewColumn *column, gpointer data)
@@ -1486,6 +1529,11 @@ static xxwidgets_status treeview_sync(xxwidgets_widget *widget)
         state->rendered_hex_revision = widget->tree_revision;
     }
     treeview_selection_apply(widget);
+    for (node = 0; node < XXWIDGETS_TREE_MARKS_MAX; ++node) {
+        GtkTreeViewColumn *column = gtk_tree_view_get_column(tree, (gint)node + 1);
+        if (column) gtk_tree_view_column_set_visible(column, node < xxwidgets_treeview_mark_count(widget));
+    }
+    gtk_widget_queue_draw(GTK_WIDGET(tree));
     atk_object_set_name(gtk_widget_get_accessible(GTK_WIDGET(tree)), widget->text);
     return XXWIDGETS_OK;
 }
@@ -2501,7 +2549,19 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             g_object_unref(store);
             gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(native), FALSE);
             gtk_tree_view_append_column(GTK_TREE_VIEW(native), column);
+            gtk_tree_view_column_set_expand(column, TRUE);
             g_object_set(renderer, "single-paragraph-mode", TRUE, NULL);
+            for (int mark = 0; mark < XXWIDGETS_TREE_MARKS_MAX; ++mark) {
+                GtkCellRenderer *label = gtk_cell_renderer_text_new();
+                GtkTreeViewColumn *marks = gtk_tree_view_column_new();
+                g_object_set(label, "xalign", 0.5, "xpad", 6, NULL);
+                gtk_tree_view_column_pack_start(marks, label, TRUE);
+                gtk_tree_view_column_set_cell_data_func(marks, label, treeview_mark_cell, widget, NULL);
+                g_object_set_data(G_OBJECT(marks), "xxwidgets-mark", GINT_TO_POINTER(mark + 1));
+                gtk_tree_view_column_set_visible(marks, FALSE);
+                gtk_tree_view_append_column(GTK_TREE_VIEW(native), marks);
+            }
+            g_signal_connect(native, "button-press-event", G_CALLBACK(treeview_mark_press), widget);
             gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), GTK_SELECTION_SINGLE);
             state->root = gtk_scrolled_window_new(NULL, NULL);
             g_object_ref_sink(state->root);
@@ -3391,4 +3451,4 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_choose_file,
                                                     gtk_has_focus,
                                                     gtk_accept_file_drops,
-                                                    gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu};
+                                                    gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu, NULL};

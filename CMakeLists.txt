@@ -244,6 +244,7 @@ add_library(xxwidgets
     src/xxwidgets_archivebrowser.c
     src/xxwidgets_dialog.c
     src/xxwidgets_about.c
+    src/xxwidgets_open_url.c
     src/xxwidgets_process.c
     src/xxwidget_systemprocessesviewer.c
     src/xxwidget_systemprocessesviewer_hexview.c

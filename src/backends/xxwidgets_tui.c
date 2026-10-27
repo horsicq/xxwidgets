@@ -738,6 +738,15 @@ static void tui_plot_draw(void *user, int kind, double x, double y, double x2, d
     }
 }
 
+/* Cells of a short label such as a tree mark: one per scalar. */
+static long long tui_label_cells(const char *label)
+{
+    long long cells = 0;
+    for (; label && *label; ++label)
+        if ((*label & 0xc0) != 0x80) ++cells;
+    return cells;
+}
+
 static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip client)
 {
     long long x = client.left + widget->rect.x, y = client.top + widget->rect.y;
@@ -1027,6 +1036,27 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                         }
                         tui_put(state, clip, cell_x + (long long)width, row, '|', item_style);
                         cell_x += (long long)width + 1;
+                    }
+                } else if (widget->kind == XXWIDGETS_TREEVIEW && xxwidgets_treeview_mark_count(widget)) {
+                    /* Mark columns such as "[S][?]" at the right edge, outside the
+                     * sideways scroll; the row text ends before them. */
+                    size_t mark, count = xxwidgets_treeview_mark_count(widget);
+                    unsigned int marks = xxwidgets_treeview_node_marks(widget, xxwidgets_treeview_node_at_row(widget, item));
+                    long long left, width = 0;
+                    tui_clip text_clip = clip;
+                    for (mark = 0; mark < count; ++mark) width += tui_label_cells(xxwidgets_treeview_mark_label(widget, mark)) + 2;
+                    left = x + widget->rect.width - width;
+                    if (left < text_clip.right) text_clip.right = left;
+                    tui_text(state, text_clip, x + 1, row, widget->items[item] + offset, item_style, TUI_TEXT_ELLIPSIS);
+                    for (mark = 0; mark < count; ++mark) {
+                        const char *mark_label = xxwidgets_treeview_mark_label(widget, mark);
+                        long long cells = tui_label_cells(mark_label) + 2;
+                        if (marks >> mark & 1u) {
+                            tui_put(state, clip, left, row, '[', item_style);
+                            tui_text(state, clip, left + 1, row, mark_label, item_style, 0);
+                            tui_put(state, clip, left + cells - 1, row, ']', item_style);
+                        }
+                        left += cells;
                     }
                 } else {
                 tui_text(state, clip, x + 1, row, widget->items[item] + offset, item_style, TUI_TEXT_ELLIPSIS);
@@ -1624,6 +1654,9 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             return XXWIDGETS_OK;
         }
         if (!widget->item_count) return XXWIDGETS_OK;
+        /* A mark's first character presses it on the selected row (S, ?). */
+        if (!(modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_ALT | XXWIDGETS_MOD_META)) && xxwidgets_treeview_mark_key(widget, key))
+            return XXWIDGETS_OK;
         row = xxwidgets_treeview_row_of_node(widget, (size_t)widget->value);
         if (row == SIZE_MAX) row = 0;
         next = row;
@@ -2551,4 +2584,4 @@ static size_t tui_hexview_page_rows(const xxwidgets_widget *widget)
 
 const xxwidgets_backend_ops xxwidgets_tui_ops = {"tui",    tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,   tui_sync,
                                                  tui_read, tui_read, tui_focus,    NULL,     NULL,       tui_copy_text, tui_apply_fonts,
-                                                 NULL,     NULL,     NULL,         NULL,     NULL,       tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL, NULL};
+                                                 NULL,     NULL,     NULL,         NULL,     NULL,       tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL, NULL, NULL};

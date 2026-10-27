@@ -181,8 +181,18 @@ static char *about_body(const xxwidgets_about_dialog *dialog)
     for (i = 0; i < dialog->item_count; ++i) length += about_item_line(&dialog->items[i], NULL) + 2;
     body = (char *)malloc(length);
     if (!body) return NULL;
+    /* Name and version, then the rich items (what the native layout shows
+     * first), then the longer description, license and credits. */
     for (field = XXWIDGETS_ABOUT_PROGRAM_NAME; field <= XXWIDGETS_ABOUT_CREDITS; ++field) {
         size_t add = strlen(dialog->texts[field]);
+        if (field == XXWIDGETS_ABOUT_DESCRIPTION)
+            for (i = 0; i < dialog->item_count; ++i) {
+                if (used) {
+                    body[used++] = '\n';
+                    if (!i) body[used++] = '\n';
+                }
+                used += about_item_line(&dialog->items[i], body + used);
+            }
         if (!add) continue;
         if (used) {
             body[used++] = '\n';
@@ -190,13 +200,6 @@ static char *about_body(const xxwidgets_about_dialog *dialog)
         }
         memcpy(body + used, dialog->texts[field], add);
         used += add;
-    }
-    for (i = 0; i < dialog->item_count; ++i) {
-        if (used) {
-            body[used++] = '\n';
-            if (!i) body[used++] = '\n';
-        }
-        used += about_item_line(&dialog->items[i], body + used);
     }
     body[used] = 0;
     return body;

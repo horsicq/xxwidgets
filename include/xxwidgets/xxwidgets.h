@@ -280,6 +280,22 @@ typedef struct xxwidgets_tree_color {
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes,
                                                                   const xxwidgets_tree_color *colors, size_t count);
 XXWIDGETS_API xxwidgets_tree_color xxwidgets_treeview_node_color(const xxwidgets_widget *widget, size_t index);
+/* Small buttons at the right end of rows, like the S and ? columns of a DIE
+ * result tree. labels holds 1..XXWIDGETS_TREE_MARKS_MAX short UTF-8 labels
+ * without control characters, one column each; masks holds one bit set per
+ * current node (count is the node count), bit k showing labels[k] there.
+ * Copied. Replacing or clearing the nodes removes them, as do NULL labels.
+ * Clicking one emits CLICK with value = node index and x = mark index; in a
+ * focused tree, typing a label's first character does the same for the
+ * selected node. TUI has no mouse, so there only the key works. */
+#define XXWIDGETS_TREE_MARKS_MAX 4
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_marks(xxwidgets_widget *widget, const char *const *labels, size_t label_count,
+                                                          const unsigned int *masks, size_t count);
+/* Marks shown on node index as a bit set; 0 when there are none. */
+XXWIDGETS_API unsigned int xxwidgets_treeview_node_marks(const xxwidgets_widget *widget, size_t index);
+/* Number of mark columns, and their labels (NULL past the end). */
+XXWIDGETS_API size_t xxwidgets_treeview_mark_count(const xxwidgets_widget *widget);
+XXWIDGETS_API const char *xxwidgets_treeview_mark_label(const xxwidgets_widget *widget, size_t mark);
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_clear(xxwidgets_widget *widget);
 XXWIDGETS_API size_t xxwidgets_treeview_count(const xxwidgets_widget *widget);
 XXWIDGETS_API size_t xxwidgets_treeview_visible_count(const xxwidgets_widget *widget);
@@ -448,6 +464,12 @@ XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_show(xxwidgets_about_dialo
  * rules are the same as about_dialog_show. Text is borrowed for this call. */
 /* May be owned by the current modal window; restores that modal on close. */
 XXWIDGETS_API xxwidgets_status xxwidgets_text_dialog(xxwidgets_widget *owner, const char *title, const char *text);
+
+/* Opens an http(s) or mailto URL, already percent-encoded, with the desktop's
+ * default handler and returns without waiting for it. owner is any widget of
+ * the app. UNAVAILABLE when there is no handler, as in a terminal without a
+ * desktop session; other schemes and unencoded characters are rejected. */
+XXWIDGETS_API xxwidgets_status xxwidgets_open_url(xxwidgets_widget *owner, const char *url);
 
 typedef enum xxwidgets_file_dialog_mode {
     XXWIDGETS_FILE_DIALOG_OPEN = 0, /* choose an existing file */

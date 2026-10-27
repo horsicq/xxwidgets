@@ -86,6 +86,15 @@ XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_editor_handle_event(xxwid
     const xxwidgets_event *event);
 XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_editor_process_pending(xxwidgets_die_signature_editor *editor);
 
+/* The editor in its own modal window over owner, with a Close button, like
+ * the signature view of a DIE result row. source (UTF-8) starts read-only;
+ * path names it (and is where Save writes) and may be NULL. run, when not
+ * NULL, is installed as the Run adapter. Escape or Close dismisses; with an
+ * unsaved draft the first press only warns. Modal rules are those of
+ * xxwidgets_about_dialog_show: call outside input callbacks and polling. */
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, const char *title,
+    const char *source, const char *path, xxwidgets_die_signature_editor_run_fn run, void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

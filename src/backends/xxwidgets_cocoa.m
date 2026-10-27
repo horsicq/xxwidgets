@@ -891,6 +891,7 @@ static int cocoa_signature_utf16_bytes(NSString *source, NSRange range, size_t *
 - (void)browserUp:(id)sender;
 - (void)browserActivated:(id)sender;
 - (void)treeActivated:(id)sender;
+- (void)treeClicked:(id)sender;
 - (void)tableActivated:(id)sender;
 @end
 
@@ -1374,10 +1375,22 @@ static void cocoa_size_table(xxwidgets_widget *widget);
             else xxwidgets_emit(tree_widget, XXWIDGETS_EVENT_SELECT, tree_widget->value);
             return;
         }
+        /* A mark's first character presses it on the selected row (S, ?). */
+        NSString *characters = [event characters];
+        if (!([event modifierFlags] & (NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagOption)) &&
+            [characters length] == 1 && xxwidgets_treeview_mark_key(tree_widget, (unsigned int)[characters characterAtIndex:0]))
+            return;
     }
     [super keyDown:event];
 }
 @end
+
+/* Mark columns follow the outline column; identifiers "mark0".."mark3". */
+static NSInteger cocoa_tree_mark_column(NSTableColumn *column)
+{
+    NSString *identifier = [column identifier];
+    return [identifier hasPrefix:@"mark"] ? [[identifier substringFromIndex:4] integerValue] : -1;
+}
 
 static void cocoa_tree_selection_apply(xxwidgets_widget *widget)
 {
@@ -1739,6 +1752,18 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
     if (row >= 0) xxwidgets_archivebrowser_user_activate(widget, (size_t)row);
 }
 
+- (void)treeClicked:(id)sender
+{
+    if (!widget || widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    NSOutlineView *tree = sender;
+    NSInteger row = [tree clickedRow], column = [tree clickedColumn];
+    if (row < 0 || column < 0) return;
+    NSInteger mark = cocoa_tree_mark_column([[tree tableColumns] objectAtIndex:(NSUInteger)column]);
+    id item = [tree itemAtRow:row];
+    /* The click already selected the row; report the button under it. */
+    if (mark >= 0 && item) xxwidgets_treeview_mark_click(widget, (size_t)[item unsignedLongLongValue], (size_t)mark);
+}
+
 - (void)treeActivated:(id)sender
 {
     if (!widget || widget->app->syncing || !xxwidgets_focusable(widget)) return;
@@ -1792,8 +1817,15 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 
 - (id)outlineView:(NSOutlineView *)outline objectValueForTableColumn:(NSTableColumn *)column byItem:(id)item
 {
-    (void)outline; (void)column;
+    (void)outline;
     if (!widget || !item) return @"";
+    NSInteger mark = cocoa_tree_mark_column(column);
+    if (mark >= 0) {
+        const char *label = xxwidgets_treeview_node_marks(widget, (size_t)[item unsignedLongLongValue]) >> mark & 1u
+            ? xxwidgets_treeview_mark_label(widget, (size_t)mark) : NULL;
+        NSString *result = label ? [NSString stringWithUTF8String:label] : nil;
+        return result ? result : @"";
+    }
     const char *value = xxwidgets_treeview_display_text(widget, (size_t)[item unsignedLongLongValue]);
     NSString *result = [NSString stringWithUTF8String:value ? value : ""];
     return result ? result : @"";
@@ -1801,7 +1833,13 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 
 - (void)outlineView:(NSOutlineView *)outline willDisplayCell:(id)cell forTableColumn:(NSTableColumn *)column item:(id)item
 {
-    (void)column;
+    if (cocoa_tree_mark_column(column) >= 0) {
+        NSInteger row = [outline rowForItem:item];
+        BOOL selected = row >= 0 && [[outline selectedRowIndexes] containsIndex:(NSUInteger)row];
+        [cell setTextColor:selected ? [NSColor selectedControlTextColor] : [NSColor linkColor]];
+        [cell setDrawsBackground:NO];
+        return;
+    }
     xxwidgets_tree_color colors = xxwidgets_treeview_node_color(widget, (size_t)[item unsignedLongLongValue]);
     BOOL dark = [[[outline effectiveAppearance] bestMatchFromAppearancesWithNames:
         @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] isEqualToString:NSAppearanceNameDarkAqua];
@@ -2238,11 +2276,16 @@ static void cocoa_size_table(xxwidgets_widget *widget)
         [table setFrame:frame];
         return;
     }
+    /* Tree mark columns stay at the right: the text column takes the rest. */
+    CGFloat marks = 0;
+    if (widget->kind == XXWIDGETS_TREEVIEW)
+        for (NSTableColumn *column in [table tableColumns])
+            if (cocoa_tree_mark_column(column) >= 0 && ![column isHidden]) marks += [column width] + [table intercellSpacing].width;
     frame.size.width = xxwidgets_formatted_rows(widget) ?
-        MAX(content.width, state->hex_row_width) : content.width;
+        MAX(content.width, state->hex_row_width + marks) : content.width;
     [table setFrame:frame];
     if (xxwidgets_formatted_rows(widget))
-        [[[table tableColumns] objectAtIndex:0] setWidth:MAX(1, state->hex_row_width)];
+        [[[table tableColumns] objectAtIndex:0] setWidth:MAX(1, frame.size.width - marks)];
     else [table sizeLastColumnToFit];
 }
 
@@ -2281,6 +2324,11 @@ static xxwidgets_status cocoa_tree_sync(xxwidgets_widget *widget)
             if (width > state->hex_row_width) state->hex_row_width = width;
         }
     }
+    for (NSTableColumn *column in [tree tableColumns]) {
+        NSInteger mark = cocoa_tree_mark_column(column);
+        if (mark >= 0) [column setHidden:(size_t)mark >= xxwidgets_treeview_mark_count(widget)];
+    }
+    [tree setNeedsDisplay:YES];
     cocoa_tree_selection_apply(widget);
     cocoa_size_table(widget);
     return XXWIDGETS_OK;
@@ -2477,12 +2525,24 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
             [column setMinWidth:1]; [column setMaxWidth:CGFLOAT_MAX];
             [column setResizingMask:NSTableColumnNoResizing];
             [tree addTableColumn:column]; [tree setOutlineTableColumn:column]; [column release];
+            for (int mark = 0; mark < XXWIDGETS_TREE_MARKS_MAX; ++mark) {
+                NSTableColumn *marks = [[NSTableColumn alloc] initWithIdentifier:[NSString stringWithFormat:@"mark%d", mark]];
+                if (!marks) { [tree release]; cocoa_destroy_backend(widget); return XXWIDGETS_OUT_OF_MEMORY; }
+                [[marks dataCell] setFont:font];
+                [[marks dataCell] setEditable:NO];
+                [[marks dataCell] setAlignment:NSTextAlignmentCenter];
+                [marks setWidth:((cocoa_app_state *)widget->app->platform)->cell_height * 2];
+                [marks setResizingMask:NSTableColumnNoResizing];
+                [marks setHidden:YES];
+                [tree addTableColumn:marks]; [marks release];
+            }
             [tree setHeaderView:nil]; [tree setAllowsMultipleSelection:NO];
             [tree setAllowsEmptySelection:YES]; [tree setAllowsColumnReordering:NO];
             [tree setColumnAutoresizingStyle:NSTableViewNoColumnAutoresizing];
             [tree setRowHeight:((cocoa_app_state *)widget->app->platform)->cell_height];
             [tree setDataSource:state->delegate]; [tree setDelegate:state->delegate];
             [tree setTarget:state->delegate]; [tree setDoubleAction:@selector(treeActivated:)];
+            [tree setAction:@selector(treeClicked:)];
             NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
             if (!scroll) { [tree release]; cocoa_destroy_backend(widget); return XXWIDGETS_OUT_OF_MEMORY; }
             [scroll setBorderType:NSBezelBorder];
@@ -3231,5 +3291,5 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {
     "AppKit", cocoa_init_backend, cocoa_shutdown_backend, cocoa_poll_backend,
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
     cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
-    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font, cocoa_window_menu
+    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font, cocoa_window_menu, NULL
 };
