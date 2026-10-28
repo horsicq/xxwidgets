@@ -63,6 +63,12 @@ typedef enum xxwidgets_backend {
     XXWIDGETS_BACKEND_TUI
 } xxwidgets_backend;
 
+typedef enum xxwidgets_modality {
+    XXWIDGETS_MODELESS = 0,
+    XXWIDGETS_WINDOW_MODAL,
+    XXWIDGETS_APPLICATION_MODAL
+} xxwidgets_modality;
+
 typedef enum xxwidgets_kind {
     XXWIDGETS_WINDOW = 0,
     XXWIDGETS_LABEL,
@@ -151,6 +157,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_app_create(const xxwidgets_config *conf
 /* Creation/destruction and nested event loops during callbacks return BUSY;
  * quit and destroy after run. Setters and focus are allowed in callbacks. */
 XXWIDGETS_API xxwidgets_status xxwidgets_app_destroy(xxwidgets_app *app);
+/* Preserve an existing export destination as <path>.bak before overwriting.
+ * Defaults to enabled. Backup failures abort the overwrite. */
+XXWIDGETS_API xxwidgets_status xxwidgets_app_set_save_backup(xxwidgets_app *app, int enabled);
+XXWIDGETS_API xxwidgets_status xxwidgets_app_get_save_backup(const xxwidgets_app *app, int *enabled);
 XXWIDGETS_API xxwidgets_backend xxwidgets_app_backend(const xxwidgets_app *app);
 XXWIDGETS_API const char *xxwidgets_app_backend_name(const xxwidgets_app *app);
 /* TUI applications start with colors enabled. Pass 0 for monochrome output,
@@ -235,6 +245,22 @@ XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_rect(const xxwidgets_widget 
 XXWIDGETS_API xxwidgets_status xxwidgets_window_set_minimum_size(xxwidgets_widget *window, int columns, int rows);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_visible(xxwidgets_widget *widget, int visible);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *widget, int enabled);
+/* Immediate modality without showing the window or starting an event loop.
+ * WINDOW_MODAL blocks owner; APPLICATION_MODAL blocks every other application
+ * window, including windows created later. Nested modal descendants stay usable.
+ * Nonmodeless modes require a distinct WINDOW owner in the same app. MODELESS
+ * requires owner == NULL and restores the latest enabled requests of blocked
+ * windows. Hiding does not clear modality; clear it when dismissing the window.
+ * Destruction clears modality and detaches owned modal descendants automatically.
+ * Call outside dispatch/poll/sync. Conflicting application modals and changing
+ * an ancestor of an active modal return BUSY. Backend errors attempt rollback. */
+XXWIDGETS_API xxwidgets_status xxwidgets_window_set_modality(xxwidgets_widget *window, xxwidgets_widget *owner, xxwidgets_modality modality);
+/* Returns MODELESS for NULL or a non-window widget. */
+XXWIDGETS_API xxwidgets_modality xxwidgets_window_get_modality(const xxwidgets_widget *window);
+/* Native radio-button appearance for a CHECKBOX. The host keeps its group
+ * mutually exclusive. Backends without this appearance retain a checkbox.
+ * radio must be 0 or 1; changing the appearance emits no input events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_checkbox_set_radio(xxwidgets_widget *widget, int radio);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_focus(xxwidgets_widget *widget);
 /* 1 when the widget (or a part of it, such as a list row) has keyboard focus,
  * 0 when it has not, -1 when the backend cannot tell. */
@@ -488,8 +514,9 @@ XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_add_item(xxwidgets_about_d
                                                                const char *value, const char *link);
 XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_clear_items(xxwidgets_about_dialog *dialog);
 XXWIDGETS_API size_t xxwidgets_about_dialog_item_count(const xxwidgets_about_dialog *dialog);
-/* Modal, on the owner's UI thread, outside input callbacks/polling. The owner
- * is disabled while open, then restored. Content may be shown repeatedly with
+/* Application-modal, on the owner's UI thread, outside input callbacks/polling.
+ * All other application windows are disabled while open, then restored to
+ * their previous enabled states. Content may be shown repeatedly with
  * different owners. Close/Enter/Escape dismiss; nested shows return BUSY. */
 XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_show(xxwidgets_about_dialog *dialog, xxwidgets_widget *owner);
 
@@ -675,7 +702,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_overview_markers(xxwidgets_
  * displayed window starts at the layout base. read must fill exactly length
  * bytes; seek must load a window containing the requested byte and its whole
  * encoded symbol using the ordinary data/layout setters. Callbacks and user
- * data are borrowed. Passing NULL callbacks and size 0 detaches the source.
+ * data are borrowed. Save selection uses a joined storage worker: read must
+ * permit exclusive worker-thread use and must not call widget APIs. The host
+ * keeps its callback context/source alive until saving returns; seek remains
+ * a UI-thread callback. Passing NULL callbacks and size 0 detaches the source.
  * Attaching to an editable view or enabling editing while attached is invalid.
  * Control/Meta+Home/End in Symbols use source boundaries. Selection can span
  * windows; navigation and saving use bounded windows/chunks. Copying allocates
@@ -723,6 +753,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_display(xxwidgets_widget *,
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_display(const xxwidgets_widget *, xxwidgets_hex_display *);
 /* Emphasize non-zero display units in the numeric column. enabled is 0 or 1.
  * This independent visual option leaves encoding, selection and editing intact. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_location_colon(xxwidgets_widget *view, int enabled);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_location_colon(const xxwidgets_widget *view, int *enabled);
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_bold_nonzero(xxwidgets_widget *, int enabled);
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_bold_nonzero(const xxwidgets_widget *, int *enabled);
 /* Active keyboard column: Address (0), Elements (1), or Symbols (2). */

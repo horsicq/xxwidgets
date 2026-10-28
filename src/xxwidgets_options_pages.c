@@ -216,11 +216,11 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}};
     options_state state = {0};
     xxwidgets_app *app;
-    xxwidgets_widget *focus = NULL, *widget, *previous_default;
+    xxwidgets_widget *focus = NULL, *widget, *previous_default, *previous_modal;
     xxwidgets_event_fn previous_event;
     void *previous_user;
     xxwidgets_status status, cleanup;
-    int list_width = 14, page_width = 1, page_height = 10, width, height, button_y, owner_enabled, disabled = 0, attached = 0;
+    int list_width = 14, page_width = 1, page_height = 10, width, height, button_y, create_hidden;
     size_t i, first = page ? *page : 0;
     if (accepted) *accepted = 0;
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !pages || !count ||
@@ -243,7 +243,8 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     height = button_y + 3;
     if (owner->rect.x > INT_MAX - width - 2 || owner->rect.y > INT_MAX - height - 2) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
+    if (app->dispatch_depth || app->polling || app->syncing || app->quit ||
+        (app->modal_window && app->modal_window != owner)) return XXWIDGETS_BUSY;
     state.count = count;
     state.current = first;
     state.pending_select = -1;
@@ -251,16 +252,19 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     previous_event = app->on_event;
     previous_user = app->user_data;
     previous_default = app->modal_default;
-    owner_enabled = owner->enabled;
+    previous_modal = app->modal_window;
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
-            focus = widget;
-            break;
+            if (!focus || xxwidgets_widget_has_focus(widget) == 1) focus = widget;
         }
     app->on_event = options_event;
     app->user_data = &state;
     app->modal_default = NULL;
+    /* Build all pages and attach the owner before the first native show. */
+    create_hidden = app->create_hidden;
+    app->create_hidden = 1;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, width, height}, &state.window);
+    app->create_hidden = create_hidden;
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
     status = xxwidgets_window_set_minimum_size(state.window, width, height);
@@ -282,15 +286,12 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(state.list, (int)first);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_default = state.ok;
-    status = xxwidgets_widget_set_enabled(owner, 0);
+    status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_APPLICATION_MODAL);
     if (status != XXWIDGETS_OK) goto finish;
-    disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(state.window, owner, 1);
-        if (status != XXWIDGETS_OK) goto finish;
-        attached = 1;
+    if (!create_hidden) {
+        status = xxwidgets_widget_set_visible(state.window, 1);
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_focus(state.list);
     }
-    status = xxwidgets_widget_focus(state.list);
     while (status == XXWIDGETS_OK && !state.done && !app->quit) {
         status = xxwidgets_app_poll(app, 30);
         if (status != XXWIDGETS_OK || state.done || app->quit) break;
@@ -313,12 +314,13 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     }
     if (app->quit) state.accepted = 0;
 finish:
-    if (disabled) {
-        cleanup = xxwidgets_widget_set_enabled(owner, owner_enabled);
+    /* Do not paint partially dismantled pages while closing the dialog. */
+    if (state.window) {
+        cleanup = xxwidgets_widget_set_visible(state.window, 0);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    if (attached) {
-        cleanup = app->ops->modal_owner(state.window, owner, 0);
+    if (state.window) {
+        cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     for (i = 0; i < count; ++i) {
@@ -333,7 +335,7 @@ finish:
         cleanup = xxwidgets_widget_destroy(state.window);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    app->modal_window = NULL;
+    app->modal_window = previous_modal;
     app->modal_default = previous_default;
     app->on_event = previous_event;
     app->user_data = previous_user;
@@ -420,7 +422,7 @@ xxwidgets_status xxwidgets_options_page_fonts(xxwidgets_options_page *page, cons
     memset(page, 0, sizeof(*page));
     page->title = title;
     page->width = 60;
-    page->height = 15;
+    page->height = 23;
     page->create = font_page_create;
     page->event = font_page_event;
     page->process = font_page_process;

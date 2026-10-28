@@ -23,6 +23,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <signal.h>
+#include <time.h>
 #include <unistd.h>
 #if defined(__linux__)
 #include <sys/syscall.h>
@@ -366,7 +368,7 @@ static int dump_validate_core(int fd)
 
 /* gcore is invoked directly with a private cwd and a fixed basename. The
  * user's destination never enters a debugger command or shell expression. */
-static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_stage *stage, char output[64])
+static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_stage *stage, char output[64], xx_pd_struct *pd)
 {
     char pid[32];
     int log, null_input, errors[2], child_status = 0, exec_error = 0;
@@ -379,7 +381,7 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
 #else
     snprintf(output, 64, "core.%" PRIu64, process->pid);
 #endif
-    if (!dump_identity(process)) return XXWIDGETS_UNAVAILABLE;
+    if (xx_pd_is_stopped(pd) || !dump_identity(process)) return XXWIDGETS_UNAVAILABLE;
     log = openat(stage->directory, "debugger.log", O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
     if (log < 0) return dump_errno(errno);
     null_input = open("/dev/null", O_RDONLY | O_CLOEXEC);
@@ -398,7 +400,9 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
     if (!child) {
         int put;
         close(errors[0]);
-        if (fchdir(stage->directory) || dup2(null_input, STDIN_FILENO) < 0 ||
+        /* A private process group lets cancellation stop the debugger and its
+         * helper children, without signalling the inspected process. */
+        if (setpgid(0, 0) || fchdir(stage->directory) || dup2(null_input, STDIN_FILENO) < 0 ||
             dup2(log, STDOUT_FILENO) < 0 || dup2(log, STDERR_FILENO) < 0) exec_error = errno;
         else {
 #if defined(__APPLE__)
@@ -414,9 +418,27 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
         _exit(127);
     }
     close(errors[1]); close(log); close(null_input);
-    do { waited = waitpid(child, &child_status, 0); } while (waited < 0 && errno == EINTR);
+    (void)setpgid(child, child);
+    {
+        int level = xx_pd_enter_level(pd, 0, "Capturing process memory");
+        int cancelling = 0, elapsed = 0;
+        struct timespec delay = {0, 20000000};
+        for (;;) {
+            waited = waitpid(child, &child_status, WNOHANG);
+            if (waited == child || (waited < 0 && errno != EINTR)) break;
+            if (xx_pd_is_stopped(pd)) {
+                if (!cancelling) { (void)kill(-child, SIGTERM); cancelling = 1; }
+                /* A debugger normally detaches during termination. Reap even
+                 * an unresponsive helper before cleaning its staging folder. */
+                if (++elapsed == 100) (void)kill(-child, SIGKILL);
+            }
+            (void)nanosleep(&delay, NULL);
+        }
+        xx_pd_leave_level(pd, level);
+    }
     do { received = read(errors[0], &exec_error, sizeof(exec_error)); } while (received < 0 && errno == EINTR);
     close(errors[0]);
+    if (xx_pd_is_stopped(pd)) return XXWIDGETS_UNAVAILABLE;
     if (received > 0) return dump_errno(exec_error);
     if (received < 0 || waited < 0 || !WIFEXITED(child_status) || WEXITSTATUS(child_status)) return XXWIDGETS_UNAVAILABLE;
     return dump_identity(process) ? XXWIDGETS_OK : XXWIDGETS_UNAVAILABLE;
@@ -597,7 +619,7 @@ done:
     return status;
 }
 
-static xxwidgets_status dump_image(const xxwidgets_process_info *process, int output)
+static xxwidgets_status dump_image(const xxwidgets_process_info *process, int output, xx_pd_struct *pd)
 {
     char path[64];
     int proc = -1, memory = -1;
@@ -607,6 +629,7 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
     unsigned char *buffer = NULL;
     xxwidgets_status status = XXWIDGETS_UNAVAILABLE;
     size_t i;
+    int level = -1;
     snprintf(path, sizeof(path), "/proc/%" PRIu64, process->pid);
     proc = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (proc < 0) return dump_errno(errno);
@@ -622,15 +645,18 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
     status = dump_linux_add_bss(proc, memory_io, &maps);
     if (status != XXWIDGETS_OK) goto done;
     if (ftruncate(output, (off_t)(maps.end - maps.base))) { status = dump_errno(errno); goto done; }
+    level = xx_pd_enter_level(pd, maps.end - maps.base, "Dumping executable image");
     buffer = (unsigned char *)malloc(PROCESS_DUMP_CHUNK);
     if (!buffer) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
     for (i = 0; i < maps.count; ++i) if (maps.items[i].readable) {
         uint64_t address = maps.items[i].start;
         while (address < maps.items[i].end) {
             size_t amount = maps.items[i].end - address < PROCESS_DUMP_CHUNK ? (size_t)(maps.items[i].end - address) : PROCESS_DUMP_CHUNK;
+            if (xx_pd_is_stopped(pd)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
             if (!xx_io_process_read_exact_at(memory_io, address, buffer, amount)) { status = dump_errno(errno); goto done; }
             if (!dump_write_at(output, address - maps.base, buffer, amount)) { status = dump_errno(errno); goto done; }
             address += amount;
+            xx_pd_set_current(pd, level, address - maps.base);
         }
     }
     if (fstatat(proc, "exe", &after, 0) || after.st_dev != executable.st_dev || after.st_ino != executable.st_ino ||
@@ -648,6 +674,7 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
         }
     }
 done:
+    xx_pd_leave_level(pd, level);
     free(buffer); free(maps.items); free(verified.items);
     if (memory_io) (void)xx_io_process_close(memory_io);
     if (memory >= 0) close(memory);
@@ -692,7 +719,7 @@ static xxwidgets_status dump_mach_main(task_t task, xx_io_device *memory, uint64
     return XXWIDGETS_UNAVAILABLE;
 }
 
-static xxwidgets_status dump_image(const xxwidgets_process_info *process, int output)
+static xxwidgets_status dump_image(const xxwidgets_process_info *process, int output, xx_pd_struct *pd)
 {
     task_t task = MACH_PORT_NULL;
     xx_io_device *memory = NULL;
@@ -702,6 +729,7 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
     uint64_t image = 0, count, command_bytes, cursor, preferred = UINT64_MAX;
     size_t i, header_size;
     xxwidgets_status status = XXWIDGETS_UNAVAILABLE;
+    int level = -1;
     if (task_for_pid(mach_task_self(), (pid_t)process->pid, &task) != KERN_SUCCESS) return XXWIDGETS_UNAVAILABLE;
     if (!dump_identity(process)) goto done;
     if (task_suspend2(task, &token) != KERN_SUCCESS) goto done;
@@ -747,6 +775,7 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
     }
     if (cursor != command_bytes || !maps.count || preferred == UINT64_MAX || maps.base < preferred) { status = XXWIDGETS_UNAVAILABLE; goto done; }
     if (ftruncate(output, (off_t)(maps.end - maps.base))) { status = dump_errno(errno); goto done; }
+    level = xx_pd_enter_level(pd, maps.end - maps.base, "Dumping executable image");
     buffer = (unsigned char *)malloc(PROCESS_DUMP_CHUNK);
     if (!buffer) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
     for (i = 0; i < maps.count; ++i) if (maps.items[i].readable) {
@@ -756,13 +785,16 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
         }
         while (address < maps.items[i].end) {
             size_t amount = maps.items[i].end - address < PROCESS_DUMP_CHUNK ? (size_t)(maps.items[i].end - address) : PROCESS_DUMP_CHUNK;
+            if (xx_pd_is_stopped(pd)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
             if (!dump_mach_read(memory, image + (address - preferred), buffer, amount)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
             if (!dump_write_at(output, address - maps.base, buffer, amount)) { status = dump_errno(errno); goto done; }
             address += amount;
+            xx_pd_set_current(pd, level, address - maps.base);
         }
     }
     status = XXWIDGETS_OK;
 done:
+    xx_pd_leave_level(pd, level);
     free(commands); free(buffer); free(maps.items);
     if (memory) (void)xx_io_process_close(memory);
     if (token != MACH_PORT_NULL) {
@@ -775,15 +807,15 @@ done:
     return status;
 }
 #else
-static xxwidgets_status dump_image(const xxwidgets_process_info *process, int output)
+static xxwidgets_status dump_image(const xxwidgets_process_info *process, int output, xx_pd_struct *pd)
 {
-    (void)process; (void)output;
+    (void)process; (void)output; (void)pd;
     return XXWIDGETS_UNAVAILABLE;
 }
 #endif
 
-xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *process, const char *destination,
-                                                           xxwidgets_process_dump_type type, int overwrite)
+xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_process_info *process, const char *destination,
+                                                           xxwidgets_process_dump_type type, int overwrite, xx_pd_struct *pd)
 {
     dump_stage stage = {-1, -1, {0}, NULL, 0, 0};
     char output[64] = "image.bin";
@@ -792,7 +824,7 @@ xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_pro
     struct stat existing;
     if (!process || !destination || process->pid <= 1 || process->pid > INT_MAX || process->pid == (uint64_t)getpid() ||
         (type != XXWIDGETS_PROCESS_DUMP_MEMORY && type != XXWIDGETS_PROCESS_DUMP_IMAGE)) return XXWIDGETS_INVALID_ARGUMENT;
-    if (!process->start_time || !dump_identity(process)) return XXWIDGETS_UNAVAILABLE;
+    if (xx_pd_is_stopped(pd) || !process->start_time || !dump_identity(process)) return XXWIDGETS_UNAVAILABLE;
     status = dump_stage_create(&stage, destination);
     if (status != XXWIDGETS_OK) goto done;
     if (!overwrite) {
@@ -800,7 +832,7 @@ xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_pro
         if (errno != ENOENT) { status = dump_errno(errno); goto done; }
     }
     if (type == XXWIDGETS_PROCESS_DUMP_MEMORY) {
-        status = dump_core(process, &stage, output);
+        status = dump_core(process, &stage, output, pd);
         if (status != XXWIDGETS_OK) goto done;
         fd = openat(stage.directory, output, O_RDWR | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0) { status = dump_errno(errno); goto done; }
@@ -808,10 +840,10 @@ xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_pro
     } else {
         fd = openat(stage.directory, output, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
         if (fd < 0) { status = dump_errno(errno); goto done; }
-        status = dump_image(process, fd);
+        status = dump_image(process, fd, pd);
         if (status != XXWIDGETS_OK) goto done;
     }
-    if (!dump_identity(process)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+    if (xx_pd_is_stopped(pd) || !dump_identity(process)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
     if (fchmod(fd, 0600) || fsync(fd)) { status = dump_errno(errno); goto done; }
     if (close(fd)) { fd = -1; status = dump_errno(errno); goto done; }
     fd = -1;
@@ -820,5 +852,10 @@ done:
     if (fd >= 0) close(fd);
     dump_stage_cleanup(&stage, output);
     return status;
+}
+xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *process, const char *destination,
+                                                           xxwidgets_process_dump_type type, int overwrite)
+{
+    return xxwidget_systemprocessesviewer_dump_process_ex(process, destination, type, overwrite, NULL);
 }
 #endif

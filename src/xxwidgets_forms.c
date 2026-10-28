@@ -100,11 +100,9 @@ static xxwidgets_status modal_show(form_modal *modal, xxwidgets_widget *focus)
     status = xxwidgets_widget_set_enabled(modal->owner, 0);
     if (status != XXWIDGETS_OK) return status;
     modal->disabled = 1;
-    if (modal->app->ops->modal_owner) {
-        status = modal->app->ops->modal_owner(modal->window, modal->owner, 1);
-        if (status != XXWIDGETS_OK) return status;
-        modal->attached = 1;
-    }
+    status = xxwidgets_window_set_modality(modal->window, modal->owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) return status;
+    modal->attached = 1;
     return xxwidgets_widget_focus(focus);
 }
 
@@ -123,7 +121,7 @@ static xxwidgets_status modal_finish(form_modal *modal, xxwidgets_status status)
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (modal->attached) {
-        cleanup = modal->app->ops->modal_owner(modal->window, modal->owner, 0);
+        cleanup = xxwidgets_window_set_modality(modal->window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (modal->window) {

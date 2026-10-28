@@ -1081,6 +1081,16 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                         tui_put(state, clip, cell_x + (long long)width, row, '|', item_style);
                         cell_x += (long long)width + 1;
                     }
+                } else if (widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact) {
+                    long long cell_x = x + 1 - (long long)(hexview ? hexview->horizontal : 0);
+                    for (size_t column = 0; column < 4; ++column) {
+                        size_t width = xxwidgets_tabular_column_width(widget, column);
+                        tui_clip cell_clip = clip;
+                        cell_clip.left = cell_x; cell_clip.right = cell_x + (long long)width;
+                        cell_clip = tui_intersect(clip, cell_clip);
+                        tui_text(state, cell_clip, cell_x, row, xxwidgets_tabular_cell(widget, item, column), item_style, TUI_TEXT_ELLIPSIS);
+                        cell_x += (long long)width + 2;
+                    }
                 } else if (widget->kind == XXWIDGETS_TREEVIEW && xxwidgets_treeview_mark_count(widget)) {
                     /* Mark columns such as "[S][?]" at the right edge, outside the
                      * sideways scroll; the row text ends before them. */

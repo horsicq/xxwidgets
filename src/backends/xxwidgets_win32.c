@@ -125,6 +125,7 @@ static void win32_hexview_overview_sync(xxwidgets_widget *widget);
 static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
 static void win32_tree_expansion_input(xxwidgets_widget *widget, size_t index, HTREEITEM item, int expanded);
 static xxwidgets_status win32_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options);
+static COLORREF win32_rgb(uint32_t color);
 static xxwidgets_status win32_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted);
 static xxwidgets_status win32_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role, const xxwidgets_font *font);
 static LRESULT CALLBACK win32_browser_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp);
@@ -421,7 +422,7 @@ static xxwidgets_status win32_wide(const char *text, wchar_t **result)
 
 static HFONT win32_default_role_font(xxwidgets_win32_app *app, xxwidgets_font_role role)
 {
-    return role == XXWIDGETS_FONT_TABLE_VIEWS ? app->monospace_font : app->font;
+    return role == XXWIDGETS_FONT_TABLE_VIEWS || role == XXWIDGETS_FONT_HEX_VIEWS || role == XXWIDGETS_FONT_DISASM_VIEWS ? app->monospace_font : app->font;
 }
 
 static xxwidgets_status win32_font_logfont(xxwidgets_win32_app *app, xxwidgets_font_role role, const xxwidgets_font *font, LOGFONTW *logfont)
@@ -500,7 +501,7 @@ static void win32_apply_widget_font(xxwidgets_widget *widget)
     if (xxwidgets_tabular_kind(widget) || native->browser_list) {
         HWND list = native->browser_list ? native->browser_list : (HWND)widget->native;
         HWND header = (HWND)SendMessageW(list, LVM_GETHEADER, 0, 0);
-        if (header) SendMessageW(header, WM_SETFONT, (WPARAM)(widget->kind == XXWIDGETS_HEXVIEW ? font : app->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS]), TRUE);
+        if (header) SendMessageW(header, WM_SETFONT, (WPARAM)(widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_DEBUGGER_DISASM ? font : app->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS]), TRUE);
     }
     if (widget->kind == XXWIDGETS_HEXVIEW) {
         int width = win32_hex_cell_width(widget);
@@ -1280,6 +1281,44 @@ static void win32_hex_text_part(HDC dc, HFONT base, HFONT paint, const wchar_t *
     SelectObject(dc, previous);
     free(advances);
 }
+static LRESULT win32_disasm_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
+{
+    if (draw->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+    if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) return CDRF_NOTIFYSUBITEMDRAW;
+    if (draw->nmcd.dwDrawStage != (CDDS_ITEMPREPAINT | CDDS_SUBITEM)) return CDRF_DODEFAULT;
+    HWND handle = (HWND)w->native;
+    size_t row = (size_t)draw->nmcd.dwItemSpec, column = (size_t)draw->iSubItem;
+    if (row >= xxwidgets_tabular_rows(w) || column > 4) return CDRF_DODEFAULT;
+    const char *text = xxwidgets_tabular_cell(w, row, column);
+    wchar_t *wide = NULL;
+    if (win32_wide(text, &wide) != XXWIDGETS_OK) return CDRF_DODEFAULT;
+    HDC dc = draw->nmcd.hdc;
+    int saved = SaveDC(dc);
+    HFONT font = (HFONT)SendMessageW(handle, WM_GETFONT, 0, 0);
+    SelectObject(dc, font);
+    RECT rect = win32_hex_rect(handle, (int)row, (int)column);
+    IntersectClipRect(dc, rect.left, rect.top, rect.right, rect.bottom);
+    TEXTMETRICW metrics;
+    GetTextMetricsW(dc, &metrics);
+    int x = rect.left + 2, y = rect.top + (rect.bottom - rect.top - metrics.tmHeight) / 2;
+    int selected = !!(ListView_GetItemState(handle, (int)row, LVIS_SELECTED) & LVIS_SELECTED);
+    COLORREF foreground = GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT);
+    COLORREF background = GetSysColor(selected ? COLOR_HIGHLIGHT : COLOR_WINDOW);
+    SetTextColor(dc, foreground); SetBkColor(dc, background);
+    ExtTextOutW(dc, x, y, ETO_OPAQUE | ETO_CLIPPED, &rect, wide, (UINT)wcslen(wide), NULL);
+    xxwidgets_disasm_span spans[128];
+    size_t count = xxwidgets_disasm_spans(w, row, column, selected, spans, 128);
+    for (size_t i = 0; i < count; ++i) {
+        int first = spans[i].start ? MultiByteToWideChar(CP_UTF8, 0, text, (int)spans[i].start, NULL, 0) : 0;
+        int length = spans[i].length ? MultiByteToWideChar(CP_UTF8, 0, text + spans[i].start, (int)spans[i].length, NULL, 0) : 0;
+        COLORREF fg = spans[i].foreground == UINT32_MAX ? foreground : win32_rgb(spans[i].foreground);
+        COLORREF bg = spans[i].background == UINT32_MAX ? background : win32_rgb(spans[i].background);
+        if (length > 0) win32_hex_text_part(dc, font, font, wide, first, length, x, y, &rect, fg, bg);
+    }
+    RestoreDC(dc, saved); free(wide);
+    return CDRF_SKIPDEFAULT;
+}
+
 static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
 {
     if (draw->nmcd.dwDrawStage == CDDS_PREPAINT)
@@ -1579,7 +1618,10 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                         if (HIWORD(wp) == BN_CLICKED) xxwidgets_emit(control, XXWIDGETS_EVENT_CLICK, 0);
                         break;
                     case XXWIDGETS_CHECKBOX:
-                        if (HIWORD(wp) == BN_CLICKED && win32_read_value(control) == XXWIDGETS_OK) xxwidgets_emit(control, XXWIDGETS_EVENT_CHANGE, control->value);
+                        if (HIWORD(wp) == BN_CLICKED) {
+                            if (control->checkbox_radio) SendMessageW(control_handle, BM_SETCHECK, BST_CHECKED, 0);
+                            if (win32_read_value(control) == XXWIDGETS_OK) xxwidgets_emit(control, XXWIDGETS_EVENT_CHANGE, control->value);
+                        }
                         break;
                     case XXWIDGETS_EDIT:
                         if (HIWORD(wp) == EN_CHANGE && win32_read_text(control) == XXWIDGETS_OK) xxwidgets_emit(control, XXWIDGETS_EVENT_CHANGE, 0);
@@ -1610,6 +1652,8 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                 xxwidgets_widget *control = win32_find_widget(widget->app, notification->hwndFrom);
                 if (control && control->kind == XXWIDGETS_HEXVIEW && notification->code == NM_CUSTOMDRAW)
                     return win32_hex_draw(control, (NMLVCUSTOMDRAW *)lp);
+                if (control && control->kind == XXWIDGETS_DEBUGGER_DISASM && notification->code == NM_CUSTOMDRAW)
+                    return win32_disasm_draw(control, (NMLVCUSTOMDRAW *)lp);
                 if (control && control->parent == widget &&
                     (xxwidgets_tabular_kind(control)) && control->enabled &&
                     notification->code == LVN_ITEMCHANGED) {
@@ -3577,7 +3621,7 @@ static xxwidgets_status win32_scanresults_columns(xxwidgets_widget *widget)
         heading.pszText = title;
         heading.iSubItem = (int)column;
         heading.cx = ((xxwidgets_entropy_table(widget) || widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) ? (int)xxwidgets_tabular_column_width(widget, column) : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[column] : data_widths[column]) * state->cell_width;
-        heading.fmt = LVCFMT_LEFT;
+        heading.fmt = widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact && column < 3 ? LVCFMT_RIGHT : LVCFMT_LEFT;
         if (SendMessageW(handle, LVM_INSERTCOLUMNW, (WPARAM)column, (LPARAM)&heading) == -1) status = XXWIDGETS_PLATFORM_ERROR;
         free(title);
         if (status != XXWIDGETS_OK) return status;
@@ -3650,6 +3694,13 @@ static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
     int rebuild = !native->list_initialized || native->scan_revision != revision;
     int redraw_disabled = 0;
     xxwidgets_status status = XXWIDGETS_OK;
+    if (widget->kind == XXWIDGETS_MEMORY_MAP &&
+        (size_t)Header_GetItemCount((HWND)SendMessageW(handle, LVM_GETHEADER, 0, 0)) != columns) {
+        while (SendMessageW(handle, LVM_DELETECOLUMN, 0, 0)) {}
+        status = win32_scanresults_columns(widget);
+        if (status != XXWIDGETS_OK) return status;
+        rebuild = 1;
+    }
     if (widget->kind == XXWIDGETS_HEXVIEW) {
         InvalidateRect(handle, NULL, FALSE);
         for (column = 0; column < 3; ++column) {
@@ -3731,6 +3782,16 @@ static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
         native->list_count = count;
         native->scan_revision = revision;
         native->list_initialized = 1;
+    }
+    if (widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact) {
+        RECT client;
+        int width;
+        if (!GetClientRect(handle, &client)) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+        width = client.right - client.left;
+        for (column = 0; column < 3; ++column) width -= (int)SendMessageW(handle, LVM_GETCOLUMNWIDTH, (WPARAM)column, 0);
+        if (width < 48) width = 48;
+        if (width != (int)SendMessageW(handle, LVM_GETCOLUMNWIDTH, 3, 0) &&
+            !SendMessageW(handle, LVM_SETCOLUMNWIDTH, 3, (LPARAM)width)) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
     }
     {
         /* The selected model row, where the filters show it. */
@@ -3884,7 +3945,12 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
         free(text);
         if (status != XXWIDGETS_OK) return status;
     }
-    if (widget->kind == XXWIDGETS_CHECKBOX) SendMessageW(handle, BM_SETCHECK, widget->value ? BST_CHECKED : BST_UNCHECKED, 0);
+    if (widget->kind == XXWIDGETS_CHECKBOX) {
+        LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
+        LONG_PTR wanted = widget->checkbox_radio ? BS_RADIOBUTTON : BS_AUTOCHECKBOX;
+        if ((style & BS_TYPEMASK) != wanted) SendMessageW(handle, BM_SETSTYLE, (WPARAM)wanted, TRUE);
+        SendMessageW(handle, BM_SETCHECK, widget->value ? BST_CHECKED : BST_UNCHECKED, 0);
+    }
     if (widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER || widget->kind == XXWIDGETS_ENTROPY_PLOT) InvalidateRect(handle, NULL, FALSE);
     if (widget->kind == XXWIDGETS_PROGRESS) SendMessageW(handle, PBM_SETPOS, (WPARAM)widget->value, 0);
     if (native->die_dragging && (!widget->enabled || !widget->visible)) {
@@ -4144,8 +4210,8 @@ static xxwidgets_status win32_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
         int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
         int x = area.left + ((area.right - area.left) - width) / 2;
         int y = area.top + ((area.bottom - area.top) - height) / 2;
-        xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
-        if (native && native->font_layout) {
+        /* A dialog wider than its owner must still open inside the work area. */
+        {
             MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
             if (GetMonitorInfoW(MonitorFromWindow(parent, MONITOR_DEFAULTTONEAREST), &monitor)) {
                 if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;

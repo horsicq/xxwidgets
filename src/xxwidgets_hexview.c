@@ -21,6 +21,7 @@
 
 #include "xxwidgets_internal.h"
 #include "xxwidgets/xxwidgets_forms.h"
+#include "xxwidgets/xxwidgets_disk_write.h"
 #include "xxfclib/io/xx_io.h" /* Keep device headers out of Cocoa's shared headers. */
 
 #include <limits.h>
@@ -158,6 +159,7 @@ static void free_hex_rows(char **rows, size_t count)
 void xxwidgets_hexview_init(xxwidgets_widget *widget)
 {
     widget->hex_columns = 16;
+    widget->hex_location_colon = 1;
     widget->hex_display.radix = 16;
     widget->hex_display.encoding = "ASCII";
     widget->hex_cursor = SIZE_MAX;
@@ -1951,19 +1953,34 @@ xxwidgets_status xxwidgets_hexview_copy_selection(xxwidgets_widget *w, xxwidgets
     free(text);
     return status;
 }
-static xxwidgets_status save_hex_selection(xxwidgets_widget *w, const char *path, int overwrite)
+typedef struct hex_save_job {
+    xxwidgets_hexview_source_read_fn read;
+    void *user;
+    const unsigned char *data;
+    uint64_t start, length;
+    const char *path;
+    int overwrite, backup;
+} hex_save_job;
+
+/* All source/window metadata is captured before starting this worker. The
+ * read callback is a storage callback, never a UI callback. Modal ownership
+ * and hex_edit_busy retain the source for the complete joined operation. */
+static xxwidgets_status hex_save_worker(void *user, xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter)
 {
+    hex_save_job *job = user;
+    const char *path = job->path;
+    int overwrite = job->overwrite;
     FILE *file = NULL;
     int ok;
     int atomic_save;
-    uint64_t start, length;
+    uint64_t start = job->start, length = job->length, done = 0;
+    xxwidgets_app backup_policy = {0};
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !path || !*path || !xxwidgets_valid_utf8(path))
-        return XXWIDGETS_INVALID_ARGUMENT;
-    (void)xxwidgets_hexview_get_source_selection(w, &start, &length);
-    if (!length)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    atomic_save = w->hex_source_read && overwrite;
+    backup_policy.save_backup = job->backup;
+    atomic_save = overwrite;
+    if (xx_pd_is_stopped(progress)) return XXWIDGETS_UNAVAILABLE;
+    (void)xxwidgets_disk_write_set_file(reporter, path, 0, 1, 1);
+    (void)xxwidgets_disk_write_set_bytes(reporter, 0, length, 1);
 #ifdef _WIN32
     int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
     wchar_t *wide = count ? malloc((size_t)count * sizeof(*wide)) : NULL;
@@ -2028,23 +2045,27 @@ static xxwidgets_status save_hex_selection(xxwidgets_widget *w, const char *path
         return XXWIDGETS_PLATFORM_ERROR;
     }
     ok = 1;
-    if (w->hex_source_read) {
-        unsigned char buffer[16384];
+    {
+        unsigned char buffer[65536];
         while (length) {
-            size_t count = length < sizeof(buffer) ? (size_t)length : sizeof(buffer);
-            status = w->hex_source_read(w->hex_source_user, start, buffer, count);
-            if (status != XXWIDGETS_OK || fwrite(buffer, 1, count, file) != count) {
-                ok = 0;
-                break;
-            }
-            start += count;
-            length -= count;
+            const unsigned char *bytes = job->data ? job->data + (size_t)done : buffer;
+            size_t amount = length < sizeof(buffer) ? (size_t)length : sizeof(buffer);
+            if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; ok = 0; break; }
+            if (job->read) status = job->read(job->user, start, buffer, amount);
+            if (status != XXWIDGETS_OK || fwrite(bytes, 1, amount, file) != amount) { ok = 0; break; }
+            start += amount; length -= amount; done += amount;
+            (void)xxwidgets_disk_write_set_bytes(reporter, done, job->length, 1);
         }
-    } else
-        ok = fwrite(w->hex_data + w->hex_selection, 1, w->hex_selection_length, file) == w->hex_selection_length;
+    }
     if (fclose(file))
         ok = 0;
+    if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; ok = 0; }
     if (atomic_save) {
+        if (ok) {
+            status = xxwidgets_backup_destination(&backup_policy, path);
+            if (status != XXWIDGETS_OK) ok = 0;
+        }
+        if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; ok = 0; }
 #ifdef _WIN32
         if (ok && !MoveFileExW(temporary, wide, MOVEFILE_REPLACE_EXISTING))
             ok = 0;
@@ -2056,7 +2077,7 @@ static xxwidgets_status save_hex_selection(xxwidgets_widget *w, const char *path
         if (!ok)
             (void)remove(temporary);
 #endif
-    } else if (!ok && w->hex_source_read && !overwrite) {
+    } else if (!ok && !overwrite) {
 #ifdef _WIN32
         (void)DeleteFileW(wide);
 #else
@@ -2067,7 +2088,25 @@ static xxwidgets_status save_hex_selection(xxwidgets_widget *w, const char *path
     free(wide);
 #endif
     free(temporary);
+    if (ok) (void)xxwidgets_disk_write_set_file(reporter, path, 1, 1, 1);
     return ok ? XXWIDGETS_OK : status != XXWIDGETS_OK ? status : XXWIDGETS_PLATFORM_ERROR;
+}
+
+static xxwidgets_status save_hex_selection(xxwidgets_widget *w, const char *path, int overwrite)
+{
+    hex_save_job job = {0};
+    xxwidgets_status status;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !path || !*path || !xxwidgets_valid_utf8(path)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (w->hex_edit_busy || w->hex_cut_busy) return XXWIDGETS_BUSY;
+    status = xxwidgets_hexview_get_source_selection(w, &job.start, &job.length);
+    if (status != XXWIDGETS_OK || !job.length) return status != XXWIDGETS_OK ? status : XXWIDGETS_INVALID_ARGUMENT;
+    job.read = w->hex_source_read; job.user = w->hex_source_user;
+    job.data = job.read ? NULL : w->hex_data + w->hex_selection;
+    job.path = path; job.overwrite = overwrite; job.backup = w->app->save_backup;
+    w->hex_edit_busy = 1;
+    status = xxwidgets_disk_write_run(w->parent, "Saving selected bytes", path, hex_save_worker, &job, NULL);
+    w->hex_edit_busy = 0;
+    return status;
 }
 xxwidgets_status xxwidgets_hexview_save_selection(xxwidgets_widget *w, const char *path) { return save_hex_selection(w, path, 1); }
 

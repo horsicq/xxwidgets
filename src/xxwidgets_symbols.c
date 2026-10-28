@@ -8,7 +8,7 @@
 struct xxwidgets_symbols {
     xxwidgets_widget *owner, *controls[XXWIDGETS_SYMBOLS_CONTROL_COUNT];
     xx_symbol_record *records;
-    size_t count;
+    size_t count, displayed_count;
     char *path, *format, *filter;
     uint64_t file_size;
     int pending;
@@ -30,7 +30,7 @@ xxwidgets_status xxwidgets_symbols_set_rect(xxwidgets_symbols *v, xxwidgets_rect
     R(FILTER_LABEL, 0, 4, 8, 2);
     R(FILTER, 9, 4, b.width - 26, 2);
     R(RESET, b.width - 15, 4, 15, 2);
-    R(TABLE, 0, 7, b.width, b.height - 13);
+    R(TABLE, 0, 4, b.width, b.height - 10);
     R(DETAILS, 0, b.height - 5, b.width, 1);
     R(COPY, 0, b.height - 3, 16, 2);
     R(COPY_ALL, 18, b.height - 3, 16, 2);
@@ -106,6 +106,25 @@ static int matches(const char *text, const char *filter)
     }
     return 0;
 }
+static xxwidgets_status refresh_summary(xxwidgets_symbols *v, const xxwidgets_symbols_data *data)
+{
+    size_t count = xxwidgets_table_visible_count(C(v, TABLE));
+    char summary[256];
+    xxwidgets_status status;
+    if (count == v->displayed_count)
+        return XXWIDGETS_OK;
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " bytes | %zu / %zu symbols", data->format, data->file_size, count, data->count);
+    status = xxwidgets_widget_set_text(C(v, SUMMARY), summary);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_enabled(C(v, COPY), count != 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_enabled(C(v, COPY_ALL), count != 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_text(C(v, STATUS), count ? "Select a symbol" : "No symbols match");
+    if (status == XXWIDGETS_OK)
+        v->displayed_count = count;
+    return status;
+}
 static xxwidgets_status present(xxwidgets_symbols *v, const xxwidgets_symbols_data *data, const char *filter)
 {
     xx_symbol_record *rows = data->count ? malloc(data->count * sizeof(*rows)) : NULL;
@@ -169,6 +188,7 @@ static xxwidgets_status present(xxwidgets_symbols *v, const xxwidgets_symbols_da
         free(old[i]);
         texts[i] = NULL;
     }
+    v->displayed_count = count;
     free(v->filter);
     v->filter = filter_copy;
     filter_copy = NULL;
@@ -202,7 +222,15 @@ xxwidgets_status xxwidgets_symbols_create(xxwidgets_widget *owner, xxwidgets_rec
         if (status != XXWIDGETS_OK)
             goto fail;
     }
-    status = xxwidgets_symbols_set_rect(v, bounds);
+    /* Column headers provide the visible filters. Retain these controls for
+     * the existing programmatic filtering API without a duplicate input row. */
+    status = xxwidgets_widget_set_visible(C(v, FILTER_LABEL), 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_visible(C(v, FILTER), 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_visible(C(v, RESET), 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_symbols_set_rect(v, bounds);
     if (status == XXWIDGETS_OK) {
         xxwidgets_symbols_data empty = {"", "", 0, NULL, 0};
         status = xxwidgets_symbols_set_data(v, &empty);
@@ -241,7 +269,7 @@ size_t xxwidgets_symbols_count(const xxwidgets_symbols *v)
 }
 size_t xxwidgets_symbols_visible_count(const xxwidgets_symbols *v)
 {
-    return v ? xxwidget_symbolsviewer_count(C(v, TABLE)) : 0;
+    return v ? xxwidgets_table_visible_count(C(v, TABLE)) : 0;
 }
 xxwidgets_status xxwidgets_symbols_set_data(xxwidgets_symbols *v, const xxwidgets_symbols_data *data)
 {
@@ -366,11 +394,13 @@ xxwidgets_status xxwidgets_symbols_export_text(const xxwidgets_symbols *v, size_
         return XXWIDGETS_INVALID_ARGUMENT;
     table = C(v, TABLE);
     count = xxwidget_symbolsviewer_count(table);
-    if (index != SIZE_MAX && index >= count)
+    if (index != SIZE_MAX && (index >= count || xxwidgets_tabular_display_row(table, index) == SIZE_MAX))
         return XXWIDGETS_INVALID_ARGUMENT;
     first = index == SIZE_MAX ? 0 : index;
     last = index == SIZE_MAX ? count : index + 1;
     for (size_t i = first; i < last; ++i) {
+        if (xxwidgets_tabular_display_row(table, i) == SIZE_MAX)
+            continue;
         size_t row_length = row_text(table, i, NULL, 0);
         if (row_length == SIZE_MAX || row_length > 32U * 1024U * 1024U - length)
             return XXWIDGETS_UNAVAILABLE;
@@ -388,7 +418,8 @@ xxwidgets_status xxwidgets_symbols_export_text(const xxwidgets_symbols *v, size_
     memcpy(buffer, header, sizeof(header) - 1);
     pos = sizeof(header) - 1;
     for (size_t i = first; i < last; ++i)
-        pos += row_text(table, i, buffer + pos, capacity - pos);
+        if (xxwidgets_tabular_display_row(table, i) != SIZE_MAX)
+            pos += row_text(table, i, buffer + pos, capacity - pos);
     buffer[pos] = 0;
     return XXWIDGETS_OK;
 }
@@ -396,6 +427,10 @@ xxwidgets_status xxwidgets_symbols_handle_event(xxwidgets_symbols *v, const xxwi
 {
     if (!v || !event)
         return XXWIDGETS_INVALID_ARGUMENT;
+    if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, TABLE)) {
+        xxwidgets_symbols_data data = {v->path, v->format, v->file_size, v->records, v->count};
+        return refresh_summary(v, &data);
+    }
     if (event->type == XXWIDGETS_EVENT_SELECT && event->widget == C(v, TABLE)) {
         size_t index;
         xx_symbol_record r;
@@ -426,6 +461,12 @@ xxwidgets_status xxwidgets_symbols_process(xxwidgets_symbols *v)
         return XXWIDGETS_INVALID_ARGUMENT;
     if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
         return XXWIDGETS_BUSY;
+    {
+        xxwidgets_symbols_data data = {v->path, v->format, v->file_size, v->records, v->count};
+        status = refresh_summary(v, &data);
+        if (status != XXWIDGETS_OK)
+            return status;
+    }
     action = v->pending;
     v->pending = 0;
     if (!action)

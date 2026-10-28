@@ -942,11 +942,9 @@ xxwidgets_status xxwidgets_scan_directory_dialog(xxwidgets_widget *owner, const 
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
     disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(state.window, owner, 1);
-        if (status != XXWIDGETS_OK) goto finish;
-        attached = 1;
-    }
+    status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) goto finish;
+    attached = 1;
     (void)xxwidgets_widget_focus(CONTROL(state.view, PATH));
     while (status == XXWIDGETS_OK && !app->quit) {
         xxwidgets_scan_directory_progress progress;
@@ -990,7 +988,7 @@ finish:
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (attached) {
-        cleanup = app->ops->modal_owner(state.window, owner, 0);
+        cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     app->modal_window = NULL;

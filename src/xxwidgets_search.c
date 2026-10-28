@@ -340,11 +340,9 @@ xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *ti
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
     disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(state.window, owner, 1);
-        if (status != XXWIDGETS_OK) goto finish;
-        attached = 1;
-    }
+    status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) goto finish;
+    attached = 1;
     status = xxwidgets_widget_focus(form->controls[XXWIDGETS_SEARCH_PATTERN]);
     while (status == XXWIDGETS_OK && !state.done && !app->quit) {
         const char *message = NULL;
@@ -367,7 +365,7 @@ finish:
         if (cleanup != XXWIDGETS_OK) { owner->enabled = enabled; recover(owner); }
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    if (attached) { cleanup = app->ops->modal_owner(state.window, owner, 0); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (attached) { cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
     if (form) { cleanup = xxwidgets_search_widget_destroy(form); if (status == XXWIDGETS_OK) status = cleanup; }
     if (state.window) { cleanup = xxwidgets_widget_destroy(state.window); if (status == XXWIDGETS_OK) status = cleanup; }
     app->modal_window = NULL; app->modal_default = previous_default;

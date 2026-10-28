@@ -96,6 +96,7 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
         rows[i] = (xxwidgets_debugger_instruction){r->address, r->bytes, r->instruction, r->comment, 0};
         end += r->size;
     }
+    if (p->arm != 0 && p->arm != 1) return XXWIDGETS_INVALID_ARGUMENT;
     if (end != p->next_offset)
         return XXWIDGETS_INVALID_ARGUMENT;
     snprintf(offset_text, sizeof(offset_text), "0x%" PRIX64, p->offset);
@@ -124,8 +125,12 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
     for (size_t i = 0; i < 3 && status == XXWIDGETS_OK; ++i)
         status = v->owner->app->ops->sync(buttons[i]);
     --v->owner->app->syncing;
-    if (status == XXWIDGETS_OK)
+    if (status == XXWIDGETS_OK) {
+        int previous_arm = C(v, TABLE)->disasm_arm;
+        C(v, TABLE)->disasm_arm = p->arm;
         status = xxwidgets_debugger_disasm_set_rows(C(v, TABLE), rows, p->count);
+        if (status != XXWIDGETS_OK) C(v, TABLE)->disasm_arm = previous_arm;
+    }
     if (status != XXWIDGETS_OK) {
         for (size_t i = 0; i < 3; ++i) {
             labels[i]->text = old[i];

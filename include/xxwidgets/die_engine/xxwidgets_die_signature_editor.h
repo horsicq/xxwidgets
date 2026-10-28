@@ -61,7 +61,12 @@ XXWIDGETS_API int xxwidgets_die_signature_editor_read_only(const xxwidgets_die_s
 /* Open rejects binary/NUL-containing, invalid UTF-8 and oversized files without
  * replacing the draft. Save writes LF UTF-8 through an exclusive sibling temp
  * file, then atomically replaces path. NULL path saves to the last opened/saved
- * path; untitled requires an explicit path. Save failures leave the draft dirty.
+ * path; untitled requires an explicit path. Save snapshots the document on the
+ * UI thread, writes in bounded chunks on a managed worker, and shows the shared
+ * disk-write progress dialog for long operations. Cancellation returns
+ * UNAVAILABLE. Cancellation or failed disk publication preserves the preceding
+ * file, path and dirty state. Savepoint/path publication occurs only after
+ * atomic replacement; a savepoint failure is reported after the file is saved.
  * Explicit-path save may replace an existing file: applications obtain approval
  * themselves, or use the Save As chooser, which confirms replacement. */
 XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_editor_open(xxwidgets_die_signature_editor *editor,

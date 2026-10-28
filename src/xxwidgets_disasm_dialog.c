@@ -95,12 +95,10 @@ xxwidgets_status xxwidgets_disasm_dialog(xxwidgets_widget *owner, const char *ti
     if (status != XXWIDGETS_OK)
         goto finish;
     disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(modal.window, owner, 1);
-        if (status != XXWIDGETS_OK)
-            goto finish;
-        attached = 1;
-    }
+    status = xxwidgets_window_set_modality(modal.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK)
+        goto finish;
+    attached = 1;
     status = xxwidgets_widget_focus(xxwidgets_disasm_browser_control(modal.view, XXWIDGETS_DISASM_TABLE));
     while (status == XXWIDGETS_OK && !modal.done && !app->quit) {
         status = xxwidgets_app_poll(app, 30);
@@ -111,7 +109,7 @@ xxwidgets_status xxwidgets_disasm_dialog(xxwidgets_widget *owner, const char *ti
         status = modal.failure;
 finish:
     if (attached) {
-        cleanup = app->ops->modal_owner(modal.window, owner, 0);
+        cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK)
             status = cleanup;
     }

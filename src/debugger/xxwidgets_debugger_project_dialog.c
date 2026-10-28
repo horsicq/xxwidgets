@@ -53,11 +53,9 @@ static xxwidgets_status modal_show(modal_context *modal, xxwidgets_widget *focus
     xxwidgets_status status = xxwidgets_widget_set_enabled(modal->owner, 0);
     if (status != XXWIDGETS_OK) return status;
     modal->disabled = 1;
-    if (modal->app->ops->modal_owner) {
-        status = modal->app->ops->modal_owner(modal->window, modal->owner, 1);
-        if (status != XXWIDGETS_OK) return status;
-        modal->attached = 1;
-    }
+    status = xxwidgets_window_set_modality(modal->window, modal->owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) return status;
+    modal->attached = 1;
     modal->app->modal_default = default_button;
     return xxwidgets_widget_focus(focus);
 }
@@ -77,7 +75,7 @@ static xxwidgets_status modal_finish(modal_context *modal, xxwidgets_status stat
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (modal->attached) {
-        cleanup = modal->app->ops->modal_owner(modal->window, modal->owner, 0);
+        cleanup = xxwidgets_window_set_modality(modal->window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (modal->window) {

@@ -15,6 +15,7 @@
 struct xxwidgets_strings {
     xxwidgets_widget *owner, *controls[XXWIDGETS_STRINGS_CONTROL_COUNT];
     xxwidgets_string_record *records;
+    uint64_t *numbers;
     /* The records FILTER lets through: the rows of RESULTS. */
     size_t count, matched_count, *matched;
     char *filter;
@@ -95,7 +96,7 @@ static void free_cells(char **cells, size_t rows)
 }
 
 /* The cells of the records the filter lets through, and their indexes. */
-static xxwidgets_status build_rows(const xxwidgets_string_record *records, size_t count, const char *filter,
+static xxwidgets_status build_rows(const xxwidgets_string_record *records, const uint64_t *numbers, size_t count, const char *filter,
                                   char ***out_cells, size_t **out_matched, size_t *out_used)
 {
     char **cells = count ? calloc(count, COLUMNS * sizeof(char *)) : NULL;
@@ -115,7 +116,7 @@ static xxwidgets_status build_rows(const xxwidgets_string_record *records, size_
         size_t lengths[COLUMNS], total = 0;
         char *row;
         if (!matches(r->text, filter) && !matches(r->encoding, filter)) continue;
-        snprintf(number, sizeof(number), "%zu", i);
+        snprintf(number, sizeof(number), "%" PRIu64, numbers ? numbers[i] : (uint64_t)i);
         snprintf(offset, sizeof(offset), "%0*" PRIX64, digits(offsets), r->offset);
         if (r->has_address) snprintf(address, sizeof(address), "%0*" PRIX64, digits(addresses), r->address);
         snprintf(size, sizeof(size), "%0*" PRIX64, digits(sizes), r->byte_size);
@@ -163,13 +164,13 @@ static xxwidgets_status update_labels(xxwidgets_strings *v)
 
 /* Shows the records filter lets through, selecting record keep when shown.
  * On failure the rows shown before stay. */
-static xxwidgets_status replace_rows(xxwidgets_strings *v, const xxwidgets_string_record *records, size_t count,
+static xxwidgets_status replace_rows(xxwidgets_strings *v, const xxwidgets_string_record *records, const uint64_t *numbers, size_t count,
                                     const char *filter, size_t keep, size_t **out_matched, size_t *out_count)
 {
     char **cells = NULL;
     size_t *matched = NULL, used = 0;
     int selection = -1;
-    xxwidgets_status status = build_rows(records, count, filter, &cells, &matched, &used);
+    xxwidgets_status status = build_rows(records, numbers, count, filter, &cells, &matched, &used);
     if (status != XXWIDGETS_OK) return status;
     for (size_t i = 0; i < used && keep != SIZE_MAX; ++i)
         if (matched[i] == keep) { selection = (int)i; break; }
@@ -185,7 +186,7 @@ static void restore_rows(xxwidgets_strings *v)
 {
     size_t *matched = NULL, used = 0;
     int selected = selected_index(v);
-    if (replace_rows(v, v->records, v->count, v->filter, selected < 0 ? SIZE_MAX : v->matched[selected], &matched, &used) == XXWIDGETS_OK)
+    if (replace_rows(v, v->records, v->numbers, v->count, v->filter, selected < 0 ? SIZE_MAX : v->matched[selected], &matched, &used) == XXWIDGETS_OK)
         free(matched);
 }
 
@@ -203,8 +204,8 @@ xxwidgets_status xxwidgets_strings_set_rect(xxwidgets_strings *v, xxwidgets_rect
     R(FILTER_LABEL, 0, 0, 7, 2);
     R(FILTER, 8, 0, b.width - 8, 2);
     /* Hidden: the table has its own titles. */
-    R(HEADER, 0, 3, b.width, 1);
-    R(RESULTS, 0, 3, b.width, b.height - 8);
+    R(HEADER, 0, 0, b.width, 1);
+    R(RESULTS, 0, 0, b.width, b.height - 5);
     R(DETAILS, 0, b.height - 4, b.width, 1);
     R(COUNT, 0, b.height - 2, b.width - 45, 2);
     R(COPY, b.width - 44, b.height - 2, 14, 2);
@@ -222,7 +223,7 @@ xxwidgets_status xxwidgets_strings_set_rect(xxwidgets_strings *v, xxwidgets_rect
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_strings_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_strings **out)
+xxwidgets_status xxwidgets_strings_create_internal(xxwidgets_widget *owner, xxwidgets_rect bounds, int info_header, xxwidgets_strings **out)
 {
     static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL, XXWIDGETS_EDIT, XXWIDGETS_LABEL, XXWIDGETS_TABLE,
         XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON};
@@ -243,12 +244,17 @@ xxwidgets_status xxwidgets_strings_create(xxwidgets_widget *owner, xxwidgets_rec
         if (kinds[i] == XXWIDGETS_TABLE) {
             const char *translated[COLUMNS];
             for (size_t c = 0; c < COLUMNS; ++c) translated[c] = XXW_TR(owner->app, titles[c]);
+            if (info_header) translated[5] = XXW_TR(owner->app, "Info");
             status = xxwidgets_table_create(owner, (xxwidgets_rect){0, 0, 1, 1}, translated, COLUMNS, v->controls + i);
         } else
             status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
         if (status != XXWIDGETS_OK) goto fail;
     }
     status = xxwidgets_widget_set_visible(CONTROL(v, HEADER), 0);
+    /* Column headers provide the visible filters. Retain the global controls
+     * internally for the existing programmatic filtering API. */
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(CONTROL(v, FILTER_LABEL), 0);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(CONTROL(v, FILTER), 0);
     if (status == XXWIDGETS_OK) status = xxwidgets_strings_set_rect(v, bounds);
     if (status == XXWIDGETS_OK) status = xxwidgets_strings_set_records(v, NULL, 0);
     if (status != XXWIDGETS_OK) goto fail;
@@ -259,6 +265,11 @@ fail:
     return status;
 }
 
+xxwidgets_status xxwidgets_strings_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_strings **out)
+{
+    return xxwidgets_strings_create_internal(owner, bounds, 0, out);
+}
+
 xxwidgets_status xxwidgets_strings_destroy(xxwidgets_strings *v)
 {
     if (!v) return XXWIDGETS_INVALID_ARGUMENT;
@@ -266,13 +277,20 @@ xxwidgets_status xxwidgets_strings_destroy(xxwidgets_strings *v)
     for (size_t i = 0; i < XXWIDGETS_STRINGS_CONTROL_COUNT; ++i)
         if (v->controls[i]) (void)xxwidgets_widget_destroy(v->controls[i]);
     free_records(v->records, v->count);
-    free(v->matched); free(v->filter); free(v);
+    free(v->numbers); free(v->matched); free(v->filter); free(v);
     return XXWIDGETS_OK;
 }
 
 xxwidgets_status xxwidgets_strings_set_records(xxwidgets_strings *v, const xxwidgets_string_record *records, size_t count)
 {
+    return xxwidgets_strings_set_records_numbered(v, records, NULL, count);
+}
+
+xxwidgets_status xxwidgets_strings_set_records_numbered(xxwidgets_strings *v, const xxwidgets_string_record *records,
+                                                      const uint64_t *numbers, size_t count)
+{
     xxwidgets_string_record *copies = NULL, *old_records;
+    uint64_t *number_copies = NULL, *old_numbers;
     size_t *matched = NULL, used = 0, *old_matched, old_count, old_matched_count;
     xxwidgets_status status;
     if (!v || (!records && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*copies) || count > SIZE_MAX / (COLUMNS * sizeof(char *)) ||
@@ -284,6 +302,11 @@ xxwidgets_status xxwidgets_strings_set_records(xxwidgets_strings *v, const xxwid
     if (count) {
         copies = calloc(count, sizeof(*copies));
         if (!copies) return XXWIDGETS_OUT_OF_MEMORY;
+        if (numbers) {
+            number_copies = malloc(count * sizeof(*number_copies));
+            if (!number_copies) { free(copies); return XXWIDGETS_OUT_OF_MEMORY; }
+            memcpy(number_copies, numbers, count * sizeof(*number_copies));
+        }
     }
     for (size_t i = 0; i < count; ++i) {
         copies[i] = records[i];
@@ -292,23 +315,24 @@ xxwidgets_status xxwidgets_strings_set_records(xxwidgets_strings *v, const xxwid
         copies[i].text = xxwidgets_strdup(records[i].text);
         copies[i].region = records[i].region ? xxwidgets_strdup(records[i].region) : NULL;
         if (!copies[i].encoding || !copies[i].text || (records[i].region && !copies[i].region)) {
-            free_records(copies, i + 1);
+            free_records(copies, i + 1); free(number_copies);
             return XXWIDGETS_OUT_OF_MEMORY;
         }
     }
-    status = replace_rows(v, copies, count, v->filter, SIZE_MAX, &matched, &used);
-    if (status != XXWIDGETS_OK) { free_records(copies, count); return status; }
+    status = replace_rows(v, copies, number_copies, count, v->filter, SIZE_MAX, &matched, &used);
+    if (status != XXWIDGETS_OK) { free_records(copies, count); free(number_copies); return status; }
+    old_numbers = v->numbers;
     old_records = v->records; old_count = v->count; old_matched = v->matched; old_matched_count = v->matched_count;
-    v->records = copies; v->count = count; v->matched = matched; v->matched_count = used;
+    v->records = copies; v->numbers = number_copies; v->count = count; v->matched = matched; v->matched_count = used;
     status = update_labels(v);
     if (status != XXWIDGETS_OK) {
-        v->records = old_records; v->count = old_count; v->matched = old_matched; v->matched_count = old_matched_count;
+        v->records = old_records; v->numbers = old_numbers; v->count = old_count; v->matched = old_matched; v->matched_count = old_matched_count;
         restore_rows(v);
         (void)update_labels(v);
-        free_records(copies, count); free(matched);
+        free_records(copies, count); free(number_copies); free(matched);
         return status;
     }
-    free_records(old_records, old_count); free(old_matched);
+    free_records(old_records, old_count); free(old_numbers); free(old_matched);
     return XXWIDGETS_OK;
 }
 
@@ -325,7 +349,7 @@ xxwidgets_status xxwidgets_strings_set_filter(xxwidgets_strings *v, const char *
     if (!old_text) { free(copy); return XXWIDGETS_OUT_OF_MEMORY; }
     selected = selected_index(v);
     if (selected >= 0) keep = v->matched[selected];
-    status = replace_rows(v, v->records, v->count, copy, keep, &matched, &used);
+    status = replace_rows(v, v->records, v->numbers, v->count, copy, keep, &matched, &used);
     if (status != XXWIDGETS_OK) { free(copy); free(old_text); return status; }
     old_filter = v->filter; old_matched = v->matched; old_matched_count = v->matched_count;
     v->filter = copy; v->matched = matched; v->matched_count = used;

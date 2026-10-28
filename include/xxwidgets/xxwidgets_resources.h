@@ -18,6 +18,7 @@ typedef struct xxwidgets_resources_data {
 typedef enum xxwidgets_resources_control_id {
     XXWIDGETS_RESOURCES_PATH,
     XXWIDGETS_RESOURCES_SUMMARY,
+    /* Legacy global filter controls stay hidden; use the table column filters. */
     XXWIDGETS_RESOURCES_FILTER_LABEL,
     XXWIDGETS_RESOURCES_FILTER,
     XXWIDGETS_RESOURCES_RESET,
@@ -33,7 +34,8 @@ typedef enum xxwidgets_resources_control_id {
  * 10000 records, 16 KiB per UTF-8 type/name/language and 8 MiB aggregate NUL-inclusive names.
  * NULL names mean empty; UINT32_MAX IDs are unknown. Offset/size use -1 for unknown.
  * Known physical ranges must fit inside file_size.
- * Replacement is transactional and resets the filter. Destroy before owner. */
+ * Replacement is transactional and resets the programmatic global filter.
+ * The visible table provides per-column filters. Destroy before owner. */
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_create(xxwidgets_widget *, xxwidgets_rect, xxwidgets_resources **);
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_destroy(xxwidgets_resources *);
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_set_rect(xxwidgets_resources *, xxwidgets_rect);
@@ -44,14 +46,15 @@ XXWIDGETS_API size_t xxwidgets_resources_visible_count(const xxwidgets_resources
 /* Substring in type/name/language (names or decimal IDs); ASCII case-insensitive, <=256 UTF-8 bytes.
  * Selects first visible row. Invalid input/failures retain previous filter. */
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_set_filter(xxwidgets_resources *, const char *);
-/* TSV of visible rows. index SIZE_MAX exports all, otherwise visible row index.
+/* TSV of rows passing the column and programmatic global filters. index SIZE_MAX
+ * exports all visible rows; otherwise use a visible model row index from TABLE.
  * Cells escape controls; includes numeric IDs and code page as well as table fields.
  * NULL/0 queries NUL-inclusive size; short buffers are terminated. <=32 MiB. */
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_export_text(const xxwidgets_resources *, size_t index, char *, size_t, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_handle_event(xxwidgets_resources *, const xxwidgets_event *);
 /* Run queued filtering/clipboard work after polling, outside input dispatch. */
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_process(xxwidgets_resources *);
-/* Snapshot modal with Close/Esc and Ctrl/Meta+F to focus Filter. */
+/* Snapshot modal with Close/Esc and Ctrl/Meta+F to focus the table. */
 XXWIDGETS_API xxwidgets_status xxwidgets_resources_dialog(xxwidgets_widget *, const char *, const xxwidgets_resources_data *);
 #ifdef __cplusplus
 }

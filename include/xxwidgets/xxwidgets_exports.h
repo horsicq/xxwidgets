@@ -18,6 +18,7 @@ typedef struct xxwidgets_exports_data {
 typedef enum xxwidgets_exports_control_id {
     XXWIDGETS_EXPORTS_PATH,
     XXWIDGETS_EXPORTS_SUMMARY,
+    /* Hidden legacy global-filter controls; the table exposes column filters. */
     XXWIDGETS_EXPORTS_FILTER_LABEL,
     XXWIDGETS_EXPORTS_FILTER,
     XXWIDGETS_EXPORTS_RESET,
@@ -43,14 +44,14 @@ XXWIDGETS_API size_t xxwidgets_exports_visible_count(const xxwidgets_exports *);
 /* Substring in name/forwarder; ASCII case-insensitive, <=256 UTF-8 bytes.
  * Selects first visible row. Invalid input/failures retain previous filter. */
 XXWIDGETS_API xxwidgets_status xxwidgets_exports_set_filter(xxwidgets_exports *, const char *);
-/* TSV of visible rows. index SIZE_MAX exports all, otherwise visible row index.
+/* TSV of visible rows. index SIZE_MAX exports all, otherwise a shown model row.
  * Cells escape control bytes; includes file offset in addition to table fields.
  * NULL/0 queries NUL-inclusive size; short buffers are terminated. <=32 MiB. */
 XXWIDGETS_API xxwidgets_status xxwidgets_exports_export_text(const xxwidgets_exports *, size_t index, char *, size_t, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_exports_handle_event(xxwidgets_exports *, const xxwidgets_event *);
 /* Run queued filtering/clipboard work after polling, outside input dispatch. */
 XXWIDGETS_API xxwidgets_status xxwidgets_exports_process(xxwidgets_exports *);
-/* Snapshot modal with Close/Esc and Ctrl/Meta+F to focus Filter. */
+/* Snapshot modal with Close/Esc and Ctrl/Meta+F to focus the table. */
 XXWIDGETS_API xxwidgets_status xxwidgets_exports_dialog(xxwidgets_widget *, const char *, const xxwidgets_exports_data *);
 #ifdef __cplusplus
 }

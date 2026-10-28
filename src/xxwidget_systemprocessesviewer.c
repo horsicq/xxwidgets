@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: MIT
  */
 #include "xxwidgets_internal.h"
+#include "xxwidgets/xxwidgets_disk_write.h"
+#include "xxfclib/io/xx_io.h"
 #include "xxwidgets/xxwidgets_forms.h"
 #include <inttypes.h>
 #include <limits.h>
@@ -127,11 +129,11 @@ static xxwidgets_status action_dialog(xxwidgets_widget *viewer, const char *titl
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto done;
     disabled_owner = 1;
-    if (app->ops->modal_owner) { status = app->ops->modal_owner(state.window, owner, 1); if (status != XXWIDGETS_OK) goto done; attached = 1; }
+    status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_WINDOW_MODAL); if (status != XXWIDGETS_OK) goto done; attached = 1;
     status = xxwidgets_widget_focus(state.buttons[count - 1]);
     while (status == XXWIDGETS_OK && !state.done && !app->quit) status = xxwidgets_app_poll(app, 30);
 done:
-    if (attached) { cleanup = app->ops->modal_owner(state.window, owner, 0); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (attached) { cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
     if (disabled_owner) {
         cleanup = xxwidgets_widget_set_enabled(owner, owner_enabled);
         if (cleanup != XXWIDGETS_OK) {
@@ -147,6 +149,32 @@ done:
     return status;
 }
 
+typedef struct process_dump_job {
+    xxwidgets_process_info process;
+    const char *path;
+    xxwidgets_process_dump_type type;
+    int overwrite;
+} process_dump_job;
+
+static xxwidgets_status process_dump_worker(void *user, xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter)
+{
+    process_dump_job *job = user;
+    xxwidgets_status status;
+    (void)xxwidgets_disk_write_set_file(reporter, job->path, 0, 1, 1);
+    (void)xxwidgets_disk_write_bind_levels(reporter, -1, 0);
+    status = xxwidget_systemprocessesviewer_dump_process_ex(&job->process, job->path, job->type, job->overwrite, progress);
+    if (status == XXWIDGETS_OK) {
+        xx_io_device *file = xx_io_file_open(job->path, "rb");
+        if (file) {
+            int64_t size = xx_io_total_size(file);
+            if (size >= 0) (void)xxwidgets_disk_write_set_bytes(reporter, (uint64_t)size, (uint64_t)size, 1);
+            (void)xx_io_close(file);
+        }
+        (void)xxwidgets_disk_write_set_file(reporter, job->path, 1, 1, 1);
+    }
+    return status;
+}
+
 static xxwidgets_status dump_action(xxwidgets_widget *widget, const xxwidgets_process_info *process, xxwidgets_process_dump_type type)
 {
     xxwidgets_widget *owner = widget->parent;
@@ -159,6 +187,8 @@ static xxwidgets_status dump_action(xxwidgets_widget *widget, const xxwidgets_pr
 #endif
     const char *description = type == XXWIDGETS_PROCESS_DUMP_IMAGE ? "executable image" : "process memory";
     xxwidgets_status status, notice;
+    process_dump_job job = {0};
+    xxwidgets_disk_write_result result = {0};
     int accepted = 0, overwrite = 0;
     snprintf(name, sizeof(name), "process-%" PRIu64 ".%s", process->pid, extension);
     snprintf(title, sizeof(title), "Dump %s - PID %" PRIu64, description, process->pid);
@@ -186,7 +216,15 @@ static xxwidgets_status dump_action(xxwidgets_widget *widget, const xxwidgets_pr
         if (owner->enabled && !widget->app->quit) (void)xxwidgets_widget_focus(widget);
         return status;
     }
-    status = xxwidget_systemprocessesviewer_dump_process(process, path, type, overwrite);
+    job.process.pid = process->pid;
+    job.process.start_time = process->start_time;
+    job.path = path; job.type = type; job.overwrite = overwrite;
+    status = xxwidgets_disk_write_run(owner, title, path, process_dump_worker, &job, &result);
+    if (result.cancelled) {
+        free(path);
+        if (owner->enabled && !widget->app->quit) (void)xxwidgets_widget_focus(widget);
+        return status;
+    }
     if (status == XXWIDGETS_OK) {
         size_t length = strlen(path);
         if (length > SIZE_MAX - 128) notice = XXWIDGETS_OUT_OF_MEMORY;

@@ -34,6 +34,7 @@ typedef struct xxwidgets_hex_options {
     int editable;
     int bold_nonzero;
     xxwidgets_font font;
+    int location_colon; /* 0/1; separate high/low location halves with a colon. */
 } xxwidgets_hex_options;
 
 typedef struct xxwidgets_hex_options_widget xxwidgets_hex_options_widget;
@@ -48,6 +49,7 @@ typedef enum xxwidgets_hex_options_control_id {
     XXWIDGETS_HEX_OPTIONS_FONT_FAMILY_LABEL,
     XXWIDGETS_HEX_OPTIONS_FONT_SIZE_LABEL,
     XXWIDGETS_HEX_OPTIONS_FONT_SIZE_HINT,
+    XXWIDGETS_HEX_OPTIONS_LOCATION_COLON,
     XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT
 } xxwidgets_hex_options_control_id;
 

@@ -270,14 +270,29 @@ static xxwidgets_status dump_publish(HANDLE file, const wchar_t *destination, in
     return XXWIDGETS_OK;
 }
 
-static xxwidgets_status dump_memory(HANDLE process, DWORD pid, HANDLE file)
+static BOOL CALLBACK dump_memory_callback(PVOID parameter, const PMINIDUMP_CALLBACK_INPUT input, PMINIDUMP_CALLBACK_OUTPUT output)
+{
+    xx_pd_struct *pd = parameter;
+    if (input && output && input->CallbackType == CancelCallback) {
+        output->CheckCancel = TRUE;
+        output->Cancel = xx_pd_is_stopped(pd);
+    }
+    return TRUE;
+}
+
+static xxwidgets_status dump_memory(HANDLE process, DWORD pid, HANDLE file, xx_pd_struct *pd)
 {
     wchar_t library_path[MAX_PATH + 16];
     HMODULE library = NULL;
     xx_dump_write_fn write_dump;
     UINT length;
     xxwidgets_status status = XXWIDGETS_UNAVAILABLE;
-    AcquireSRWLockExclusive(&xx_dump_dbghelp_lock);
+    MINIDUMP_CALLBACK_INFORMATION callback = {dump_memory_callback, pd};
+    int level = xx_pd_enter_level(pd, 0, "Capturing process memory");
+    while (!TryAcquireSRWLockExclusive(&xx_dump_dbghelp_lock)) {
+        if (xx_pd_is_stopped(pd)) { xx_pd_leave_level(pd, level); return XXWIDGETS_UNAVAILABLE; }
+        Sleep(20);
+    }
     length = GetSystemDirectoryW(library_path, MAX_PATH);
     if (!length || length >= MAX_PATH) goto done;
     wcscat(library_path, L"\\dbghelp.dll");
@@ -288,12 +303,13 @@ static xxwidgets_status dump_memory(HANDLE process, DWORD pid, HANDLE file)
     write_dump = (xx_dump_write_fn)GetProcAddress(library, "MiniDumpWriteDump");
     if (!write_dump) goto done;
     if (!write_dump(process, pid, file, (MINIDUMP_TYPE)(MiniDumpWithFullMemory | MiniDumpWithFullMemoryInfo |
-                    MiniDumpWithThreadInfo | MiniDumpIgnoreInaccessibleMemory), NULL, NULL, NULL))
+                    MiniDumpWithThreadInfo | MiniDumpIgnoreInaccessibleMemory), NULL, NULL, &callback))
         status = dump_error(GetLastError());
     else status = XXWIDGETS_OK;
 done:
     if (library) FreeLibrary(library);
     ReleaseSRWLockExclusive(&xx_dump_dbghelp_lock);
+    xx_pd_leave_level(pd, level);
     return status;
 }
 
@@ -366,21 +382,24 @@ static xxwidgets_status dump_write(HANDLE file, const unsigned char *buffer, DWO
     return XXWIDGETS_OK;
 }
 
-static xxwidgets_status dump_image(HANDLE process, xx_io_device *memory_device, DWORD pid, HANDLE file)
+static xxwidgets_status dump_image(HANDLE process, xx_io_device *memory_device, DWORD pid, HANDLE file, xx_pd_struct *pd)
 {
     uintptr_t base, cursor;
     DWORD image_size;
     size_t offset = 0;
     unsigned char *buffer;
     xxwidgets_status status = dump_main_image(memory_device, pid, &base, &image_size);
+    int level;
     if (status != XXWIDGETS_OK) return status;
+    level = xx_pd_enter_level(pd, image_size, "Dumping executable image");
     buffer = (unsigned char *)malloc(XX_DUMP_CHUNK);
-    if (!buffer) return XXWIDGETS_OUT_OF_MEMORY;
+    if (!buffer) { xx_pd_leave_level(pd, level); return XXWIDGETS_OUT_OF_MEMORY; }
     while (offset < image_size) {
         MEMORY_BASIC_INFORMATION memory;
         uintptr_t region, end;
         size_t chunk, remaining = (size_t)image_size - offset;
         int zero;
+        if (xx_pd_is_stopped(pd)) { status = XXWIDGETS_UNAVAILABLE; break; }
         cursor = base + offset;
         if (VirtualQueryEx(process, (LPCVOID)cursor, &memory, sizeof(memory)) != sizeof(memory)) {
             status = dump_error(GetLastError()); break;
@@ -409,13 +428,15 @@ static xxwidgets_status dump_image(HANDLE process, xx_io_device *memory_device, 
         status = dump_write(file, buffer, (DWORD)chunk);
         if (status != XXWIDGETS_OK) break;
         offset += chunk;
+        xx_pd_set_current(pd, level, offset);
     }
     free(buffer);
+    xx_pd_leave_level(pd, level);
     return status;
 }
 
-xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *process,
-    const char *destination, xxwidgets_process_dump_type type, int overwrite)
+xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_process_info *process,
+    const char *destination, xxwidgets_process_dump_type type, int overwrite, xx_pd_struct *pd)
 {
     HANDLE handle = NULL, file = INVALID_HANDLE_VALUE;
     xx_io_device *memory = NULL;
@@ -426,6 +447,7 @@ xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_pro
         process->pid == GetCurrentProcessId() || (type != XXWIDGETS_PROCESS_DUMP_MEMORY && type != XXWIDGETS_PROCESS_DUMP_IMAGE))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (!process->start_time) return XXWIDGETS_UNAVAILABLE;
+    if (xx_pd_is_stopped(pd)) return XXWIDGETS_UNAVAILABLE;
     status = dump_destination(destination, &path);
     if (status != XXWIDGETS_OK) goto done;
     if (!overwrite) {
@@ -446,9 +468,10 @@ xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_pro
     }
     status = dump_stage(path, &file, &stage_path);
     if (status != XXWIDGETS_OK) goto done;
-    status = type == XXWIDGETS_PROCESS_DUMP_MEMORY ? dump_memory(handle, (DWORD)process->pid, file) :
-                                                                 dump_image(handle, memory, (DWORD)process->pid, file);
+    status = type == XXWIDGETS_PROCESS_DUMP_MEMORY ? dump_memory(handle, (DWORD)process->pid, file, pd) :
+                                                                 dump_image(handle, memory, (DWORD)process->pid, file, pd);
     if (status != XXWIDGETS_OK) goto done;
+    if (xx_pd_is_stopped(pd)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
     status = dump_identity(handle, process->start_time);
     if (status != XXWIDGETS_OK) goto done;
     status = dump_publish(file, path, overwrite);
@@ -462,5 +485,10 @@ done:
     if (handle) CloseHandle(handle);
     free(path); free(stage_path);
     return status;
+}
+xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *process,
+    const char *destination, xxwidgets_process_dump_type type, int overwrite)
+{
+    return xxwidget_systemprocessesviewer_dump_process_ex(process, destination, type, overwrite, NULL);
 }
 #endif /* _WIN32 */

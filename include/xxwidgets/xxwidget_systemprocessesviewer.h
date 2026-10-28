@@ -5,6 +5,7 @@
 #define XXWIDGET_SYSTEMPROCESSESVIEWER_H
 
 #include "xxwidgets/xxwidgets.h"
+#include "xxfclib/data/xx_pd.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,6 +58,11 @@ XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_open_process_path(
  * applications can call this standalone adapter from their worker thread. */
 XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *, const char *destination,
     xxwidgets_process_dump_type type, int overwrite);
+/* Worker-friendly variant. Progress is worker-owned; Cancel stops image
+ * copying or native core capture and prevents publication of the staging
+ * output. The original destination is preserved on cancellation/failure. */
+XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_process_info *, const char *destination,
+    xxwidgets_process_dump_type type, int overwrite, xx_pd_struct *progress);
 
 /* Call outside an input callback, after a CONTEXT_MENU/ACTIVATE request or an
  * Actions button. Shows Open path, Copy PID, Refresh, Kill process, Dump process

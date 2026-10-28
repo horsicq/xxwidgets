@@ -55,6 +55,31 @@ static int finished_launching;
 
 static void cocoa_size_table(xxwidgets_widget *widget);
 
+/* AppKit has no NSWindow enabled property. Match the shared enabled state for
+ * key-window selection and native input as well as the controls it contains. */
+@interface XXWidgetsWindow : NSWindow {
+@public xxwidgets_widget *window_widget;
+}
+@end
+@implementation XXWidgetsWindow
+- (BOOL)canBecomeKeyWindow
+{
+    return (!window_widget || window_widget->enabled) && [super canBecomeKeyWindow];
+}
+- (BOOL)canBecomeMainWindow
+{
+    return (!window_widget || window_widget->enabled) && [super canBecomeMainWindow];
+}
+- (void)sendEvent:(NSEvent *)event
+{
+    if (!window_widget || window_widget->enabled) [super sendEvent:event];
+}
+- (void)performClose:(id)sender
+{
+    if (!window_widget || window_widget->enabled) [super performClose:sender];
+}
+@end
+
 /* Returned fonts are retained. Build every role before changing any views so
  * a font allocation failure leaves the preceding application fonts intact. */
 static NSFont *cocoa_font_create(const xxwidgets_font *settings, int formatted)
@@ -127,7 +152,8 @@ static void cocoa_widget_fonts(xxwidgets_widget *widget)
     NSFont *font = state->preview_font ? state->preview_font :
         cocoa_role_font(widget, xxwidgets_widget_font_role(widget));
     if (!state->preview_font && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || xxwidgets_debugger_table_kind(widget))) {
-        font = widget->kind == XXWIDGETS_HEXVIEW && state->hex_font ? state->hex_font :
+        font = widget->kind == XXWIDGETS_HEXVIEW ? (state->hex_font ? state->hex_font : app->fonts[XXWIDGETS_FONT_HEX_VIEWS] ? app->fonts[XXWIDGETS_FONT_HEX_VIEWS] : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]]) :
+            widget->kind == XXWIDGETS_DEBUGGER_DISASM ? (app->fonts[XXWIDGETS_FONT_DISASM_VIEWS] ? app->fonts[XXWIDGETS_FONT_DISASM_VIEWS] : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]]) :
             app->formatted_font ? app->formatted_font : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]];
         if (!font) font = cocoa_role_font(widget, XXWIDGETS_FONT_TABLE_VIEWS);
     }
@@ -190,7 +216,7 @@ static xxwidgets_status cocoa_apply_fonts(xxwidgets_app *app, const xxwidgets_fo
         NSFont *formatted;
         size_t role;
         for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
-            fonts[role] = cocoa_font_create(&options->fonts[role], 0);
+            fonts[role] = cocoa_font_create(&options->fonts[role], role == XXWIDGETS_FONT_HEX_VIEWS || role == XXWIDGETS_FONT_DISASM_VIEWS);
             if (!fonts[role]) {
                 for (size_t i = 0; i < role; ++i) [fonts[i] release];
                 return XXWIDGETS_OUT_OF_MEMORY;
@@ -1666,7 +1692,7 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 - (BOOL)windowShouldClose:(id)sender
 {
     (void)sender;
-    if (widget && !widget->app->syncing) xxwidgets_emit(widget, XXWIDGETS_EVENT_CLOSE, 0);
+    if (widget && widget->enabled && !widget->app->syncing) xxwidgets_emit(widget, XXWIDGETS_EVENT_CLOSE, 0);
     return NO;
 }
 
@@ -1956,6 +1982,32 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 - (void)tableView:(NSTableView *)table willDisplayCell:(id)cell
    forTableColumn:(NSTableColumn *)column row:(NSInteger)row
 {
+    if (widget && widget->kind == XXWIDGETS_DEBUGGER_DISASM && row >= 0) {
+        size_t col = (size_t)[[column identifier] intValue];
+        const char *text = xxwidgets_tabular_cell(widget, (size_t)row, col);
+        NSString *string = [NSString stringWithUTF8String:text];
+        if (!string) string = @"";
+        NSMutableAttributedString *value = [[[NSMutableAttributedString alloc] initWithString:string
+            attributes:@{NSFontAttributeName : [cell font], NSForegroundColorAttributeName : [NSColor textColor]}] autorelease];
+        xxwidgets_disasm_span spans[128];
+        size_t count = xxwidgets_disasm_spans(widget, (size_t)row, col, [table isRowSelected:row], spans, 128);
+        for (size_t i = 0; i < count; ++i) {
+            NSString *prefix = [[[NSString alloc] initWithBytes:text length:spans[i].start encoding:NSUTF8StringEncoding] autorelease];
+            NSString *part = [[[NSString alloc] initWithBytes:text + spans[i].start length:spans[i].length encoding:NSUTF8StringEncoding] autorelease];
+            if (!prefix || !part) continue;
+            NSRange range = NSMakeRange([prefix length], [part length]);
+            uint32_t colors[2] = {spans[i].foreground, spans[i].background};
+            for (size_t j = 0; j < 2; ++j) {
+                uint32_t rgb = colors[j];
+                if (rgb == UINT32_MAX) continue;
+                [value addAttribute:j ? NSBackgroundColorAttributeName : NSForegroundColorAttributeName
+                    value:[NSColor colorWithSRGBRed:((rgb >> 16) & 255) / 255.0 green:((rgb >> 8) & 255) / 255.0 blue:(rgb & 255) / 255.0 alpha:1]
+                    range:range];
+            }
+        }
+        [cell setAttributedStringValue:value];
+        return;
+    }
     if (widget && widget->kind == XXWIDGETS_HEXVIEW && row >= 0) {
         xxwidgets_hex_span spans[64];
         size_t col = (size_t)[[column identifier] intValue];
@@ -2353,10 +2405,11 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
         id native = nil;
         switch (widget->kind) {
         case XXWIDGETS_WINDOW: {
-            NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 320, 200)
+            XXWidgetsWindow *window = [[XXWidgetsWindow alloc] initWithContentRect:NSMakeRect(0, 0, 320, 200)
                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                           NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
                 backing:NSBackingStoreBuffered defer:NO];
+            if (window) window->window_widget = widget;
             [window setReleasedWhenClosed:NO];
             [window setDelegate:state->delegate];
             XXWidgetsContentView *content = [[XXWidgetsContentView alloc] initWithFrame:NSMakeRect(0, 0, 320, 200)];
@@ -2705,6 +2758,7 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
         }
         if (state->delegate) state->delegate->widget = NULL;
         if (widget->kind == XXWIDGETS_WINDOW) {
+            if (native) ((XXWidgetsWindow *)native)->window_widget = NULL;
             if (native) ((XXWidgetsContentView *)[(NSWindow *)native contentView])->drop_window = NULL;
             if (state->field_editor) ((XXWidgetsFieldEditor *)state->field_editor)->drop_window = NULL;
             [(NSWindow *)native endEditingFor:nil];
@@ -3109,16 +3163,22 @@ static xxwidgets_status cocoa_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
             origin.x = MAX(NSMinX(available), MIN(origin.x, NSMaxX(available) - bounds.size.width));
             origin.y = MIN(NSMaxY(available) - bounds.size.height, MAX(origin.y, NSMinY(available)));
             [window setFrameOrigin:origin];
-            [parent addChildWindow:window ordered:NSWindowAbove];
-            for (xxwidgets_widget *widget = dialog->app->widgets; widget; widget = widget->next)
+            if ([window parentWindow] != parent) {
+                [[window parentWindow] removeChildWindow:window];
+                [parent addChildWindow:window ordered:NSWindowAbove];
+            }
+            for (xxwidgets_widget *widget = dialog->app->widgets; dialog->app->modal_window == dialog && widget; widget = widget->next)
                 if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON) {
                     if (widget == dialog->app->modal_default || !strcmp(widget->text, "OK"))
                         [(NSButton *)widget->native setKeyEquivalent:@"\r"];
                     if (!strcmp(widget->text, "Cancel")) [(NSButton *)widget->native setKeyEquivalent:@"\033"];
                 }
-            [window makeKeyAndOrderFront:nil];
+            if (dialog->visible) [window makeKeyAndOrderFront:nil];
+            else [window orderOut:nil];
         } else {
-            [parent removeChildWindow:window]; [parent makeKeyAndOrderFront:nil];
+            [parent removeChildWindow:window];
+            if (owner->visible && owner->enabled && [parent isVisible] && ![parent isMiniaturized])
+                [parent makeKeyAndOrderFront:nil];
         }
         return XXWIDGETS_OK;
     }

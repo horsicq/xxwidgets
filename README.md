@@ -60,6 +60,28 @@ supplied values unchanged. Invoke it on the UI thread after returning from an
 event callback, for example through a pending menu action in the main loop.
 The same form works with the native and terminal backends.
 
+Use `xxwidgets_window_set_modality(dialog, owner, modality)` for a custom
+window. `XXWIDGETS_WINDOW_MODAL` blocks its owner;
+`XXWIDGETS_APPLICATION_MODAL` blocks other windows in the same application,
+including windows created while the dialog is active. Setting modality takes
+effect immediately and preserves visibility; the application keeps its normal
+event loop and handles closing the dialog. Call it outside input callbacks.
+
+```c
+xxwidgets_window_set_modality(dialog, main_window, XXWIDGETS_APPLICATION_MODAL);
+/* Show the dialog and handle its events in the application loop. */
+xxwidgets_window_set_modality(dialog, NULL, XXWIDGETS_MODELESS);
+```
+
+Pass a same-application window as owner for a modal mode, and `NULL` for
+modeless. `xxwidgets_window_get_modality(dialog)` returns its current mode.
+Clearing modality restores each window's latest enabled request, so a window
+that was disabled stays disabled. Hiding a dialog does not clear modality;
+clear it when dismissing it. Destroying it clears modality automatically.
+Nested dialogs must use the active dialog as owner and close from the inside
+out; an incompatible modal relation returns `XXWIDGETS_BUSY`. Options pages
+and About use this API with application modality.
+
 Enable file drops with `xxwidgets_window_set_accept_file_drops(window, 1)`.
 The callback receives `XXWIDGETS_EVENT_DROP_FILES` on that window, with
 `event->paths` and `event->path_count` containing local UTF-8 paths in source
@@ -1456,18 +1478,20 @@ known offsets must lie inside the file. Addresses use UINT64_MAX for unknown.
 Failed replacement retains the preceding source/visible records and metadata.
 Inputs may be freed immediately after successful replacement.
 
-`set_filter` matches library/name substrings with ASCII case folding, selecting
+The table's column filters provide the visible filtering controls; the legacy
+global Filter/Reset row is hidden, and the table uses its former space.
+`set_filter` remains available for library/name substrings with ASCII case folding, selecting
 the first visible row. Filter is valid UTF-8 up to 256 bytes. Total source count
 and visible count have separate getters. Forward events to `handle_event` and
 call `process` after polling to execute queued filter/clipboard work. Failed
 interactive filtering restores the last applied filter and preceding results.
 
-`export_text` produces TSV of visible rows, or one visible row by index, with
+`export_text` produces TSV of visible rows, or one shown model row by index, with
 complete escaped Library/Name/Ordinal/Hint/File offset/Address/Kind values.
 SIZE_MAX selects all visible rows; NULL/0 queries NUL-inclusive size. Short
 buffers return BUFFER_TOO_SMALL and are terminated; export is capped at 32 MiB.
 Table getters borrow strings until filtering/replacement/destruction. The
-resizable modal adds Close/Esc and Ctrl/Meta+F, restoring the owner's state.
+resizable modal adds Close/Esc and Ctrl/Meta+F to focus the table, restoring the owner's state.
 CDIE supplies a worker-loaded native imports snapshot to this shared form.
 
 ## Exports browser and modal
@@ -1486,7 +1510,9 @@ become empty. Known file offsets must be inside the file. Replacement resets
 the filter and atomically installs metadata, buttons and rows, retaining the
 previous model on failure. Inputs may be freed immediately afterward.
 
-Filtering matches name/forwarder substrings with ASCII case folding, accepting
+The table's column filters provide the visible filtering controls; the legacy
+global Filter/Reset row is hidden, and the table uses its former space.
+Programmatic `set_filter` matches name/forwarder substrings with ASCII case folding, accepting
 up to 256 UTF-8 bytes and selecting the first visible row. Separate count APIs
 report source and visible totals. Forward events to `handle_event`, then call
 `process` after polling for deferred filtering/clipboard actions. Failed
@@ -1494,10 +1520,10 @@ interactive filtering restores the last applied filter and preceding rows.
 
 `export_text` returns full escaped TSV with Name/Ordinal/File offset/Address/
 Forwarder, bounded to 32 MiB. SIZE_MAX selects all visible rows; otherwise the
-index selects one visible row. NULL/0 queries NUL-inclusive size; short buffers
+index selects one shown model row. NULL/0 queries NUL-inclusive size; short buffers
 are terminated and return BUFFER_TOO_SMALL. Table getters borrow strings until
 filtering/replacement/destruction. The resizable modal adds Close/Esc and
-Ctrl/Meta+F, restoring the owner's state. CDIE supplies the native worker result.
+Ctrl/Meta+F to focus the table, restoring the owner's state. CDIE supplies the native worker result.
 
 ## Resources browser and modal
 
@@ -1515,7 +1541,8 @@ inside file_size, including zero-length ranges at EOF. Replacement resets the
 filter and installs metadata/buttons/table transactionally, retaining the old
 snapshot on failure. Inputs may be freed immediately afterward.
 
-Filters match displayed type/name/language text, or decimal IDs when a name is
+Visible filtering uses the table's column headers; the legacy Filter/Reset row
+is hidden. Programmatic filters match displayed type/name/language text, or decimal IDs when a name is
 absent, using ASCII case folding. Input is valid UTF-8 up to 256 bytes. The
 first visible row is selected. Forward events to `handle_event`, then call
 `process` after polling for deferred filter/clipboard work. Invalid interactive
@@ -1554,7 +1581,8 @@ offsets must be inside the file. Type/binding values must be valid enums.
 Replacement resets the filter and installs metadata/buttons/table atomically,
 retaining the previous snapshot on failure. Inputs can be freed after success.
 
-Filtering matches name/filename substrings with ASCII case folding, using at
+Visible filtering uses the table's column headers; the legacy Filter/Reset row
+is hidden. Programmatic filtering matches name/filename substrings with ASCII case folding, using at
 most 256 valid UTF-8 bytes and selecting the first visible row. Forward events
 to `handle_event`, then call `process` after polling for deferred filter/
 clipboard work. Failed interactive filters restore the last applied filter.
@@ -1569,6 +1597,18 @@ replacement/destruction. The resizable modal adds Close/Esc and Ctrl/Meta+F,
 restoring owner state. CDIE supplies a native worker-loaded snapshot.
 
 ## Strings modal
+
+`xxwidgets_strings_source_dialog` additionally accepts configurable extraction
+providers through `source.search_ex`: format/map selectors, ANSI and Unicode,
+null termination, links, minimum length, and regular expressions. Toolbar edits
+are staged until Search; validation and backend errors stay visible in the
+browser, while cancellation preserves the previous results and options.
+Search runs on a worker with cancellable progress. The native table keeps
+at most 128 rows, with 64-bit counts and direct page navigation for large
+sources. Visible filtering uses the field under each column heading; the
+programmatic substring-filter API remains available. The optional preview flag
+labels bounded row text explicitly; Save streams complete strings. See the
+[provider contract](docs/strings-viewer-reference.md#configurable-extraction).
 
 `xxwidgets_strings_dialog(owner, title, path, size, records, count, save, user)`
 wraps the existing `xxwidgets_strings_*` browser with copied metadata, resize
@@ -1651,7 +1691,7 @@ matching XBinary. A high entropy value is a heuristic, not proof of packing.
 
 Save buttons expose ordinary click events. The owner chooses a destination
 and calls `xxwidgets_entropy_export_csv` or `xxwidgets_entropy_export_svg`.
-CSV contains the current table (including the region filter); SVG preserves
+CSV contains the current table (including its column filters); SVG preserves
 the current graph, grid and selected-region shading. Both APIs can first
 query the required buffer size and never write files themselves. The demo
 uses the shared native file chooser; terminal users can export with command
@@ -1677,6 +1717,22 @@ Data-structure fields use the `checksum` role for stored checksums, computed has
 Load UTF-8 GNU PO catalogs with `<xxwidgets/xxwidgets_translation.h>`. Built-in
 controls use the app-owned catalog, with English fallback. See
 [PO translations](docs/translation.md) for APIs, examples and the catalog workflow.
+
+## Disk output progress
+
+`<xxwidgets/xxwidgets_disk_write.h>` manages a worker and a dedicated save/dump
+dialog with destination, current file, byte/file progress, speed, elapsed time,
+ETA and cancellation. Existing write implementations supply a callback and
+keep their atomic-write policy. See [disk output progress](docs/disk-write-dialog.md)
+and `xxwidgets_disk_write_demo`, which writes only an explicit new destination.
+
+## Extractor
+
+`<xxwidgets/xxwidgets_extractor.h>` provides a reusable native Extractor browser:
+format/map and mode selectors, type selection, per-column filters, linked Hex,
+and worker-thread scan, dump and table-save actions with progress/cancellation.
+Providers supply parsing and safe output; results use bounded 128-row pages.
+See [Extractor](docs/extractor-reference.md) for the callback contract and tests.
 
 ## Directory scanning
 

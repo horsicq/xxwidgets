@@ -30,9 +30,17 @@
 #define XXW_TR(app, text) xxwidgets_app_gettext((app), (text))
 #define XXW_N_(text) text
 #include "xxwidgets/xxwidgets_font_options.h"
+#include "xxwidgets/xxwidgets_disasm_options.h"
 #include "xxwidgets/xxwidgets_canvas.h"
 #include "die_engine/xxwidgets_die_signature_edit_internal.h"
 #include "xxwidgets/xxwidget_systemprocessesviewer.h"
+
+/* Effective enabled state includes public modality. Lifecycle release also
+ * detaches descendants before their owner can be destroyed. */
+int xxwidgets_modality_enabled(const xxwidgets_widget *window);
+xxwidgets_status xxwidgets_modality_refresh(xxwidgets_app *app);
+xxwidgets_status xxwidgets_modality_release(xxwidgets_widget *window);
+xxwidgets_status xxwidgets_backup_destination(const xxwidgets_app *app, const char *path);
 
 xxwidgets_status xxwidgets_translated_choices(xxwidgets_widget *, const char *const *, const uint64_t *, size_t);
 
@@ -105,6 +113,8 @@ struct xxwidgets_app {
     xxwidgets_widget *modal_window;
     xxwidgets_widget *modal_default;
     xxwidgets_font_options font_options;
+    xxwidgets_disasm_options disasm_options;
+    int save_backup;
 };
 
 struct xxwidgets_hex_pending_action {
@@ -122,6 +132,9 @@ struct xxwidgets_widget {
     xxwidgets_app *app;
     xxwidgets_widget *parent;
     xxwidgets_widget *next;
+    xxwidgets_widget *modality_owner;
+    xxwidgets_modality modality;
+    int requested_enabled; /* Effective enabled also accounts for modal blockers. */
     xxwidgets_kind kind;
     xxwidgets_rect rect;
     char *text;
@@ -141,6 +154,7 @@ struct xxwidgets_widget {
     int hex_menu_open;
     int hex_editable;
     int hex_bold_nonzero;
+    int hex_location_colon;
     xxwidgets_font hex_font;
     int hex_has_font;
     size_t hex_anchor, hex_anchor_bytes, hex_selection, hex_selection_length;
@@ -194,6 +208,8 @@ struct xxwidgets_widget {
     uint64_t binary_revision;
     struct xxwidgets_die_signature_edit_state *die_signature_edit;
     struct xxwidgets_debugger_table_state *debugger_table;
+    int disasm_arm;
+    int memory_map_compact; /* Four-column Memory Map presentation; raw cells retain six columns. */
     struct xxwidgets_text_table_state *text_table; /* XXWIDGETS_TABLE; rows use debugger_revision. */
     uint64_t debugger_revision;
     int process_selection; /* Transactional replacement selection hint. */
@@ -207,6 +223,9 @@ struct xxwidgets_widget {
     /* Table filters (xxwidgets_table_*): text per column, and the model rows
      * they let through, rebuilt when the rows or the filters change. */
     char **table_filters;
+    /* Source-backed paged browsers apply these filters on their worker. Keep
+     * native filter edits visible without filtering the current page twice. */
+    int table_external_filters;
     size_t table_filter_count;
     size_t *table_rows, table_row_count;
     uint64_t table_filter_revision, table_rows_key, table_rows_filter;
@@ -232,6 +251,7 @@ struct xxwidgets_widget {
     int value;
     int visible;
     int enabled;
+    int checkbox_radio; /* CHECKBOX native presentation; the host manages its group. */
     int keep_end; /* LABEL: a text too long for it loses its middle, not its end (a path). */
     void *user_data;
     void *native;
@@ -287,6 +307,13 @@ void xxwidgets_shortcuts_dispose(xxwidgets_widget *widget);
 void xxwidgets_emit_context(xxwidgets_widget *widget, int value, int x, int y);
 int xxwidgets_focusable(const xxwidgets_widget *widget);
 xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget);
+typedef struct xxwidgets_disasm_span {
+    size_t start, length;
+    uint32_t foreground, background;
+} xxwidgets_disasm_span;
+size_t xxwidgets_disasm_spans(const xxwidgets_widget *, size_t row, size_t column, int selected, xxwidgets_disasm_span *, size_t capacity);
+xxwidgets_status xxwidgets_debugger_disasm_reformat(xxwidgets_widget *);
+
 int xxwidgets_font_valid(const xxwidgets_font *font);
 int xxwidgets_font_is_monospace(const xxwidgets_font *font);
 static inline int xxwidgets_combo_kind(const xxwidgets_widget *widget)
@@ -493,6 +520,9 @@ xxwidgets_status xxwidgets_archivebrowser_user_up(xxwidgets_widget *widget);
 xxwidgets_status xxwidgets_archivebrowser_user_sort(xxwidgets_widget *widget, xxwidgets_archive_column column);
 
 extern const xxwidgets_backend_ops xxwidgets_tui_ops;
+struct xxwidgets_strings;
+xxwidgets_status xxwidgets_strings_create_internal(xxwidgets_widget *owner, xxwidgets_rect bounds,
+    int info_header, struct xxwidgets_strings **out);
 #if defined(XXWIDGETS_HAS_NATIVE)
 extern const xxwidgets_backend_ops xxwidgets_native_ops;
 #endif

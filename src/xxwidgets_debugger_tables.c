@@ -30,7 +30,7 @@ static const debugger_descriptor *descriptor(xxwidgets_kind kind)
         sizeof(xxwidgets_debugger_instruction), 3,
         {offsetof(xxwidgets_debugger_instruction, bytes), offsetof(xxwidgets_debugger_instruction, instruction), offsetof(xxwidgets_debugger_instruction, comment)},
         offsetof(xxwidgets_debugger_instruction, flags), 5, XXWIDGETS_DEBUGGER_CURRENT | XXWIDGETS_DEBUGGER_BREAKPOINT,
-        {"", XXW_N_("Address"), XXW_N_("Bytes"), XXW_N_("Instruction"), XXW_N_("Comment")}, {2, 18, 8, 24, 24}, {2, 18, 48, 96, 96}};
+        {"", XXW_N_("Address"), XXW_N_("Bytes"), XXW_N_("Instruction"), XXW_N_("Comment")}, {2, 19, 8, 24, 24}, {2, 19, 48, 96, 96}};
     static const debugger_descriptor registers = {
         sizeof(xxwidgets_debugger_register), 2,
         {offsetof(xxwidgets_debugger_register, name), offsetof(xxwidgets_debugger_register, value), 0},
@@ -115,8 +115,9 @@ static xxwidgets_status escaped_cell(const char *text, char **out)
     copy[position] = 0; *out = copy; return XXWIDGETS_OK;
 }
 
-static const char *cell_text(xxwidgets_kind kind, const void *record, size_t column, char buffer[64])
+static const char *cell_text(const xxwidgets_widget *widget, const void *record, size_t column, char buffer[64])
 {
+    xxwidgets_kind kind = widget->kind;
     const debugger_descriptor *d = descriptor(kind);
     unsigned flags = record_flags(record, d);
     if (kind == XXWIDGETS_MEMORY_MAP) {
@@ -145,7 +146,14 @@ static const char *cell_text(xxwidgets_kind kind, const void *record, size_t col
     }
     if (kind == XXWIDGETS_DEBUGGER_DISASM) {
         const xxwidgets_debugger_instruction *r = record;
-        if (column == 1) { snprintf(buffer, 64, "0x%016" PRIX64, r->address); return buffer; }
+        if (column == 1) {
+            if (widget->app->disasm_options.location_colon)
+                snprintf(buffer, 64, "0x%08" PRIX32 ":%08" PRIX32, (uint32_t)(r->address >> 32), (uint32_t)r->address);
+            else snprintf(buffer, 64, "0x%016" PRIX64, r->address);
+            if (!widget->app->disasm_options.uppercase)
+                for (char *p = buffer; *p; ++p) if (*p >= 'A' && *p <= 'F') *p += 'a' - 'A';
+            return buffer;
+        }
         return column == 2 ? r->bytes : column == 3 ? r->instruction : r->comment;
     }
     if (kind == XXWIDGETS_DEBUGGER_REGISTERS) {
@@ -218,8 +226,13 @@ static xxwidgets_status set_rows(xxwidgets_widget *widget, xxwidgets_kind kind, 
         }
         for (size_t column = 0; column < d->columns; ++column) {
             char buffer[64]; size_t width;
-            status = escaped_cell(cell_text(kind, copy, column, buffer), &state->cells[row * d->columns + column]);
+            status = escaped_cell(cell_text(widget, copy, column, buffer), &state->cells[row * d->columns + column]);
             if (status != XXWIDGETS_OK) goto failed;
+            if (kind == XXWIDGETS_DEBUGGER_DISASM && (column == 2 || column == 3))
+                for (char *p = state->cells[row * d->columns + column]; *p; ++p) {
+                    if (widget->app->disasm_options.uppercase) { if (*p >= 'a' && *p <= 'z') *p -= 'a' - 'A'; }
+                    else if (*p >= 'A' && *p <= 'Z') *p += 'a' - 'A';
+                }
             width = text_columns(state->cells[row * d->columns + column]);
             if (width > d->maximums[column]) width = d->maximums[column];
             if (width > state->widths[column]) state->widths[column] = width;
@@ -241,6 +254,19 @@ static xxwidgets_status set_rows(xxwidgets_widget *widget, xxwidgets_kind kind, 
     dispose_state(previous); dispose_rows(previous_rows, previous_count); return XXWIDGETS_OK;
 failed:
     dispose_state(state); dispose_rows(rows, count); return status;
+}
+
+xxwidgets_status xxwidgets_debugger_disasm_reformat(xxwidgets_widget *widget)
+{
+    int selected;
+    xxwidgets_status status;
+    if (!widget || widget->kind != XXWIDGETS_DEBUGGER_DISASM) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!widget->debugger_table) return XXWIDGETS_OK;
+    selected = widget->value;
+    status = set_rows(widget, widget->kind, widget->debugger_table->records, widget->debugger_table->count);
+    if (status == XXWIDGETS_OK && selected >= 0 && (size_t)selected < widget->item_count)
+        status = xxwidgets_widget_set_value(widget, selected);
+    return status;
 }
 
 static xxwidgets_status get_row(const xxwidgets_widget *widget, xxwidgets_kind kind, size_t index, void *out)
@@ -302,6 +328,23 @@ xxwidgets_status xxwidgets_memory_map_table_set_rows(xxwidgets_widget *w, const 
             (r->address != UINT64_MAX && r->size > UINT64_MAX - r->address)) return XXWIDGETS_INVALID_ARGUMENT;
     }
     return set_rows(w, XXWIDGETS_MEMORY_MAP, rows, count);
+}
+xxwidgets_status xxwidgets_memory_map_table_set_compact(xxwidgets_widget *w, int compact)
+{
+    xxwidgets_status status;
+    uint64_t revision;
+    int previous;
+    if (!w || w->kind != XXWIDGETS_MEMORY_MAP || (compact != 0 && compact != 1)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (w->app->dispatch_depth || w->app->polling || w->app->syncing) return XXWIDGETS_BUSY;
+    if (w->memory_map_compact == compact) return XXWIDGETS_OK;
+    previous = w->memory_map_compact; revision = w->debugger_revision;
+    w->memory_map_compact = compact; ++w->debugger_revision;
+    ++w->app->syncing; status = w->app->ops->sync(w); --w->app->syncing;
+    if (status != XXWIDGETS_OK) {
+        w->memory_map_compact = previous; w->debugger_revision = revision;
+        ++w->app->syncing; (void)w->app->ops->sync(w); --w->app->syncing;
+    }
+    return status;
 }
 xxwidgets_status xxwidgets_memory_map_table_clear(xxwidgets_widget *w) { return set_rows(w, XXWIDGETS_MEMORY_MAP, NULL, 0); }
 size_t xxwidgets_memory_map_table_count(const xxwidgets_widget *w) { return w && w->kind == XXWIDGETS_MEMORY_MAP ? w->item_count : 0; }

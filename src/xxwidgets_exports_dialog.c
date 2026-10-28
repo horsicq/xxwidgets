@@ -17,7 +17,7 @@ static void exports_event(xxwidgets_app *app, const xxwidgets_event *event, void
     (void)app;
     if (event->type == XXWIDGETS_EVENT_SHORTCUT && event->widget == modal->window && modal->view) {
         if (event->value == 3)
-            status = xxwidgets_widget_focus(xxwidgets_exports_control(modal->view, XXWIDGETS_EXPORTS_FILTER));
+            status = xxwidgets_widget_focus(xxwidgets_exports_control(modal->view, XXWIDGETS_EXPORTS_TABLE));
         if (status != XXWIDGETS_OK) {
             modal->failure = status;
             modal->done = 1;
@@ -92,12 +92,10 @@ xxwidgets_status xxwidgets_exports_dialog(xxwidgets_widget *owner, const char *t
     if (status != XXWIDGETS_OK)
         goto finish;
     disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(modal.window, owner, 1);
-        if (status != XXWIDGETS_OK)
-            goto finish;
-        attached = 1;
-    }
+    status = xxwidgets_window_set_modality(modal.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK)
+        goto finish;
+    attached = 1;
     status = xxwidgets_widget_focus(xxwidgets_exports_control(modal.view, XXWIDGETS_EXPORTS_TABLE));
     while (status == XXWIDGETS_OK && !modal.done && !app->quit) {
         status = xxwidgets_app_poll(app, 30);
@@ -108,7 +106,7 @@ xxwidgets_status xxwidgets_exports_dialog(xxwidgets_widget *owner, const char *t
         status = modal.failure;
 finish:
     if (attached) {
-        cleanup = app->ops->modal_owner(modal.window, owner, 0);
+        cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK)
             status = cleanup;
     }

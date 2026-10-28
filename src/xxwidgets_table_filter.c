@@ -20,6 +20,7 @@ int xxwidgets_table_filterable(const xxwidgets_widget *widget)
 static int filters_active(const xxwidgets_widget *widget)
 {
     size_t i;
+    if (widget && widget->table_external_filters) return 0;
     if (!xxwidgets_table_filterable(widget)) return 0;
     for (i = 0; i < widget->table_filter_count; ++i)
         if (widget->table_filters[i] && widget->table_filters[i][0]) return 1;
@@ -217,7 +218,7 @@ xxwidgets_status xxwidgets_table_clear_filters(xxwidgets_widget *table)
     int selection;
     size_t i;
     if (!xxwidgets_table_filterable(table)) return XXWIDGETS_INVALID_ARGUMENT;
-    if (!filters_active(table)) return XXWIDGETS_OK;
+    if (!filters_active(table) && !table->table_external_filters) return XXWIDGETS_OK;
     for (i = 0; i < table->table_filter_count; ++i) { free(table->table_filters[i]); table->table_filters[i] = NULL; }
     ++table->table_filter_revision;
     table->table_rows_valid = 0;

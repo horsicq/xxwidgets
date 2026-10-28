@@ -33,6 +33,8 @@ typedef enum xxwidgets_font_role {
     XXWIDGETS_FONT_TABLE_VIEWS,
     XXWIDGETS_FONT_TREE_VIEWS,
     XXWIDGETS_FONT_TEXT_EDITS,
+    XXWIDGETS_FONT_HEX_VIEWS,
+    XXWIDGETS_FONT_DISASM_VIEWS,
     XXWIDGETS_FONT_ROLE_COUNT
 } xxwidgets_font_role;
 
@@ -46,7 +48,7 @@ typedef struct xxwidgets_font_options {
     xxwidgets_font fonts[XXWIDGETS_FONT_ROLE_COUNT];
 } xxwidgets_font_options;
 
-/* Zero descriptors restore backend defaults for all four roles. */
+/* Zero descriptors restore backend defaults for all six roles. */
 XXWIDGETS_API xxwidgets_status xxwidgets_font_options_init(xxwidgets_font_options *options);
 /* Copies and applies to current and future widgets, including native report
  * text and dialogs. Geometry stays unchanged. Allocation failure preserves the
@@ -74,7 +76,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_font_choose_dialog(xxwidgets_widget *ow
 
 /* Embedded fonts form: per role a label, family and size edits, Bold and
  * Italic, a Choose button and a preview line drawn in the edited font.
- * Bounds use text cells and require at least 56 x 15. Children belong to the
+ * Bounds use text cells and require at least 56 x 23. Children belong to the
  * owner WINDOW and use its app callback. Destroy before the owner/app;
  * borrowed controls must not be destroyed separately. */
 typedef struct xxwidgets_font_options_widget xxwidgets_font_options_widget;

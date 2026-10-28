@@ -64,7 +64,9 @@ typedef struct xxwidgets_options_page {
     void *user;
 } xxwidgets_options_page;
 
-/* Modal options window: a category list on the left and a stack of pages on
+/* Application-modal options window: all other application windows are disabled
+ * while open, then restored to their previous enabled states. A category list
+ * on the left and a stack of pages on
  * the right, one visible at a time, with Default, OK and Cancel. Default resets
  * every page. OK validates every page, then applies them in order; accepted is
  * 1 only after all pages applied. Cancel, Escape and close apply nothing.

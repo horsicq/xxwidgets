@@ -92,6 +92,8 @@ int xxwidgets_focusable(const xxwidgets_widget *widget)
 
 xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget)
 {
+    if (widget->kind == XXWIDGETS_HEXVIEW) return XXWIDGETS_FONT_HEX_VIEWS;
+    if (widget->kind == XXWIDGETS_DEBUGGER_DISASM) return XXWIDGETS_FONT_DISASM_VIEWS;
     if (widget->kind == XXWIDGETS_TREEVIEW) return XXWIDGETS_FONT_TREE_VIEWS;
     if (widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) return XXWIDGETS_FONT_TEXT_EDITS;
     if (xxwidgets_list_kind(widget)) return XXWIDGETS_FONT_TABLE_VIEWS;
@@ -190,6 +192,9 @@ xxwidgets_status xxwidgets_app_create(const xxwidgets_config *config, xxwidgets_
 #endif
     app = (xxwidgets_app *)calloc(1, sizeof(*app));
     if (!app) return XXWIDGETS_OUT_OF_MEMORY;
+    xxwidgets_font_options_init(&app->font_options);
+    xxwidgets_disasm_options_init(&app->disasm_options);
+    app->save_backup = 1;
     app->backend = backend;
     app->ops = &xxwidgets_tui_ops;
 #if defined(XXWIDGETS_HAS_NATIVE)
@@ -213,7 +218,10 @@ xxwidgets_status xxwidgets_app_destroy(xxwidgets_app *app)
 {
     if (!app) return XXWIDGETS_INVALID_ARGUMENT;
     if (app->dispatch_depth || app->polling) return XXWIDGETS_BUSY;
-    while (app->widgets) xxwidgets_widget_destroy(app->widgets);
+    while (app->widgets) {
+        xxwidgets_status status = xxwidgets_widget_destroy(app->widgets);
+        if (status != XXWIDGETS_OK) return status;
+    }
     app->ops->shutdown(app);
     xx_translation_destroy(app->translation);
     free(app);
@@ -305,7 +313,8 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     widget->kind = kind;
     widget->rect = rect;
     widget->visible = (kind == XXWIDGETS_WINDOW && app->create_hidden) ? 0 : 1;
-    widget->enabled = 1;
+    widget->requested_enabled = 1;
+    widget->enabled = kind == XXWIDGETS_WINDOW ? xxwidgets_modality_enabled(widget) : 1;
     widget->value = (xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget)) ? -1 : 0;
     if (kind == XXWIDGETS_HEXVIEW) xxwidgets_hexview_init(widget);
     if (kind == XXWIDGETS_SCANRESULTS || kind == XXWIDGET_SYSTEMPROCESSESVIEWER) xxwidgets_scanresults_init(widget);
@@ -346,11 +355,16 @@ xxwidgets_status xxwidgets_widget_destroy(xxwidgets_widget *widget)
     if (!widget) return XXWIDGETS_INVALID_ARGUMENT;
     app = widget->app;
     if (app->dispatch_depth || app->polling) return XXWIDGETS_BUSY;
+    if (widget->kind == XXWIDGETS_WINDOW) {
+        xxwidgets_status status = xxwidgets_modality_release(widget);
+        if (status != XXWIDGETS_OK) return status;
+    }
     for (;;) {
         child = app->widgets;
         while (child && child->parent != widget) child = child->next;
         if (!child) break;
-        xxwidgets_widget_destroy(child);
+        xxwidgets_status status = xxwidgets_widget_destroy(child);
+        if (status != XXWIDGETS_OK) return status;
     }
     ++app->syncing;
     app->ops->destroy(widget);
@@ -491,7 +505,24 @@ xxwidgets_status xxwidgets_widget_set_visible(xxwidgets_widget *widget, int visi
 }
 xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *widget, int enabled)
 {
-    return widget ? set_flag(widget, &widget->enabled, enabled) : XXWIDGETS_INVALID_ARGUMENT;
+    xxwidgets_status status;
+    int previous;
+    if (!widget) return XXWIDGETS_INVALID_ARGUMENT;
+    if (widget->kind != XXWIDGETS_WINDOW) return set_flag(widget, &widget->enabled, enabled);
+    previous = widget->requested_enabled;
+    widget->requested_enabled = enabled != 0;
+    status = xxwidgets_modality_refresh(widget->app);
+    if (status != XXWIDGETS_OK) {
+        widget->requested_enabled = previous;
+        (void)xxwidgets_modality_refresh(widget->app);
+    }
+    return status;
+}
+xxwidgets_status xxwidgets_checkbox_set_radio(xxwidgets_widget *widget, int radio)
+{
+    if (!widget || widget->kind != XXWIDGETS_CHECKBOX || (radio != 0 && radio != 1))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    return set_flag(widget, &widget->checkbox_radio, radio);
 }
 xxwidgets_status xxwidgets_widget_focus(xxwidgets_widget *widget)
 {

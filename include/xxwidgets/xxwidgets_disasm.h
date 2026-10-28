@@ -2,6 +2,7 @@
 #ifndef XXWIDGETS_DISASM_H
 #define XXWIDGETS_DISASM_H
 #include "xxwidgets/xxwidgets_debugger_tables.h"
+#include "xxwidgets/xxwidgets_disasm_options.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,6 +16,7 @@ typedef struct xxwidgets_disasm_page {
     uint64_t file_size, offset, next_offset;
     const xxwidgets_disasm_record *records;
     size_t count;
+    int arm; /* 0 = x86/general, 1 = ARM register/opcode colors. */
 } xxwidgets_disasm_page;
 /* Called outside input dispatch. Output is borrowed until the next load;
  * the browser deep-copies strings before then. UNAVAILABLE requests manual

@@ -200,13 +200,15 @@ xxwidgets_status xxwidgets_hexview_browser_set_options(xxwidgets_hexview_browser
     unsigned columns;
     int row_index = -1;
     xxwidgets_status status;
-    if (!v || !options || (options->bold_nonzero != 0 && options->bold_nonzero != 1) || !xxwidgets_font_valid(&options->font))
+    if (!v || !options || (options->bold_nonzero != 0 && options->bold_nonzero != 1) ||
+        (options->location_colon != 0 && options->location_colon != 1) || !xxwidgets_font_valid(&options->font))
         return XXWIDGETS_INVALID_ARGUMENT;
     for (size_t i = 0; i < 6; ++i) if (options->bytes_per_row == rows[i]) row_index = (int)i;
     if (row_index < 0) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_hexview_get_layout(C(v, HEX), &base, &columns);
     if (status == XXWIDGETS_OK && columns != options->bytes_per_row) status = xxwidgets_hexview_set_layout(C(v, HEX), base, options->bytes_per_row);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(C(v, ROWS), row_index);
+    if (status == XXWIDGETS_OK) status = xxwidgets_hexview_set_location_colon(C(v, HEX), options->location_colon);
     if (status == XXWIDGETS_OK) status = xxwidgets_hexview_set_bold_nonzero(C(v, HEX), options->bold_nonzero);
     if (status == XXWIDGETS_OK) {
         status = xxwidgets_hexview_set_font(C(v, HEX), &options->font);

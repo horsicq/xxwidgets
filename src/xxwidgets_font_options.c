@@ -65,6 +65,8 @@ xxwidgets_status xxwidgets_font_options_init(xxwidgets_font_options *options)
 {
     if (!options) return XXWIDGETS_INVALID_ARGUMENT;
     memset(options, 0, sizeof(*options));
+    memcpy(options->fonts[XXWIDGETS_FONT_HEX_VIEWS].family, "monospace", sizeof("monospace"));
+    memcpy(options->fonts[XXWIDGETS_FONT_DISASM_VIEWS].family, "monospace", sizeof("monospace"));
     return XXWIDGETS_OK;
 }
 
@@ -94,8 +96,8 @@ xxwidgets_status xxwidgets_hexview_get_font(const xxwidgets_widget *view, xxwidg
     if (!view || view->kind != XXWIDGETS_HEXVIEW || !font) return XXWIDGETS_INVALID_ARGUMENT;
     if (view->hex_has_font) *font = view->hex_font;
     else {
-        memset(font, 0, sizeof(*font));
-        memcpy(font->family, "monospace", sizeof("monospace"));
+        *font = view->app->font_options.fonts[XXWIDGETS_FONT_HEX_VIEWS];
+        if (!font->family[0]) memcpy(font->family, "monospace", sizeof("monospace"));
     }
     return XXWIDGETS_OK;
 }
@@ -271,7 +273,7 @@ static void font_event(xxwidgets_app *app, const xxwidgets_event *event, void *u
 
 xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_font_options *options, int *accepted)
 {
-    static const char *roles[] = {XXW_N_("Controls"), XXW_N_("Table views"), XXW_N_("Tree views"), XXW_N_("Text edits")};
+    static const char *roles[] = {XXW_N_("Controls"), XXW_N_("Table views"), XXW_N_("Tree views"), XXW_N_("Text edits"), XXW_N_("Hex"), XXW_N_("Disasm")};
     font_state state = {0};
     xxwidgets_app *app;
     xxwidgets_widget *widget, *focus = NULL, *previous_default;
@@ -299,7 +301,7 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
     app->user_data = &state;
     status = xxwidgets_widget_create(
         app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x < 32765 ? owner->rect.x + 2 : owner->rect.x, owner->rect.y < 32765 ? owner->rect.y + 2 : owner->rect.y, 100, 23}, &state.window);
+        (xxwidgets_rect){owner->rect.x < 32765 ? owner->rect.x + 2 : owner->rect.x, owner->rect.y < 32765 ? owner->rect.y + 2 : owner->rect.y, 100, 31}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
 #define FONT_CONTROL(slot, kind, text, x, y, width)                                                              \
@@ -321,10 +323,10 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
         status = fill_row(&state, role);
         if (status != XXWIDGETS_OK) goto finish;
     }
-    FONT_CONTROL(&state.error, XXWIDGETS_LABEL, "", 2, 18, 96);
-    FONT_CONTROL(&state.preview, XXWIDGETS_BUTTON, XXW_N_("Preview"), 2, 20, 14);
-    FONT_CONTROL(&state.ok, XXWIDGETS_BUTTON, XXW_N_("OK"), 72, 20, 10);
-    FONT_CONTROL(&state.cancel, XXWIDGETS_BUTTON, XXW_N_("Cancel"), 84, 20, 14);
+    FONT_CONTROL(&state.error, XXWIDGETS_LABEL, "", 2, 26, 96);
+    FONT_CONTROL(&state.preview, XXWIDGETS_BUTTON, XXW_N_("Preview"), 2, 28, 14);
+    FONT_CONTROL(&state.ok, XXWIDGETS_BUTTON, XXW_N_("OK"), 72, 28, 10);
+    FONT_CONTROL(&state.cancel, XXWIDGETS_BUTTON, XXW_N_("Cancel"), 84, 28, 14);
 #undef FONT_CONTROL
     if (app->ops->font_options_layout) {
         status = app->ops->font_options_layout(state.window, 1);
@@ -334,11 +336,9 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
     disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(state.window, owner, 1);
-        if (status != XXWIDGETS_OK) goto finish;
-        attached = 1;
-    }
+    status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) goto finish;
+    attached = 1;
     status = xxwidgets_widget_focus(state.rows[0].family);
     while (status == XXWIDGETS_OK && !state.done && !app->quit) {
         status = xxwidgets_app_poll(app, 30);
@@ -373,7 +373,7 @@ finish:
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (attached) {
-        cleanup = app->ops->modal_owner(state.window, owner, 0);
+        cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (state.window) {
@@ -413,7 +413,7 @@ static font_row widget_row(const xxwidgets_font_options_widget *widget, size_t r
 
 static int font_widget_bounds_valid(xxwidgets_rect bounds)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 56 && bounds.height >= 15 &&
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 56 && bounds.height >= (int)XXWIDGETS_FONT_ROLE_COUNT * 4 - 1 &&
         bounds.x <= 32767 - bounds.width && bounds.y <= 32767 - bounds.height;
 }
 
@@ -432,7 +432,7 @@ static void font_widget_rects(xxwidgets_rect bounds, size_t role, xxwidgets_rect
 xxwidgets_status xxwidgets_font_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
                                                       xxwidgets_font_options_widget **out_widget)
 {
-    static const char *const roles[XXWIDGETS_FONT_ROLE_COUNT] = {XXW_N_("Controls"), XXW_N_("Table views"), XXW_N_("Tree views"), XXW_N_("Text edits")};
+    static const char *const roles[XXWIDGETS_FONT_ROLE_COUNT] = {XXW_N_("Controls"), XXW_N_("Table views"), XXW_N_("Tree views"), XXW_N_("Text edits"), XXW_N_("Hex"), XXW_N_("Disasm")};
     static const xxwidgets_kind kinds[XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT] = {
         XXWIDGETS_LABEL, XXWIDGETS_EDIT, XXWIDGETS_EDIT, XXWIDGETS_CHECKBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
     static const char *const texts[XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT] = {"", "", "0", XXW_N_("Bold"), XXW_N_("Italic"), XXW_N_("Choose"), ""};

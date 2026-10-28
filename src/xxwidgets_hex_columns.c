@@ -68,6 +68,28 @@ xxwidgets_status xxwidgets_hexview_get_display(const xxwidgets_widget *w, xxwidg
     *d = w->hex_display;
     return XXWIDGETS_OK;
 }
+xxwidgets_status xxwidgets_hexview_set_location_colon(xxwidgets_widget *w, int enabled)
+{
+    xxwidgets_status status;
+    int previous;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || (enabled != 0 && enabled != 1))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    previous = w->hex_location_colon;
+    if (previous == enabled) return XXWIDGETS_OK;
+    w->hex_location_colon = enabled;
+    status = sync_display(w);
+    if (status != XXWIDGETS_OK) {
+        w->hex_location_colon = previous;
+        (void)sync_display(w);
+    }
+    return status;
+}
+xxwidgets_status xxwidgets_hexview_get_location_colon(const xxwidgets_widget *w, int *enabled)
+{
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !enabled) return XXWIDGETS_INVALID_ARGUMENT;
+    *enabled = w->hex_location_colon;
+    return XXWIDGETS_OK;
+}
 xxwidgets_status xxwidgets_hexview_set_bold_nonzero(xxwidgets_widget *w, int enabled)
 {
     xxwidgets_status status;
@@ -246,11 +268,14 @@ const char *xxwidgets_hexview_cell(const xxwidgets_widget *w, size_t row, size_t
     if (available > w->hex_columns)
         available = w->hex_columns;
     if (!column) {
-        uint64_t address = (w->hex_display.offsets ? 0 : w->hex_base) + offset;
+        /* A windowed source's offsets are absolute file offsets, even after
+         * paging. Copied snapshots can still display offsets from zero. */
+        uint64_t address = (w->hex_display.offsets && !w->hex_source_read ? 0 : w->hex_base) + offset;
         if (w->hex_display.radix == 10)
             snprintf(s, sizeof(w->hex_cell), "%020" PRIu64, address);
-        else
+        else if (w->hex_location_colon)
             snprintf(s, sizeof(w->hex_cell), "%08" PRIx32 ":%08" PRIx32, (uint32_t)(address >> 32), (uint32_t)address);
+        else snprintf(s, sizeof(w->hex_cell), "%016" PRIx64, address);
         return s;
     }
     if (column == 2) {

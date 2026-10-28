@@ -64,16 +64,14 @@ xxwidgets_status xxwidgets_hash_dialog(xxwidgets_widget *owner, const char *titl
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
     disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(modal.window, owner, 1);
-        if (status != XXWIDGETS_OK) goto finish;
-        attached = 1;
-    }
+    status = xxwidgets_window_set_modality(modal.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) goto finish;
+    attached = 1;
     status = xxwidgets_widget_focus(xxwidgets_hash_control(modal.view, XXWIDGETS_HASH_LIST));
     while (status == XXWIDGETS_OK && !modal.done && !app->quit) status = xxwidgets_app_poll(app, 30);
     if (status == XXWIDGETS_OK) status = modal.failure;
 finish:
-    if (attached) { cleanup = app->ops->modal_owner(modal.window, owner, 0); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (attached) { cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
     if (modal.view) { cleanup = xxwidgets_hash_destroy(modal.view); if (status == XXWIDGETS_OK) status = cleanup; }
     if (modal.window) { cleanup = xxwidgets_widget_destroy(modal.window); if (status == XXWIDGETS_OK) status = cleanup; }
     app->modal_window = NULL; app->on_event = previous_event; app->user_data = previous_user;

@@ -83,6 +83,7 @@ typedef struct gtk_widget_state {
     GtkWidget *browser_scroll, *browser_address, *browser_up;
     size_t rendered_items;
     uint64_t rendered_hex_revision;
+    int memory_map_compact;
     int browser_value; /* ARCHIVEBROWSER: widget->value the view last agreed with. */
     int scroll_selection;
     int follow_tail; /* LISTBOX: the view is at its end, so it stays there. */
@@ -1137,6 +1138,37 @@ static gboolean gtk_hex_motion(GtkWidget *native, GdkEventMotion *event, gpointe
         (void)xxwidgets_hexview_pointer_span(w, at, bytes, 1);
     return TRUE;
 }
+static void gtk_disasm_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeModel *model, GtkTreeIter *iter, gpointer data)
+{
+    xxwidgets_widget *w = data;
+    gtk_app_state *app = w->app->platform;
+    GtkTreePath *path = gtk_tree_model_get_path(model, iter);
+    int *indices = gtk_tree_path_get_indices(path);
+    size_t row = indices ? (size_t)indices[0] : SIZE_MAX;
+    size_t col = (size_t)GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(column), "disasm-column"));
+    PangoAttrList *attributes = pango_attr_list_new();
+    const PangoFontDescription *font = app->fonts[XXWIDGETS_FONT_DISASM_VIEWS];
+    g_object_set(cell, "font-desc", font, "family", font && pango_font_description_get_family(font) ? pango_font_description_get_family(font) : "monospace", NULL);
+    int selected = gtk_tree_selection_iter_is_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(w->native)), iter);
+    xxwidgets_disasm_span spans[128];
+    size_t count = xxwidgets_disasm_spans(w, row, col, selected, spans, 128);
+    for (size_t i = 0; i < count; ++i) {
+        uint32_t values[2] = {spans[i].foreground, spans[i].background};
+        for (size_t j = 0; j < 2; ++j) {
+            uint32_t rgb = values[j];
+            if (rgb == UINT32_MAX) continue;
+            PangoAttribute *a = j ? pango_attr_background_new((guint16)(((rgb >> 16) & 255) * 257), (guint16)(((rgb >> 8) & 255) * 257), (guint16)((rgb & 255) * 257))
+                                 : pango_attr_foreground_new((guint16)(((rgb >> 16) & 255) * 257), (guint16)(((rgb >> 8) & 255) * 257), (guint16)((rgb & 255) * 257));
+            a->start_index = (guint)spans[i].start;
+            a->end_index = (guint)(spans[i].start + spans[i].length);
+            pango_attr_list_insert(attributes, a);
+        }
+    }
+    g_object_set(cell, "attributes", attributes, NULL);
+    pango_attr_list_unref(attributes);
+    gtk_tree_path_free(path);
+}
+
 static void gtk_hex_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeModel *model, GtkTreeIter *iter, gpointer data)
 {
     xxwidgets_widget *w = data;
@@ -1231,6 +1263,19 @@ static void scanresults_sync(xxwidgets_widget *widget)
     GtkListStore *store = GTK_LIST_STORE(gtk_tree_view_get_model(tree));
     int refreshed = state->rendered_hex_revision != xxwidgets_row_revision(widget);
     int previous = widget->value;
+    if (widget->kind == XXWIDGETS_MEMORY_MAP && state->memory_map_compact != widget->memory_map_compact) {
+        size_t columns = xxwidgets_tabular_column_count(widget);
+        for (size_t i = 0; i < 6; ++i) {
+            GtkTreeViewColumn *column = gtk_tree_view_get_column(tree, (gint)i);
+            gtk_tree_view_column_set_visible(column, i < columns);
+            if (state->filters[i]) gtk_widget_set_visible(state->filters[i], i < columns);
+            if (i < columns) {
+                gtk_tree_view_column_set_title(column, xxwidgets_tabular_column_title(widget, i));
+                gtk_tree_view_column_set_fixed_width(column, (int)xxwidgets_tabular_column_width(widget, i) * 8 + 12);
+            }
+        }
+        state->memory_map_compact = widget->memory_map_compact;
+    }
     if (widget->kind == XXWIDGETS_HEXVIEW) {
         gtk_widget_queue_draw(GTK_WIDGET(tree));
         if (state->hex_overview) gtk_widget_queue_draw(state->hex_overview);
@@ -2658,6 +2703,10 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
                     state->filters[column] = entry;
                 }
                 if (xxwidgets_debugger_table_kind(widget)) g_object_set(renderer, "family", "monospace", NULL);
+                if (widget->kind == XXWIDGETS_DEBUGGER_DISASM) {
+                    g_object_set_data(G_OBJECT(view_column), "disasm-column", GUINT_TO_POINTER((unsigned)column));
+                    gtk_tree_view_column_set_cell_data_func(view_column, renderer, gtk_disasm_cell, widget, NULL);
+                }
                 if (widget->kind == XXWIDGETS_HEXVIEW) {
                     GtkWidget *button = gtk_tree_view_column_get_button(view_column);
                     g_object_set(renderer, "family", "monospace", "ellipsize", PANGO_ELLIPSIZE_NONE, NULL);
@@ -3210,6 +3259,7 @@ static gboolean options_key(GtkWidget *native, GdkEventKey *key, gpointer user)
 {
     xxwidgets_widget *dialog = user;
     (void)native;
+    if (dialog->app->modal_window != dialog || !dialog->visible || !dialog->enabled || dialog->app->syncing) return FALSE;
     if (key->keyval == GDK_KEY_Escape) {
         xxwidgets_emit(dialog, XXWIDGETS_EVENT_CLOSE, 0);
         return TRUE;
@@ -3226,7 +3276,10 @@ static xxwidgets_status gtk_modal_owner(xxwidgets_widget *dialog, xxwidgets_widg
     GtkWindow *window = GTK_WINDOW(dialog->native);
     xxwidgets_widget *widget;
     gtk_window_set_transient_for(window, active ? GTK_WINDOW(owner->native) : NULL);
-    gtk_window_set_modal(window, active);
+    /* GTK's modal flag blocks every application window. Shared enabled state
+     * supplies owner-only blocking for WINDOW_MODAL; preserve legacy dialogs. */
+    gtk_window_set_modal(window, active && dialog->modality != XXWIDGETS_WINDOW_MODAL);
+    g_signal_handlers_disconnect_by_func(window, G_CALLBACK(options_key), dialog);
     if (active) {
         gtk_widget_state *state = dialog->platform;
         gtk_window_set_position(window, GTK_WIN_POS_CENTER_ON_PARENT);
@@ -3235,12 +3288,12 @@ static xxwidgets_status gtk_modal_owner(xxwidgets_widget *dialog, xxwidgets_widg
         state->fit_position = 1;
         state->frame_width = state->frame_height = 0;
         g_signal_connect(window, "key-press-event", G_CALLBACK(options_key), dialog);
-        for (widget = dialog->app->widgets; widget; widget = widget->next)
+        for (widget = dialog->app->widgets; dialog->app->modal_window == dialog && widget; widget = widget->next)
             if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON && (widget == dialog->app->modal_default || !strcmp(widget->text, "OK"))) {
                 gtk_widget_set_can_default(GTK_WIDGET(widget->native), TRUE);
                 gtk_widget_grab_default(GTK_WIDGET(widget->native));
             }
-        gtk_window_present(window);
+        if (dialog->visible) gtk_window_present(window);
     }
     return XXWIDGETS_OK;
 }

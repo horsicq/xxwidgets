@@ -455,11 +455,9 @@ xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *t
             if (status != XXWIDGETS_OK) break;
             status = process_render(&state, progress, now - started);
             if (status != XXWIDGETS_OK) break;
-            if (app->ops->modal_owner) {
-                status = app->ops->modal_owner(state.window, owner, 1);
-                if (status != XXWIDGETS_OK) break;
-                modal_attached = 1;
-            }
+            status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_WINDOW_MODAL);
+            if (status != XXWIDGETS_OK) break;
+            modal_attached = 1;
             status = xxwidgets_widget_set_visible(state.window, 1);
             if (status != XXWIDGETS_OK) break;
             if (!state.stop_requested) status = xxwidgets_widget_focus(state.cancel);
@@ -476,7 +474,7 @@ xxwidgets_status xxwidgets_process_dialog(xxwidgets_widget *owner, const char *t
     cleanup = xxwidgets_widget_set_enabled(owner, owner_enabled);
     if (status == XXWIDGETS_OK) status = cleanup;
     if (modal_attached) {
-        cleanup = app->ops->modal_owner(state.window, owner, 0);
+        cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
     if (state.window) {

@@ -47,6 +47,7 @@ typedef enum xxwidgets_entropy_control_id {
     XXWIDGETS_ENTROPY_SAVE_DIAGRAM,
     XXWIDGETS_ENTROPY_TAB,
     XXWIDGETS_ENTROPY_BYTES_TAB,
+    /* Hidden compatibility controls; visible filtering uses column headers. */
     XXWIDGETS_ENTROPY_FILTER_LABEL,
     XXWIDGETS_ENTROPY_FILTER,
     XXWIDGETS_ENTROPY_REGIONS_TABLE,

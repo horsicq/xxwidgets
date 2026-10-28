@@ -406,6 +406,7 @@ size_t xxwidgets_data_struct_table_column_width(const xxwidgets_widget *widget, 
 
 size_t xxwidgets_tabular_column_count(const xxwidgets_widget *widget)
 {
+    if (widget && widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact) return 4;
     if (widget && widget->kind == XXWIDGETS_TABLE) return xxwidgets_table_column_count(widget);
     if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_count(widget);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_count(widget);
@@ -416,6 +417,10 @@ size_t xxwidgets_tabular_column_count(const xxwidgets_widget *widget)
 
 const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_t column)
 {
+    if (widget && widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact) {
+        static const char *titles[] = {XXW_N_("Offset"), XXW_N_("Address"), XXW_N_("Size"), XXW_N_("Name")};
+        return column < 4 ? XXW_TR(widget->app, titles[column]) : "";
+    }
     if (widget && widget->kind == XXWIDGETS_TABLE) return xxwidgets_text_table_title(widget, column);
     if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_title(widget, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_title(widget, column);
@@ -433,6 +438,15 @@ const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_
 
 const char *xxwidgets_tabular_model_cell(const xxwidgets_widget *widget, size_t row, size_t column)
 {
+    if (widget && widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact) {
+        const char *raw;
+        if (column >= 4) return "";
+        raw = xxwidgets_debugger_table_cell(widget, row, column == 3 ? 4 : column);
+        if (column == 3 || !raw[0]) return raw;
+        if (raw[0] == '-') return "";
+        /* Raw numeric cells remain 0x plus sixteen digits for export. */
+        return strlen(raw) == 18 && !memcmp(raw + 2, "00000000", 8) ? raw + 10 : raw + 2;
+    }
     if (widget && widget->kind == XXWIDGETS_TABLE) return xxwidgets_text_table_cell(widget, row, column);
     if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_cell(widget, row, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_cell(widget, row, column);
@@ -444,6 +458,14 @@ const char *xxwidgets_tabular_model_cell(const xxwidgets_widget *widget, size_t 
 
 size_t xxwidgets_tabular_column_width(const xxwidgets_widget *widget, size_t column)
 {
+    if (widget && widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact) {
+        size_t width = 8;
+        if (column >= 4) return 0;
+        if (column == 3) return xxwidgets_debugger_table_column_width(widget, 4);
+        for (size_t row = 0; row < widget->item_count; ++row)
+            if (strlen(xxwidgets_tabular_model_cell(widget, row, column)) > width) width = 16;
+        return width;
+    }
     if (widget && widget->kind == XXWIDGETS_TABLE) return xxwidgets_text_table_column_width(widget, column);
     if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_width(widget, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_width(widget, column);

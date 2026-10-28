@@ -102,11 +102,9 @@ xxwidgets_status xxwidgets_database_paths_dialog(xxwidgets_widget *owner, const 
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
     disabled = 1;
-    if (app->ops->modal_owner) {
-        status = app->ops->modal_owner(state.window, owner, 1);
-        if (status != XXWIDGETS_OK) goto finish;
-        attached = 1;
-    }
+    status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) goto finish;
+    attached = 1;
     status = xxwidgets_widget_focus(state.edits[0]);
     while (status == XXWIDGETS_OK && !state.done && !app->quit) {
         status = xxwidgets_app_poll(app, 30);
@@ -140,7 +138,7 @@ xxwidgets_status xxwidgets_database_paths_dialog(xxwidgets_widget *owner, const 
         }
     }
 finish:
-    if (attached) { cleanup = app->ops->modal_owner(state.window, owner, 0); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (attached) { cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
     if (state.window) { cleanup = xxwidgets_widget_destroy(state.window); if (status == XXWIDGETS_OK) status = cleanup; }
     app->modal_window = NULL; app->modal_default = previous_default; app->on_event = previous_event; app->user_data = previous_user;
     if (disabled) { cleanup = xxwidgets_widget_set_enabled(owner, enabled); if (status == XXWIDGETS_OK) status = cleanup; }

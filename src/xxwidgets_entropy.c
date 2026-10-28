@@ -406,6 +406,10 @@ xxwidgets_status xxwidgets_entropy_create(xxwidgets_widget *owner, xxwidgets_rec
     if (status != XXWIDGETS_OK)
         goto fail;
     status = xxwidgets_widget_set_visible(CONTROL(v, BYTES_TABLE), 0);
+    /* The regions table already has per-column filters. Keep the old controls
+     * available to programmatic callers without duplicating the visible UI. */
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(CONTROL(v, FILTER_LABEL), 0);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(CONTROL(v, FILTER), 0);
     if (status != XXWIDGETS_OK)
         goto fail;
     status = refresh(v);
@@ -881,6 +885,7 @@ xxwidgets_status xxwidgets_entropy_export_csv(const xxwidgets_entropy *v, char *
     xxwidgets_widget *table = v->bytes ? CONTROL(v, BYTES_TABLE) : CONTROL(v, REGIONS_TABLE);
     size_t columns = xxwidgets_tabular_column_count(table);
     for (size_t row = 0; row <= table->item_count; ++row) {
+        if (row && xxwidgets_tabular_display_row(table, row - 1) == SIZE_MAX) continue;
         for (size_t col = 0; col < columns; ++col) {
             if (col)
                 append(&out, ",");

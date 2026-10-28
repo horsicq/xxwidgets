@@ -8,7 +8,7 @@
 struct xxwidgets_exports {
     xxwidgets_widget *owner, *controls[XXWIDGETS_EXPORTS_CONTROL_COUNT];
     xx_export_record *records;
-    size_t count;
+    size_t count, displayed_count;
     char *path, *format, *filter;
     uint64_t file_size;
     int pending;
@@ -30,7 +30,7 @@ xxwidgets_status xxwidgets_exports_set_rect(xxwidgets_exports *v, xxwidgets_rect
     R(FILTER_LABEL, 0, 4, 8, 2);
     R(FILTER, 9, 4, b.width - 26, 2);
     R(RESET, b.width - 15, 4, 15, 2);
-    R(TABLE, 0, 7, b.width, b.height - 13);
+    R(TABLE, 0, 4, b.width, b.height - 10);
     R(DETAILS, 0, b.height - 5, b.width, 1);
     R(COPY, 0, b.height - 3, 16, 2);
     R(COPY_ALL, 18, b.height - 3, 16, 2);
@@ -169,6 +169,7 @@ static xxwidgets_status present(xxwidgets_exports *v, const xxwidgets_exports_da
     }
     free(v->filter);
     v->filter = filter_copy;
+    v->displayed_count = count;
     filter_copy = NULL;
 finish:
     for (size_t i = 0; i < 5; ++i)
@@ -200,7 +201,15 @@ xxwidgets_status xxwidgets_exports_create(xxwidgets_widget *owner, xxwidgets_rec
         if (status != XXWIDGETS_OK)
             goto fail;
     }
-    status = xxwidgets_exports_set_rect(v, bounds);
+    /* Column headers provide the visible filters. Retain these controls for
+     * the existing programmatic filtering API and control IDs. */
+    status = xxwidgets_widget_set_visible(C(v, FILTER_LABEL), 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_visible(C(v, FILTER), 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_visible(C(v, RESET), 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_exports_set_rect(v, bounds);
     if (status == XXWIDGETS_OK) {
         xxwidgets_exports_data empty = {"", "", 0, NULL, 0};
         status = xxwidgets_exports_set_data(v, &empty);
@@ -239,7 +248,26 @@ size_t xxwidgets_exports_count(const xxwidgets_exports *v)
 }
 size_t xxwidgets_exports_visible_count(const xxwidgets_exports *v)
 {
-    return v ? xxwidget_exportsviewer_count(C(v, TABLE)) : 0;
+    return v ? xxwidgets_table_visible_count(C(v, TABLE)) : 0;
+}
+static xxwidgets_status update_visible_state(xxwidgets_exports *v)
+{
+    size_t count = xxwidgets_exports_visible_count(v);
+    char summary[256];
+    xxwidgets_status status;
+    if (count == v->displayed_count)
+        return XXWIDGETS_OK;
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " bytes | %zu / %zu exports", v->format, v->file_size, count, v->count);
+    status = xxwidgets_widget_set_text(C(v, SUMMARY), summary);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_enabled(C(v, COPY), count != 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_enabled(C(v, COPY_ALL), count != 0);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_text(C(v, STATUS), count ? "Select an export" : "No exports match");
+    if (status == XXWIDGETS_OK)
+        v->displayed_count = count;
+    return status;
 }
 xxwidgets_status xxwidgets_exports_set_data(xxwidgets_exports *v, const xxwidgets_exports_data *data)
 {
@@ -331,11 +359,13 @@ xxwidgets_status xxwidgets_exports_export_text(const xxwidgets_exports *v, size_
         return XXWIDGETS_INVALID_ARGUMENT;
     table = C(v, TABLE);
     count = xxwidget_exportsviewer_count(table);
-    if (index != SIZE_MAX && index >= count)
+    if (index != SIZE_MAX && (index >= count || xxwidgets_tabular_display_row(table, index) == SIZE_MAX))
         return XXWIDGETS_INVALID_ARGUMENT;
     first = index == SIZE_MAX ? 0 : index;
     last = index == SIZE_MAX ? count : index + 1;
     for (size_t i = first; i < last; ++i) {
+        if (xxwidgets_tabular_display_row(table, i) == SIZE_MAX)
+            continue;
         length += row_text(table, i, NULL, 0);
         if (length > 32U * 1024U * 1024U)
             return XXWIDGETS_UNAVAILABLE;
@@ -352,7 +382,8 @@ xxwidgets_status xxwidgets_exports_export_text(const xxwidgets_exports *v, size_
     memcpy(buffer, header, sizeof(header) - 1);
     pos = sizeof(header) - 1;
     for (size_t i = first; i < last; ++i)
-        pos += row_text(table, i, buffer + pos, capacity - pos);
+        if (xxwidgets_tabular_display_row(table, i) != SIZE_MAX)
+            pos += row_text(table, i, buffer + pos, capacity - pos);
     buffer[pos] = 0;
     return XXWIDGETS_OK;
 }
@@ -360,6 +391,8 @@ xxwidgets_status xxwidgets_exports_handle_event(xxwidgets_exports *v, const xxwi
 {
     if (!v || !event)
         return XXWIDGETS_INVALID_ARGUMENT;
+    if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, TABLE))
+        return update_visible_state(v);
     if (event->type == XXWIDGETS_EVENT_SELECT && event->widget == C(v, TABLE)) {
         size_t index;
         xx_export_record r;
@@ -390,6 +423,9 @@ xxwidgets_status xxwidgets_exports_process(xxwidgets_exports *v)
         return XXWIDGETS_INVALID_ARGUMENT;
     if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
         return XXWIDGETS_BUSY;
+    status = update_visible_state(v);
+    if (status != XXWIDGETS_OK)
+        return status;
     action = v->pending;
     v->pending = 0;
     if (!action)

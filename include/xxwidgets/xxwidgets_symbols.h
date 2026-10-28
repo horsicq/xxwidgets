@@ -18,6 +18,7 @@ typedef struct xxwidgets_symbols_data {
 typedef enum xxwidgets_symbols_control_id {
     XXWIDGETS_SYMBOLS_PATH,
     XXWIDGETS_SYMBOLS_SUMMARY,
+    /* Legacy global filter controls stay hidden; use the table column filters. */
     XXWIDGETS_SYMBOLS_FILTER_LABEL,
     XXWIDGETS_SYMBOLS_FILTER,
     XXWIDGETS_SYMBOLS_RESET,
@@ -33,7 +34,8 @@ typedef enum xxwidgets_symbols_control_id {
  * 10000 records, 16 KiB per UTF-8 name/file name and 8 MiB aggregate NUL-inclusive names.
  * NULL names mean empty. Offsets use -1 and address/table index UINT64_MAX for unknown.
  * Known file offsets must lie within the file; a target at EOF is allowed.
- * Replacement is transactional and resets the filter. Destroy before owner. */
+ * Replacement is transactional and resets the programmatic global filter.
+ * The visible table provides per-column filters. Destroy before owner. */
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_create(xxwidgets_widget *, xxwidgets_rect, xxwidgets_symbols **);
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_destroy(xxwidgets_symbols *);
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_set_rect(xxwidgets_symbols *, xxwidgets_rect);
@@ -44,14 +46,15 @@ XXWIDGETS_API size_t xxwidgets_symbols_visible_count(const xxwidgets_symbols *);
 /* Substring in name/file name; ASCII case-insensitive, <=256 UTF-8 bytes.
  * Selects first visible row. Invalid input/failures retain previous filter. */
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_set_filter(xxwidgets_symbols *, const char *);
-/* TSV of visible rows. index SIZE_MAX exports all, otherwise visible row index.
+/* TSV of rows passing the column and programmatic global filters. index SIZE_MAX
+ * exports all visible rows; otherwise use a visible model row index from TABLE.
  * Cells escape control bytes; includes native metadata in addition to table fields.
  * NULL/0 queries NUL-inclusive size; short buffers are terminated. <=32 MiB. */
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_export_text(const xxwidgets_symbols *, size_t index, char *, size_t, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_handle_event(xxwidgets_symbols *, const xxwidgets_event *);
 /* Run queued filtering/clipboard work after polling, outside input dispatch. */
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_process(xxwidgets_symbols *);
-/* Snapshot modal with Close/Esc and Ctrl/Meta+F to focus Filter. */
+/* Snapshot modal with Close/Esc and Ctrl/Meta+F to focus the table. */
 XXWIDGETS_API xxwidgets_status xxwidgets_symbols_dialog(xxwidgets_widget *, const char *, const xxwidgets_symbols_data *);
 #ifdef __cplusplus
 }
