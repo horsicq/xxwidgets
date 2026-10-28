@@ -189,6 +189,7 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_imports.h
     include/xxwidgets/xxwidgets_memory_map.h
     include/xxwidgets/xxwidgets_disasm.h
+    include/xxwidgets/xxwidgets_disasm_options.h
     include/xxwidgets/xxwidgets_hexview_browser.h
     include/xxwidgets/xxwidgets_hex_options.h
     include/xxwidgets/xxwidgets_process.h
@@ -203,6 +204,8 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_scan_options.h
     include/xxwidgets/xxwidgets_search.h
     include/xxwidgets/xxwidgets_strings.h
+    include/xxwidgets/xxwidgets_extractor.h
+    include/xxwidgets/xxwidgets_disk_write.h
     include/xxwidgets/xxwidgets_forms.h
     include/xxwidgets/xxwidgets_font_options.h
     include/xxwidgets/xxwidgets_database_paths.h
@@ -214,6 +217,7 @@ add_library(xxwidgets
     src/xxwidgets_translation.c
     src/xxwidgets_edit.c
     src/xxwidgets_window.c
+    src/xxwidgets_modality.c
     src/xxwidgets_menu.c
     src/debugger/xxwidgets_debugger_project_dialog.c
     src/debugger/xxwidgets_debugger_trace_dialog.c
@@ -230,7 +234,9 @@ add_library(xxwidgets
     src/xxwidgets_imports_dialog.c
     src/xxwidgets_memory_map.c
     src/xxwidgets_memory_map_dialog.c
+    src/xxwidgets_memory_map_export.c
     src/xxwidgets_disasm.c
+    src/xxwidgets_disasm_options.c
     src/xxwidgets_disasm_dialog.c
     src/xxwidgets_hexview_browser.c
     src/xxwidgets_hexview_dialog.c
@@ -248,6 +254,8 @@ add_library(xxwidgets
     src/xxwidgets_table_filter.c
     src/xxwidgets_table.c
     src/xxwidgets_process.c
+    src/xxwidgets_disk_write.c
+    src/xxwidgets_file_options.c
     src/xxwidget_systemprocessesviewer.c
     src/xxwidget_systemprocessesviewer_hexview.c
     ${_xxwidgets_process_memory_source}
@@ -262,6 +270,7 @@ add_library(xxwidgets
     src/xxwidgets_data_struct_table.c
     src/xxwidgets_data_struct_view.c
     src/xxwidgets_file_information.c
+    src/xxwidgets_extractor.c
     src/xxwidgets_debugger.c
     src/xxwidgets_debugger_tables.c
     src/xxwidgets_debugger_session.c
@@ -318,7 +327,7 @@ endif()
 target_link_libraries(xxwidgets PRIVATE ${_xxwidgets_backend_libs} ${XXIO_LIBRARIES} Threads::Threads)
 if(WIN32)
     target_compile_definitions(xxwidgets PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(xxwidgets PRIVATE comdlg32 advapi32 shell32 user32)
+    target_link_libraries(xxwidgets PRIVATE comdlg32 advapi32 shell32 ole32 user32)
     # TUI uses the console API and user32 for clipboard support.
 elseif(UNIX)
     target_link_libraries(xxwidgets PRIVATE m)
@@ -370,7 +379,11 @@ if(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER)
             "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_interp.c"
             "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_lex.c"
             "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_parse.c"
-            "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_regexp.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/regex/xx_regex.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/regex/xx_regex_search.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/regex/xx_regex_js.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/regex/xx_regex_js_lex.c"
+            "${XXWIDGETS_XXFCLIB_DIR}/src/regex/xx_regex_js_strings.c"
             "${XXWIDGETS_XXFCLIB_DIR}/src/js/xx_js_value.c"
             "${XXWIDGETS_XXFCLIB_DIR}/src/buf/xx_buf.c"
             "${XXWIDGETS_XXFCLIB_DIR}/src/list/xx_list.c"
@@ -459,6 +472,7 @@ if(XXWIDGETS_BUILD_DEBUGGER)
         function(xxwidgets_add_debugger_dependency)
             set(BUILD_TESTING OFF)
             set(XXDEBUG_BUILD_TOOLS OFF)
+            set(XXDEBUG_BUILD_SCRIPT OFF)
             set(XXDEBUG_BUILD_TESTS OFF)
             add_subdirectory("${XXWIDGETS_XXDEBUG_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/xxdebug-adapter" EXCLUDE_FROM_ALL)
         endfunction()
@@ -554,6 +568,17 @@ function(xxwidgets_add_demo target source)
 endfunction()
 
 if(XXWIDGETS_BUILD_EXAMPLES)
+    xxwidgets_add_demo(xxwidgets_disk_write_demo examples/disk_write_demo.c)
+    # This example writes only an explicit destination supplied by the user.
+    list(REMOVE_ITEM _xxwidgets_demo_targets xxwidgets_disk_write_demo)
+    if(WIN32 AND MSVC)
+        # A GUI sibling is useful for visual QA without a covering console.
+        add_executable(xxwidgets_disk_write_demo_gui WIN32 examples/disk_write_demo.c)
+        target_link_libraries(xxwidgets_disk_write_demo_gui PRIVATE xxwidgets::xxwidgets)
+        target_link_options(xxwidgets_disk_write_demo_gui PRIVATE /ENTRY:mainCRTStartup)
+        target_compile_options(xxwidgets_disk_write_demo_gui PRIVATE /W4 /utf-8)
+        target_compile_definitions(xxwidgets_disk_write_demo_gui PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
     xxwidgets_add_demo(xxwidgets_translation_demo examples/translation_demo.c)
     xxwidgets_add_demo(xxwidgets_die_signature_editor_demo examples/die_engine/signature_editor_demo.c)
     list(REMOVE_ITEM _xxwidgets_demo_targets xxwidgets_die_signature_editor_demo)
@@ -666,6 +691,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             tests/test_translation.c
             tests/test_hex_resize.c
             src/xxwidgets.c
+            src/xxwidgets_modality.c
             src/xxwidgets_translation.c
             src/xxwidgets_edit.c
             src/xxwidgets_window.c
@@ -683,16 +709,21 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             src/xxwidgets_about.c
             src/xxwidgets_combobox.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_process.c tests/test_process.c)
+        target_sources(xxwidgets_core_tests PRIVATE tests/test_window_modality.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidget_systemprocessesviewer.c src/xxwidget_systemprocessesviewer_hexview.c ${_xxwidgets_process_memory_source} src/platform/xxwidget_systemprocessesviewer_platform.c ${_xxwidgets_process_dump_source} tests/test_systemprocessesviewer.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidget_binaryviewer.c src/xxwidget_resourcesviewer.c src/xxwidget_importsviewer.c src/xxwidget_exportsviewer.c src/xxwidget_symbolsviewer.c tests/test_binaryviewers.c)
         if(APPLE)
             target_compile_definitions(xxwidgets_core_tests PRIVATE _DARWIN_C_SOURCE)
         endif()
         if(WIN32)
-            target_link_libraries(xxwidgets_core_tests PRIVATE shell32)
+            target_link_libraries(xxwidgets_core_tests PRIVATE shell32 ole32)
         endif()
         target_link_libraries(xxwidgets_core_tests PRIVATE ${XXIO_LIBRARIES} Threads::Threads)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_font_options.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_font_options.c
+            src/xxwidgets_disasm_options.c src/xxwidgets_file_options.c tests/test_listing_options.c)
+        set(_xxwidgets_listing_fixture "${CMAKE_CURRENT_BINARY_DIR}/listing-options-fixture")
+        file(MAKE_DIRECTORY "${_xxwidgets_listing_fixture}/blocked.bin.bak")
+        target_compile_definitions(xxwidgets_core_tests PRIVATE XXWIDGETS_LISTING_TEST_DIR="${_xxwidgets_listing_fixture}")
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_forms.c)
         target_include_directories(xxwidgets_core_tests PRIVATE include src "${XXWIDGETS_XXFCLIB_DIR}/include")
         target_compile_features(xxwidgets_core_tests PRIVATE c_std_11)
@@ -728,7 +759,13 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             XXWIDGETS_SCAN_BULK="${CMAKE_CURRENT_BINARY_DIR}/scan-directory-bulk")
         target_sources(xxwidgets_core_tests PRIVATE tests/test_shortcuts.c tests/test_hex_columns.c)
         target_sources(xxwidgets_core_tests PRIVATE tests/test_file_drops.c tests/test_canvas.c src/xxwidgets_canvas.c src/xxwidgets_entropy.c tests/test_entropy.c)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_strings.c tests/test_strings.c tests/test_table.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_strings.c src/xxwidgets_strings_dialog.c
+            tests/test_strings.c tests/test_strings_source.c tests/test_table.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_extractor.c tests/test_extractor.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_disk_write.c tests/test_disk_write.c)
+        target_sources(xxwidgets_core_tests PRIVATE tests/test_disk_sources.c)
+        target_sources(xxwidgets_core_tests PRIVATE tests/test_signature_disk_write.c)
+        target_compile_definitions(xxwidgets_core_tests PRIVATE XXWIDGETS_TEST_DISK_CLOCK)
         if(UNIX)
             target_link_libraries(xxwidgets_core_tests PRIVATE m)
         endif()
@@ -743,6 +780,14 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         target_compile_definitions(xxwidgets_core_tests PRIVATE
             XXWIDGETS_TEST_TRANSLATION_PO="${CMAKE_CURRENT_SOURCE_DIR}/po/de.po")
         add_test(NAME xxwidgets_scan_directory COMMAND xxwidgets_core_tests --scan-directory-only)
+        add_test(NAME xxwidgets_extractor COMMAND xxwidgets_core_tests --extractor-only)
+        add_test(NAME xxwidgets_disk_write COMMAND xxwidgets_core_tests --disk-write-only)
+        add_test(NAME xxwidgets_disk_sources COMMAND xxwidgets_core_tests --disk-sources-only)
+        set_tests_properties(xxwidgets_disk_sources PROPERTIES TIMEOUT 20 LABELS "disk;strings;extractor")
+        set_tests_properties(xxwidgets_disk_write PROPERTIES TIMEOUT 20 LABELS "disk;worker;io")
+        set_tests_properties(xxwidgets_extractor PROPERTIES TIMEOUT 15 LABELS "extractor;worker;io")
+        add_test(NAME xxwidgets_window_modality COMMAND xxwidgets_core_tests --window-modality-only)
+        set_tests_properties(xxwidgets_window_modality PROPERTIES TIMEOUT 15 LABELS "window;modality")
         add_test(NAME xxwidgets_core COMMAND xxwidgets_core_tests)
         set_tests_properties(xxwidgets_core xxwidgets_scan_directory PROPERTIES
             RESOURCE_LOCK xxwidgets_scan_directory_fixture)
@@ -776,7 +821,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         add_executable(xxwidgets_search_tests tests/test_search_dialog.c
             src/xxwidgets_search.c ${_xxwidgets_search_sources})
         if(WIN32)
-            target_link_libraries(xxwidgets_search_tests PRIVATE shell32)
+            target_link_libraries(xxwidgets_search_tests PRIVATE shell32 ole32)
         endif()
         target_include_directories(xxwidgets_search_tests PRIVATE include src "${XXWIDGETS_XXFCLIB_DIR}/include")
         target_compile_features(xxwidgets_search_tests PRIVATE c_std_11)
@@ -792,6 +837,49 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         endif()
         add_test(NAME xxwidgets_search COMMAND xxwidgets_search_tests)
         set_tests_properties(xxwidgets_search PROPERTIES TIMEOUT 15 LABELS "smoke;search")
+        add_executable(xxwidgets_options_nested_tests tests/test_options_nested.c
+            src/xxwidgets_options_pages.c src/xxwidgets_database_paths.c
+            src/xxwidgets_context_options.c src/xxwidgets_optimization_options.c
+            ${_xxwidgets_search_sources})
+        target_include_directories(xxwidgets_options_nested_tests PRIVATE include src "${XXWIDGETS_XXFCLIB_DIR}/include")
+        target_compile_features(xxwidgets_options_nested_tests PRIVATE c_std_11)
+        target_compile_definitions(xxwidgets_options_nested_tests PRIVATE XXWIDGETS_STATIC XXWIDGETS_TEST_CLOCK XXFC_STATIC)
+        target_link_libraries(xxwidgets_options_nested_tests PRIVATE ${XXIO_LIBRARIES} Threads::Threads)
+        if(WIN32)
+            target_link_libraries(xxwidgets_options_nested_tests PRIVATE shell32 ole32 advapi32 user32)
+        endif()
+        if(UNIX)
+            target_compile_definitions(xxwidgets_options_nested_tests PRIVATE _POSIX_C_SOURCE=200809L)
+            target_link_libraries(xxwidgets_options_nested_tests PRIVATE m)
+        endif()
+        if(XXWIDGETS_BUILD_SETTINGS)
+            target_link_libraries(xxwidgets_options_nested_tests PRIVATE xxwidgets_xxsettings)
+            target_compile_definitions(xxwidgets_options_nested_tests PRIVATE XXWIDGETS_WITH_SETTINGS)
+        endif()
+        add_test(NAME xxwidgets_options_nested COMMAND xxwidgets_options_nested_tests)
+        set_tests_properties(xxwidgets_options_nested PROPERTIES TIMEOUT 15 LABELS "smoke;options;modality")
+        set(_xxwidgets_memory_map_export_sources ${_xxwidgets_search_sources}
+            src/xxwidgets_memory_map.c src/xxwidgets_memory_map_export.c)
+        list(REMOVE_DUPLICATES _xxwidgets_memory_map_export_sources)
+        add_executable(xxwidgets_memory_map_exports_tests tests/test_memory_map_exports.c
+            ${_xxwidgets_memory_map_export_sources})
+        target_include_directories(xxwidgets_memory_map_exports_tests PRIVATE include src "${XXWIDGETS_XXFCLIB_DIR}/include")
+        target_compile_features(xxwidgets_memory_map_exports_tests PRIVATE c_std_11)
+        target_compile_definitions(xxwidgets_memory_map_exports_tests PRIVATE XXWIDGETS_STATIC XXWIDGETS_TEST_CLOCK XXFC_STATIC)
+        target_link_libraries(xxwidgets_memory_map_exports_tests PRIVATE ${XXIO_LIBRARIES} Threads::Threads)
+        if(WIN32)
+            target_link_libraries(xxwidgets_memory_map_exports_tests PRIVATE shell32 ole32 user32)
+        endif()
+        if(UNIX)
+            target_compile_definitions(xxwidgets_memory_map_exports_tests PRIVATE _POSIX_C_SOURCE=200809L)
+            target_link_libraries(xxwidgets_memory_map_exports_tests PRIVATE m)
+        endif()
+        if(XXWIDGETS_BUILD_SETTINGS)
+            target_link_libraries(xxwidgets_memory_map_exports_tests PRIVATE xxwidgets_xxsettings)
+            target_compile_definitions(xxwidgets_memory_map_exports_tests PRIVATE XXWIDGETS_WITH_SETTINGS)
+        endif()
+        add_test(NAME xxwidgets_memory_map_exports COMMAND xxwidgets_memory_map_exports_tests "${CMAKE_CURRENT_BINARY_DIR}")
+        set_tests_properties(xxwidgets_memory_map_exports PROPERTIES TIMEOUT 15 LABELS "memory-map;io")
         if(EXISTS "${XXWIDGETS_XXFCLIB_DIR}/tests/test_codepages.c")
             add_executable(xxwidgets_codepage_tests "${XXWIDGETS_XXFCLIB_DIR}/tests/test_codepages.c" $<TARGET_OBJECTS:xxwidgets_codepages>)
             target_include_directories(xxwidgets_codepage_tests PRIVATE "${XXWIDGETS_XXFCLIB_DIR}/include")
@@ -833,6 +921,12 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             set_tests_properties(xxwidgets_win32_data_struct PROPERTIES TIMEOUT 15)
             add_test(NAME xxwidgets_win32_tree_colors COMMAND xxwidgets_win32_tests --tree-colors)
             set_tests_properties(xxwidgets_win32_tree_colors PROPERTIES TIMEOUT 15)
+            add_test(NAME xxwidgets_memory_map_controls COMMAND xxwidgets_win32_tests --memory-map-controls)
+            add_executable(xxwidgets_memory_map_browser_tests tests/test_memory_map_browser.c)
+            target_include_directories(xxwidgets_memory_map_browser_tests PRIVATE "${XXWIDGETS_XXFCLIB_DIR}/include")
+            target_link_libraries(xxwidgets_memory_map_browser_tests PRIVATE xxwidgets::xxwidgets)
+            add_test(NAME xxwidgets_memory_map_browser COMMAND xxwidgets_memory_map_browser_tests)
+            set_tests_properties(xxwidgets_memory_map_controls xxwidgets_memory_map_browser PROPERTIES TIMEOUT 15)
         endif()
         if(_xxwidgets_native STREQUAL "win32")
             foreach(_xxwidgets_options IN ITEMS scan_options font_options context_options optimization_options options_pages)
@@ -939,6 +1033,8 @@ install(FILES examples/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/examples)
 install(FILES docs/process-dialog-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/search-dialog-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/strings-viewer-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(FILES docs/extractor-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(FILES docs/disk-write-dialog.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/forms-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/die-signature-editor-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(FILES docs/die-signature-debugger-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
