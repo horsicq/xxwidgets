@@ -95,6 +95,19 @@ XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_editor_process_pending(xx
 XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, const char *title,
     const char *source, const char *path, xxwidgets_die_signature_editor_run_fn run, void *user_data);
 
+/* Source of catalog entry index for xxwidgets_die_signatures_dialog: *source
+ * is malloc-allocated UTF-8 the dialog frees, *path is borrowed until the
+ * dialog returns. Called on the UI thread outside input dispatch. */
+typedef xxwidgets_status (*xxwidgets_die_signature_load_fn)(size_t index, char **source, const char **path, void *user_data);
+/* Detect It Easy's Signatures window: the names of count signatures listed on
+ * the left, the one chosen in the editor beside it (selected first), with run
+ * as its Run adapter (may be NULL). Choosing another entry while the draft is
+ * modified only warns the first time. A terminal narrower than 100 columns
+ * shows the selected signature alone. Otherwise as the editor dialog. */
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signatures_dialog(xxwidgets_widget *owner, const char *title,
+    const char *const *names, size_t count, size_t selected, xxwidgets_die_signature_load_fn load,
+    xxwidgets_die_signature_editor_run_fn run, void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

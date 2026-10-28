@@ -94,7 +94,10 @@ typedef enum xxwidgets_kind {
     XXWIDGETS_DEBUGGER_REGISTERS,
     XXWIDGETS_DEBUGGER_STACK,
     XXWIDGETS_DIE_SIGNATURE_EDIT,
-    XXWIDGETS_MEMORY_MAP
+    XXWIDGETS_MEMORY_MAP,
+    /* Text cells under column titles, a filter in each column: see
+     * xxwidgets_table_create. */
+    XXWIDGETS_TABLE
 } xxwidgets_kind;
 
 typedef enum xxwidgets_event_type {
@@ -304,6 +307,38 @@ XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_node(const xxwidgets_widge
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_selection(xxwidgets_widget *widget, size_t *index, xxwidgets_tree_node *node);
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_expanded(xxwidgets_widget *widget, size_t index, int expanded);
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_expanded(const xxwidgets_widget *widget, size_t index, int *expanded);
+
+/* A table of text cells, XXWIDGETS_TABLE: 1..XXWIDGETS_TABLE_MAX_COLUMNS
+ * columns with the titles given (copied, shown as given), no rows. The cells
+ * use a fixed-pitch font and the columns grow to fit them. The value is the
+ * selected row (-1 for none); Enter or a double click emits ACTIVATE.
+ * xxwidgets_widget_create makes one too, its text the titles separated by tabs. */
+#define XXWIDGETS_TABLE_MAX_COLUMNS 9
+XXWIDGETS_API xxwidgets_status xxwidgets_table_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const char *const *titles,
+                                                    size_t columns, xxwidgets_widget **out);
+/* Replaces the rows: rows * columns UTF-8 cells, row by row, copied; NULL is an
+ * empty cell. Control characters show as \xNN. Selects the first row and keeps
+ * the filters. On failure the previous rows stay. */
+XXWIDGETS_API xxwidgets_status xxwidgets_table_set_rows(xxwidgets_widget *table, const char *const *cells, size_t rows);
+XXWIDGETS_API size_t xxwidgets_table_row_count(const xxwidgets_widget *table);
+XXWIDGETS_API size_t xxwidgets_table_column_count(const xxwidgets_widget *table);
+/* The cell as given, borrowed until the rows change; "" when out of range. */
+XXWIDGETS_API const char *xxwidgets_table_cell(const xxwidgets_widget *table, size_t row, size_t column);
+
+/* Filters of a table: XXWIDGETS_TABLE, the Resources, Imports, Exports,
+ * Symbols and Strings viewers, Memory Map, data structures, entropy regions,
+ * scan results and processes (other widgets return INVALID_ARGUMENT). Each
+ * column has one, a case-insensitive substring entered in a filter row under
+ * its title; a row stays when it matches every non-empty filter. Values, events
+ * and record getters keep the indexes of all rows; a selection the filters hide
+ * is cleared. Typing in a filter emits CHANGE with the column as the value
+ * (after SELECT -1 when it hid the selection). Setters emit no events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_table_set_filter(xxwidgets_widget *table, size_t column, const char *text);
+/* "" when the column has no filter. */
+XXWIDGETS_API const char *xxwidgets_table_filter(const xxwidgets_widget *table, size_t column);
+XXWIDGETS_API xxwidgets_status xxwidgets_table_clear_filters(xxwidgets_widget *table);
+/* Rows the filters let through. */
+XXWIDGETS_API size_t xxwidgets_table_visible_count(const xxwidgets_widget *table);
 
 /* Read-only scan results in input order, with Type/Name/Version/Info columns.
  * No scan engine dependency is required. NULL fields mean empty strings. */

@@ -49,7 +49,7 @@ static xxwidgets_status save_csv(strings_modal *modal, xxwidgets_strings_save_fn
     int accepted = 0;
     size_t required = 0;
     xxwidgets_status status = xxwidgets_file_dialog(modal->window, XXWIDGETS_FILE_DIALOG_SAVE,
-        "Save visible strings as CSV", "strings.csv", &path, &accepted);
+        XXW_TR(modal->window->app, "Save visible strings as CSV"), "strings.csv", &path, &accepted);
     if (status == XXWIDGETS_OK && accepted) {
         status = xxwidgets_strings_export_csv(modal->view, NULL, 0, &required);
         if (status == XXWIDGETS_OK) { text = malloc(required); if (!text) status = XXWIDGETS_OUT_OF_MEMORY; }
@@ -74,11 +74,16 @@ xxwidgets_status xxwidgets_strings_dialog(xxwidgets_widget *owner, const char *t
     xxwidgets_widget *focus = NULL, *widget, *previous_default;
     char description[128];
     xxwidgets_status status, cleanup;
-    int enabled, disabled = 0, attached = 0;
+    int enabled, disabled = 0, attached = 0, width = 128, height = 32;
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}};
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) ||
         !path || !xxwidgets_valid_utf8(path) || owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
+    /* Room for the seven columns; a terminal gets what its owner has. */
+    if (xxwidgets_app_backend(app) == XXWIDGETS_BACKEND_TUI) {
+        width = owner->rect.width - 4 < 74 ? 74 : owner->rect.width - 4 > 160 ? 160 : owner->rect.width - 4;
+        height = owner->rect.height - 2 < 24 ? 24 : owner->rect.height - 2 > 48 ? 48 : owner->rect.height - 2;
+    }
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     previous_default = app->modal_default; app->modal_default = NULL;
     previous_event = app->on_event; previous_user = app->user_data; enabled = owner->enabled;
@@ -86,21 +91,21 @@ xxwidgets_status xxwidgets_strings_dialog(xxwidgets_widget *owner, const char *t
         if (widget->parent == owner && xxwidgets_focusable(widget)) { focus = widget; break; }
     app->on_event = strings_event; app->user_data = &modal;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 100, 30}, &modal.window);
+        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, width, height}, &modal.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = modal.window;
     status = xxwidgets_window_set_minimum_size(modal.window, 74, 24);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, path, (xxwidgets_rect){1, 1, 98, 1}, &modal.path);
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, path, (xxwidgets_rect){1, 1, width - 2, 1}, &modal.path);
     snprintf(description, sizeof(description), "%" PRIu64 " bytes | %zu strings | Select a row to copy or view its full text", size, count);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, description, (xxwidgets_rect){1, 3, 98, 1}, &modal.summary);
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, description, (xxwidgets_rect){1, 3, width - 2, 1}, &modal.summary);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_strings_create(modal.window, (xxwidgets_rect){1, 5, 98, 20}, &modal.view);
+        status = xxwidgets_strings_create(modal.window, (xxwidgets_rect){1, 5, width - 2, height - 10}, &modal.view);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_strings_set_records(modal.view, records, count);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, "Close", (xxwidgets_rect){87, 27, 12, 2}, &modal.close);
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, "Close", (xxwidgets_rect){width - 13, height - 3, 12, 2}, &modal.close);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, 1);
     if (status != XXWIDGETS_OK) goto finish;
     if (!save || !xxwidgets_file_dialog_available(app)) {

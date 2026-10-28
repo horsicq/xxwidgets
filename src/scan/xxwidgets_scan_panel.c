@@ -25,6 +25,7 @@
 #include "xxwidgets/xxwidgets_combobox.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -41,24 +42,56 @@ static int panel_rect(xxwidgets_rect bounds)
     return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 44 && bounds.height >= 14 && bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
 }
 
+static int at_most(int value, int limit) { return value < limit ? value : limit; }
+static int at_least(int value, int limit) { return value > limit ? value : limit; }
+
+/* Detect It Easy's arrangement: three rows on top, four rows of buttons below
+ * (the Scan button spans them), the tree in between. */
 static void control_rects(xxwidgets_rect bounds, xxwidgets_rect *rects)
 {
-    int first = (bounds.width - 19) / 2, second = bounds.width - 19 - first;
-    int tag_first = (bounds.width - 1) / 2, tag_second = bounds.width - 1 - tag_first;
-    rects[XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL] = (xxwidgets_rect){bounds.x, bounds.y, bounds.width, 1};
-    rects[XXWIDGETS_SCAN_PANEL_FILE_TYPE] = (xxwidgets_rect){bounds.x, bounds.y + 1, bounds.width, 2};
-    rects[XXWIDGETS_SCAN_PANEL_FLAGS_LABEL] = (xxwidgets_rect){bounds.x, bounds.y + 3, first, 1};
-    rects[XXWIDGETS_SCAN_PANEL_DATABASES_LABEL] = (xxwidgets_rect){bounds.x + first + 1, bounds.y + 3, second, 1};
-    rects[XXWIDGETS_SCAN_PANEL_FLAGS] = (xxwidgets_rect){bounds.x, bounds.y + 4, first, 2};
-    rects[XXWIDGETS_SCAN_PANEL_DATABASES] = (xxwidgets_rect){bounds.x + first + 1, bounds.y + 4, second, 2};
-    rects[XXWIDGETS_SCAN_PANEL_SCAN] = (xxwidgets_rect){bounds.x + bounds.width - 17, bounds.y + 4, 8, 2};
-    rects[XXWIDGETS_SCAN_PANEL_REPORT] = (xxwidgets_rect){bounds.x + bounds.width - 8, bounds.y + 4, 8, 2};
-    rects[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL] = (xxwidgets_rect){bounds.x, bounds.y + 6, tag_first, 1};
-    rects[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL] = (xxwidgets_rect){bounds.x + tag_first + 1, bounds.y + 6, tag_second, 1};
-    rects[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS] = (xxwidgets_rect){bounds.x, bounds.y + 7, tag_first, 2};
-    rects[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS] = (xxwidgets_rect){bounds.x + tag_first + 1, bounds.y + 7, tag_second, 2};
-    rects[XXWIDGETS_SCAN_PANEL_RESULTS] = (xxwidgets_rect){bounds.x, bounds.y + 10, bounds.width, bounds.height - 10};
+    int x = bounds.x, y = bounds.y, width = bounds.width, height = bounds.height;
+    int field = at_least(at_most((width - 24) / 4 - 1, 14), 6), type = width - 4 * (field + 1);
+    int left = width - 11, row_a = y + height - 4, row_b = y + height - 2;
+    int signatures = at_most(12, left / 4), avail = left - signatures - 1;
+    int flags = at_least(avail * 22 / 100, 4), tags = at_least((avail - 2 * flags - 3) / 2, 1);
+    int directory = at_most(11, left / 4), log = at_most(7, left / 6), elapsed = at_most(10, left / 4), report = 5;
+    static const xxwidgets_scan_panel_control_id info[4][2] = {
+        {XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXWIDGETS_SCAN_PANEL_ENDIANNESS},
+        {XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXWIDGETS_SCAN_PANEL_MODE},
+        {XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXWIDGETS_SCAN_PANEL_ARCHITECTURE},
+        {XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_TYPE}};
+    int i, at;
+    rects[XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL] = (xxwidgets_rect){x, y, type, 1};
+    rects[XXWIDGETS_SCAN_PANEL_FILE_TYPE] = (xxwidgets_rect){x, y + 1, type, 2};
+    for (i = 0; i < 4; ++i) {
+        at = x + type + 1 + i * (field + 1);
+        rects[info[i][0]] = (xxwidgets_rect){at, y, field, 1};
+        rects[info[i][1]] = (xxwidgets_rect){at, y + 1, field, 2};
+    }
+    rects[XXWIDGETS_SCAN_PANEL_RESULTS] = (xxwidgets_rect){x, y + 3, width, height - 7};
+    at = x;
+    rects[XXWIDGETS_SCAN_PANEL_SIGNATURES] = (xxwidgets_rect){at, row_a, signatures, 2};
+    at += signatures + 1;
+    rects[XXWIDGETS_SCAN_PANEL_FLAGS] = (xxwidgets_rect){at, row_a, flags, 2};
+    at += flags + 1;
+    rects[XXWIDGETS_SCAN_PANEL_DATABASES] = (xxwidgets_rect){at, row_a, flags, 2};
+    at += flags + 1;
+    rects[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS] = (xxwidgets_rect){at, row_a, tags, 2};
+    at += tags + 1;
+    rects[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS] = (xxwidgets_rect){at, row_a, tags, 2};
+    rects[XXWIDGETS_SCAN_PANEL_SCAN] = (xxwidgets_rect){x + width - 10, row_a, 10, 4};
+    rects[XXWIDGETS_SCAN_PANEL_DIRECTORY] = (xxwidgets_rect){x, row_b, directory, 2};
+    rects[XXWIDGETS_SCAN_PANEL_LOG] = (xxwidgets_rect){x + directory + 1, row_b, log, 2};
+    rects[XXWIDGETS_SCAN_PANEL_ELAPSED] = (xxwidgets_rect){x + left - elapsed, row_b, elapsed, 2};
+    rects[XXWIDGETS_SCAN_PANEL_REPORT] = (xxwidgets_rect){x + left - elapsed - report - 1, row_b, report, 2};
+    /* Hidden: the combo boxes carry their own names, as in DIE. */
+    rects[XXWIDGETS_SCAN_PANEL_FLAGS_LABEL] = rects[XXWIDGETS_SCAN_PANEL_DATABASES_LABEL] =
+        rects[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL] = rects[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL] = (xxwidgets_rect){x, row_a, 1, 1};
 }
+
+static const xxwidgets_scan_panel_control_id hidden_labels[4] = {
+    XXWIDGETS_SCAN_PANEL_FLAGS_LABEL, XXWIDGETS_SCAN_PANEL_DATABASES_LABEL,
+    XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL};
 
 xxwidgets_widget *xxwidgets_scan_panel_control(const xxwidgets_scan_panel *panel, xxwidgets_scan_panel_control_id control)
 {
@@ -339,15 +372,23 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
     static const xxwidgets_kind kinds[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
         XXWIDGETS_CHECKCOMBOBOX, XXWIDGETS_CHECKCOMBOBOX, XXWIDGETS_BUTTON,        XXWIDGETS_BUTTON, XXWIDGETS_TREEVIEW,
         XXWIDGETS_LABEL,         XXWIDGETS_LABEL,         XXWIDGETS_COMBOBOX,      XXWIDGETS_LABEL,  XXWIDGETS_CHECKCOMBOBOX,
-        XXWIDGETS_CHECKCOMBOBOX, XXWIDGETS_LABEL,         XXWIDGETS_LABEL};
+        XXWIDGETS_CHECKCOMBOBOX, XXWIDGETS_LABEL,         XXWIDGETS_LABEL,
+        XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL,
+        XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL};
     static const char *const names[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
-        XXW_N_("No flags"), XXW_N_("Main database only"), XXW_N_("Scan"), XXW_N_("Report"), XXW_N_("Scan results"), XXW_N_("Flags"), XXW_N_("Databases"), XXW_N_("Automatic"), XXW_N_("File type"),
-        XXW_N_("All tags"), XXW_N_("No excluded tags"), XXW_N_("Include tags"), XXW_N_("Exclude tags")};
+        XXW_N_("No flags"), XXW_N_("Main database only"), XXW_N_("Scan"), ">", XXW_N_("Scan results"), XXW_N_("Flags"), XXW_N_("Databases"), XXW_N_("Automatic"), XXW_N_("Scan"),
+        XXW_N_("All tags"), XXW_N_("No excluded tags"), XXW_N_("Include tags"), XXW_N_("Exclude tags"),
+        XXW_N_("Signatures"), XXW_N_("Directory"), XXW_N_("Log"), "",
+        XXW_N_("Endianness"), "", XXW_N_("Mode"), "", XXW_N_("Architecture"), "", XXW_N_("Type"), ""};
+    /* Also the focus order: what DIE puts on top, the results, the buttons. */
     static const xxwidgets_scan_panel_control_id creation_order[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
-        XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_FILE_TYPE, XXWIDGETS_SCAN_PANEL_FLAGS_LABEL, XXWIDGETS_SCAN_PANEL_FLAGS,
-        XXWIDGETS_SCAN_PANEL_DATABASES_LABEL, XXWIDGETS_SCAN_PANEL_DATABASES, XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL,
-        XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS,    XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
-        XXWIDGETS_SCAN_PANEL_SCAN,             XXWIDGETS_SCAN_PANEL_REPORT, XXWIDGETS_SCAN_PANEL_RESULTS};
+        XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_FILE_TYPE,
+        XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXWIDGETS_SCAN_PANEL_ENDIANNESS, XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXWIDGETS_SCAN_PANEL_MODE,
+        XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXWIDGETS_SCAN_PANEL_ARCHITECTURE, XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_TYPE,
+        XXWIDGETS_SCAN_PANEL_RESULTS, XXWIDGETS_SCAN_PANEL_SIGNATURES,
+        XXWIDGETS_SCAN_PANEL_FLAGS_LABEL, XXWIDGETS_SCAN_PANEL_FLAGS, XXWIDGETS_SCAN_PANEL_DATABASES_LABEL, XXWIDGETS_SCAN_PANEL_DATABASES,
+        XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
+        XXWIDGETS_SCAN_PANEL_SCAN, XXWIDGETS_SCAN_PANEL_DIRECTORY, XXWIDGETS_SCAN_PANEL_LOG, XXWIDGETS_SCAN_PANEL_REPORT, XXWIDGETS_SCAN_PANEL_ELAPSED};
     static const char *const flag_names[6] = {XXW_N_("Deep scan"), XXW_N_("Heuristic scan"), XXW_N_("Verbose results"), XXW_N_("Aggressive scan"), XXW_N_("Hide unknown results"), XXW_N_("Format text report")};
     static const char *const database_names[2] = {XXW_N_("Extra database"), XXW_N_("Custom database")};
     xxwidgets_scan_panel *panel;
@@ -384,6 +425,10 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
     if (status != XXWIDGETS_OK) goto failed;
     status = xxwidgets_widget_set_enabled(panel->controls[XXWIDGETS_SCAN_PANEL_REPORT], 0);
     if (status != XXWIDGETS_OK) goto failed;
+    for (i = 0; i < sizeof(hidden_labels) / sizeof(hidden_labels[0]); ++i) {
+        status = xxwidgets_widget_set_visible(panel->controls[hidden_labels[i]], 0);
+        if (status != XXWIDGETS_OK) goto failed;
+    }
     *out_panel = panel;
     return XXWIDGETS_OK;
 failed:
@@ -424,6 +469,20 @@ xxwidgets_status xxwidgets_scan_panel_set_rect(xxwidgets_scan_panel *panel, xxwi
             for (j = 0; j < i; ++j) recover_control(panel->controls[j]);
             return status;
         }
+    }
+    return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_scan_panel_set_visible(xxwidgets_scan_panel *panel, int visible)
+{
+    size_t i, j;
+    if (!panel) return XXWIDGETS_INVALID_ARGUMENT;
+    for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT; ++i) {
+        int hidden = 0;
+        xxwidgets_status status;
+        for (j = 0; j < sizeof(hidden_labels) / sizeof(hidden_labels[0]); ++j) hidden |= hidden_labels[j] == (xxwidgets_scan_panel_control_id)i;
+        status = xxwidgets_widget_set_visible(panel->controls[i], visible && !hidden);
+        if (status != XXWIDGETS_OK) return status;
     }
     return XXWIDGETS_OK;
 }
@@ -531,6 +590,31 @@ xxwidgets_status xxwidgets_scan_panel_set_results(xxwidgets_scan_panel *panel, c
     return status;
 }
 
+xxwidgets_status xxwidgets_scan_panel_set_file_info(xxwidgets_scan_panel *panel, const char *endianness,
+    const char *mode, const char *architecture, const char *type)
+{
+    const char *texts[4] = {endianness, mode, architecture, type};
+    static const xxwidgets_scan_panel_control_id fields[4] = {
+        XXWIDGETS_SCAN_PANEL_ENDIANNESS, XXWIDGETS_SCAN_PANEL_MODE, XXWIDGETS_SCAN_PANEL_ARCHITECTURE, XXWIDGETS_SCAN_PANEL_TYPE};
+    size_t i;
+    if (!panel) return XXWIDGETS_INVALID_ARGUMENT;
+    for (i = 0; i < 4; ++i) if (texts[i] && !xxwidgets_valid_utf8(texts[i])) return XXWIDGETS_INVALID_ARGUMENT;
+    for (i = 0; i < 4; ++i) {
+        xxwidgets_status status = xxwidgets_widget_set_text(panel->controls[fields[i]], texts[i] ? texts[i] : "");
+        if (status != XXWIDGETS_OK) return status;
+    }
+    return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_scan_panel_set_elapsed(xxwidgets_scan_panel *panel, long long msec)
+{
+    char text[64];
+    if (!panel) return XXWIDGETS_INVALID_ARGUMENT;
+    if (msec < 0) text[0] = 0;
+    else snprintf(text, sizeof(text), "%lld %s", msec, XXW_TR(panel->owner->app, "msec"));
+    return xxwidgets_widget_set_text(panel->controls[XXWIDGETS_SCAN_PANEL_ELAPSED], text);
+}
+
 xxwidgets_status xxwidgets_scan_panel_clear(xxwidgets_scan_panel *panel)
 {
     xxwidgets_status status;
@@ -547,6 +631,8 @@ xxwidgets_status xxwidgets_scan_panel_clear(xxwidgets_scan_panel *panel)
     free(panel->report);
     panel->report = NULL;
     panel->count = 0;
+    (void)xxwidgets_scan_panel_set_file_info(panel, NULL, NULL, NULL, NULL);
+    (void)xxwidgets_scan_panel_set_elapsed(panel, -1);
     return XXWIDGETS_OK;
 }
 

@@ -89,6 +89,9 @@ typedef struct tui_hexview {
      * grows only at its end, so only its new lines are measured. */
     size_t maximum, measured, measured_visible;
     int grown; /* LISTBOX: lines came at the last sync while an older one was selected. */
+    /* Tables: the filter being typed ('/' starts, Enter ends) and its column. */
+    int filter_editing;
+    size_t filter_column;
 } tui_hexview;
 
 typedef struct tui_state {
@@ -738,6 +741,13 @@ static void tui_plot_draw(void *user, int kind, double x, double y, double x2, d
     }
 }
 
+/* Tables at least six rows tall show a filter row under their titles; in
+ * smaller ones every row is kept for data (their filters still apply). */
+static int tui_filter_row(const xxwidgets_widget *widget)
+{
+    return xxwidgets_table_filterable(widget) && widget->rect.height >= 6;
+}
+
 /* Cells of a short label such as a tree mark: one per scalar. */
 static long long tui_label_cells(const char *label)
 {
@@ -826,6 +836,7 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
         case XXWIDGETS_MEMORY_MAP:
+        case XXWIDGETS_TABLE:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -837,12 +848,16 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
             size_t byte_cursor = SIZE_MAX;
             unsigned int cursor_nibble = 0;
             int hex_editable = 0;
+            int filterable = xxwidgets_table_filterable(widget);
+            size_t rows_shown = filterable ? xxwidgets_tabular_rows(widget) : widget->item_count;
             size_t selected_row = widget->kind == XXWIDGETS_TREEVIEW ? xxwidgets_treeview_row_of_node(widget, (size_t)widget->value)
+                                  : filterable ? (xxwidgets_tabular_row(widget, widget->value) < 0 ? SIZE_MAX : (size_t)xxwidgets_tabular_row(widget, widget->value))
                                   : widget->value < 0                ? SIZE_MAX
                                                                      : (size_t)widget->value;
+            /* Tables with filters have a filter row under their titles. */
             int header_rows = widget->kind == XXWIDGETS_ARCHIVEBROWSER
                                   ? 2
-                                  : (xxwidgets_tabular_kind(widget)) ? 1 : 0;
+                                  : (xxwidgets_tabular_kind(widget)) ? (tui_filter_row(widget) ? 2 : 1) : 0;
             int row_height = widget->rect.height - header_rows;
             tui_hexview *hexview = (tui_hexview *)widget->platform;
             if (widget->kind == XXWIDGETS_HEXVIEW) {
@@ -896,6 +911,34 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                         widget->kind == XXWIDGETS_HEXVIEW && state->focus == widget && column == widget->hex_header ? TUI_FOCUS : TUI_TITLE, 0);
                     header_x += (long long)width + (widget->kind == XXWIDGETS_HEXVIEW ? 1 : widget->kind == XXWIDGETS_DATA_STRUCT_TABLE ? 3 : 2);
                 }
+                if (tui_filter_row(widget)) {
+                    /* "Filter" placeholders, the typed text, the edited cell highlighted. */
+                    tui_clip filter_clip = clip;
+                    filter_clip.top = y + 1;
+                    filter_clip.bottom = y + 2;
+                    filter_clip = tui_intersect(clip, filter_clip);
+                    header_x = x + 1 - (long long)(hexview ? hexview->horizontal : 0);
+                    for (column = 0; column < column_count; ++column) {
+                        size_t width = xxwidgets_tabular_column_width(widget, column);
+                        const char *filter = xxwidgets_table_filter(widget, column);
+                        int editing = hexview && hexview->filter_editing && hexview->filter_column == column && state->focus == widget;
+                        tui_clip cell_clip = filter_clip;
+                        cell_clip.left = header_x; cell_clip.right = header_x + (long long)width;
+                        cell_clip = tui_intersect(filter_clip, cell_clip);
+                        tui_fill(state, cell_clip, editing ? TUI_FOCUS : TUI_NORMAL);
+                        tui_text(state, cell_clip, header_x, y + 1, filter[0] ? filter : XXW_TR(widget->app, "Filter"),
+                            editing ? TUI_FOCUS : filter[0] ? TUI_NORMAL : TUI_DISABLED, 0);
+                        if (editing) {
+                            long long cursor = header_x + tui_label_cells(filter);
+                            if (cursor >= cell_clip.left && cursor < cell_clip.right) {
+                                state->cursor_x = (int)cursor;
+                                state->cursor_y = (int)(y + 1);
+                                state->cursor_visible = 1;
+                            }
+                        }
+                        header_x += (long long)width + (widget->kind == XXWIDGETS_DATA_STRUCT_TABLE ? 3 : 2);
+                    }
+                }
             }
             if (row_height <= 0) break;
             /* The view keeps its place; it moves only to bring the selected row
@@ -905,8 +948,8 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                 if (selected_row < first) first = selected_row;
                 else if (selected_row >= first + (size_t)row_height) first = selected_row - (size_t)row_height + 1;
             }
-            if (widget->item_count <= (size_t)row_height) first = 0;
-            else if (first > widget->item_count - (size_t)row_height) first = widget->item_count - (size_t)row_height;
+            if (rows_shown <= (size_t)row_height) first = 0;
+            else if (first > rows_shown - (size_t)row_height) first = rows_shown - (size_t)row_height;
             if (hexview) hexview->first = first;
             for (row = clip.top; row < clip.bottom; ++row) {
                 size_t item;
@@ -914,9 +957,10 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                 unsigned char item_style = widget->kind == XXWIDGETS_HEXVIEW && widget->enabled && widget->parent->enabled ? TUI_NORMAL : style;
                 if (row < y + header_rows) continue;
                 item = first + (size_t)(row - y - header_rows);
-                if (item >= widget->item_count) break;
-                while (remaining && widget->items[item][offset]) {
-                    offset = tui_next(widget->items[item], offset);
+                if (item >= rows_shown) break;
+                const char *row_text = filterable ? xxwidgets_tabular_row_text(widget, item) : widget->items[item];
+                while (remaining && row_text[offset]) {
+                    offset = tui_next(row_text, offset);
                     --remaining;
                 }
                 if (widget->kind == XXWIDGETS_TREEVIEW && widget->enabled && widget->parent->enabled) {
@@ -1059,7 +1103,7 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                         left += cells;
                     }
                 } else {
-                tui_text(state, clip, x + 1, row, widget->items[item] + offset, item_style, TUI_TEXT_ELLIPSIS);
+                tui_text(state, clip, x + 1, row, row_text + offset, item_style, TUI_TEXT_ELLIPSIS);
                 }
                 if (widget->kind == XXWIDGETS_HEXVIEW && hex_editable && state->focus == widget && widget->enabled && widget->parent->enabled &&
                     byte_cursor != SIZE_MAX && item == byte_cursor / widget->hex_columns) {
@@ -1692,11 +1736,58 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
         }
     } else if (xxwidgets_list_kind(widget)) {
-        int selection = widget->value;
+        int filterable = xxwidgets_table_filterable(widget);
+        /* Tables move over the rows their filters show; values stay model rows. */
+        int selection = filterable ? xxwidgets_tabular_row(widget, widget->value) : widget->value;
+        size_t row_count = filterable ? xxwidgets_tabular_rows(widget) : widget->item_count;
         int page_rows = widget->rect.height -
                         (widget->kind == XXWIDGETS_ARCHIVEBROWSER
                              ? 2
-                             : (xxwidgets_tabular_kind(widget)) ? 1 : 0);
+                             : (xxwidgets_tabular_kind(widget)) ? (tui_filter_row(widget) ? 2 : 1) : 0);
+        if (tui_filter_row(widget) && widget->platform) {
+            tui_hexview *table = (tui_hexview *)widget->platform;
+            size_t columns = xxwidgets_tabular_column_count(widget);
+            if (!table->filter_editing && key == '/' && columns) {
+                table->filter_editing = 1;
+                if (table->filter_column >= columns) table->filter_column = 0;
+                state->dirty = 1;
+                return XXWIDGETS_OK;
+            }
+            if (table->filter_editing) {
+                const char *current = xxwidgets_table_filter(widget, table->filter_column);
+                size_t length = strlen(current);
+                char *text;
+                state->dirty = 1;
+                if (key == TUI_KEY_ENTER || key == TUI_KEY_UP || key == TUI_KEY_DOWN) {
+                    table->filter_editing = 0;
+                    if (key == TUI_KEY_ENTER) return XXWIDGETS_OK;
+                } else if (key == TUI_KEY_LEFT || key == TUI_KEY_RIGHT) {
+                    if (key == TUI_KEY_LEFT && table->filter_column) --table->filter_column;
+                    if (key == TUI_KEY_RIGHT && table->filter_column + 1 < columns) ++table->filter_column;
+                    return XXWIDGETS_OK;
+                } else if (key == TUI_KEY_BACKSPACE || (key >= 32 && key < 0x110000 && key != 127 && !(key >= 0xd800 && key <= 0xdfff))) {
+                    char encoded[4];
+                    size_t added = key == TUI_KEY_BACKSPACE ? 0 : tui_encode(key, encoded);
+                    xxwidgets_status status;
+                    if (key == TUI_KEY_BACKSPACE && !length) return XXWIDGETS_OK;
+                    text = (char *)malloc(length + added + 1);
+                    if (!text) return XXWIDGETS_OUT_OF_MEMORY;
+                    memcpy(text, current, length);
+                    if (key == TUI_KEY_BACKSPACE) {
+                        /* Drop the last character, not just its last byte. */
+                        while (length && ((unsigned char)text[length - 1] & 0xc0) == 0x80) --length;
+                        if (length) --length;
+                    } else {
+                        memcpy(text + length, encoded, added);
+                        length += added;
+                    }
+                    text[length] = 0;
+                    status = xxwidgets_table_filter_input(widget, table->filter_column, text);
+                    free(text);
+                    return status;
+                } else return XXWIDGETS_OK;
+            }
+        }
         if (widget->kind == XXWIDGETS_HEXVIEW && !((modifiers & XXWIDGETS_MOD_ALT) && (key == TUI_KEY_LEFT || key == TUI_KEY_RIGHT))) {
             int handled = 0;
             xxwidgets_status status = xxwidgets_hexview_key_input(widget, tui_hexview_key(key), modifiers, &handled);
@@ -1721,10 +1812,11 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             int anchor_y;
             if (selection >= 0 && selection < first) first = selection;
             else if (selection >= first + page_rows) first = selection - page_rows + 1;
-            int header_rows = widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ? 1 : 2;
+            int header_rows = widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ? (tui_filter_row(widget) ? 2 : 1) : 2;
             anchor_y = selection >= 0 ? selection - first + header_rows : header_rows;
             if (anchor_y >= widget->rect.height) anchor_y = widget->rect.height - 1;
-            xxwidgets_emit_context(widget, selection, widget->rect.width > 1 ? 1 : 0, anchor_y);
+            xxwidgets_emit_context(widget, filterable ? xxwidgets_tabular_value(widget, selection) : selection,
+                widget->rect.width > 1 ? 1 : 0, anchor_y);
             return XXWIDGETS_OK;
         }
         if (widget->kind == XXWIDGETS_ARCHIVEBROWSER && key == TUI_KEY_BACKSPACE) return xxwidgets_archivebrowser_user_up(widget);
@@ -1740,20 +1832,21 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             state->dirty = 1;
             return XXWIDGETS_OK;
         }
-        if (!widget->item_count) return XXWIDGETS_OK;
+        if (!row_count) return XXWIDGETS_OK;
         if (key == TUI_KEY_UP) selection = selection <= 0 ? 0 : selection - 1;
-        else if (key == TUI_KEY_DOWN) selection = selection < 0 ? 0 : ((size_t)selection + 1 < widget->item_count ? selection + 1 : selection);
+        else if (key == TUI_KEY_DOWN) selection = selection < 0 ? 0 : ((size_t)selection + 1 < row_count ? selection + 1 : selection);
         else if (key == TUI_KEY_HOME) selection = 0;
-        else if (key == TUI_KEY_END) selection = (int)widget->item_count - 1;
+        else if (key == TUI_KEY_END) selection = (int)row_count - 1;
         else if (key == TUI_KEY_PAGEUP) selection = selection <= page_rows ? 0 : selection - page_rows;
         else if (key == TUI_KEY_PAGEDOWN) {
             size_t next = selection < 0 ? 0 : (size_t)selection + (size_t)page_rows;
-            selection = (int)(next < widget->item_count ? next : widget->item_count - 1);
+            selection = (int)(next < row_count ? next : row_count - 1);
         } else if (key == TUI_KEY_ENTER || key == ' ') {
             xxwidgets_status status;
             if (selection < 0) selection = 0;
             status = widget->kind == XXWIDGETS_HEXVIEW ? xxwidgets_hexview_selection_input(widget, selection) : XXWIDGETS_OK;
             if (status != XXWIDGETS_OK) return status;
+            if (filterable) selection = xxwidgets_tabular_value(widget, selection);
             if (widget->kind != XXWIDGETS_HEXVIEW) widget->value = selection;
             state->dirty = 1;
             if ((widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) && key == TUI_KEY_ENTER) {
@@ -1767,6 +1860,7 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, selection);
             return XXWIDGETS_OK;
         } else return XXWIDGETS_OK;
+        if (filterable) selection = xxwidgets_tabular_value(widget, selection);
         if (selection != widget->value) {
             xxwidgets_status status = widget->kind == XXWIDGETS_HEXVIEW ? xxwidgets_hexview_selection_input(widget, selection) : XXWIDGETS_OK;
             if (status != XXWIDGETS_OK) return status;

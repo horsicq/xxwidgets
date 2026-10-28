@@ -878,6 +878,136 @@ xxwidgets_status xxwidgets_scan_directory_get_result(
     *result = view->records[index]->result;
     return XXWIDGETS_OK;
 }
+typedef struct directory_dialog {
+    xxwidgets_widget *window, *close;
+    xxwidgets_scan_directory *view;
+    int close_requested, relayout;
+} directory_dialog;
+
+static void directory_dialog_event(xxwidgets_app *app, const xxwidgets_event *event, void *user)
+{
+    directory_dialog *state = (directory_dialog *)user;
+    (void)app;
+    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == state->window) ||
+        (event->type == XXWIDGETS_EVENT_CLICK && event->widget == state->close) ||
+        (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) {
+        state->close_requested = 1;
+        return;
+    }
+    if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == state->window) {
+        state->relayout = 1;
+        return;
+    }
+    if (state->view) (void)xxwidgets_scan_directory_handle_event(state->view, event);
+}
+
+xxwidgets_status xxwidgets_scan_directory_dialog(xxwidgets_widget *owner, const char *title, const char *path,
+    const xxwidgets_scan_options *options, xxwidgets_scan_directory_file_fn scanner, void *user)
+{
+    const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}};
+    directory_dialog state = {0};
+    xxwidgets_app *app;
+    xxwidgets_event_fn previous_event;
+    void *previous_user;
+    xxwidgets_widget *previous_default;
+    xxwidgets_status status, cleanup;
+    int width = 110, height = 32, owner_enabled, disabled = 0, attached = 0, closing = 0;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !scanner) return XXWIDGETS_INVALID_ARGUMENT;
+    app = owner->app;
+    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
+    if (xxwidgets_app_backend(app) == XXWIDGETS_BACKEND_TUI) {
+        width = owner->rect.width - 4 > 66 ? owner->rect.width - 4 : 66;
+        height = owner->rect.height - 2 > 19 ? owner->rect.height - 2 : 19;
+    }
+    if (owner->rect.x > INT_MAX - width - 2 || owner->rect.y > INT_MAX - height - 1) return XXWIDGETS_INVALID_ARGUMENT;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    previous_default = app->modal_default;
+    owner_enabled = owner->enabled;
+    /* The form refuses to start under a modal window, so it comes first. */
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 1, width, height}, &state.window);
+    if (status == XXWIDGETS_OK) status = xxwidgets_window_set_minimum_size(state.window, 66, 19);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){width - 13, height - 3, 12, 2}, &state.close);
+    if (status == XXWIDGETS_OK) status = xxwidgets_scan_directory_create(state.window, (xxwidgets_rect){1, 1, width - 2, height - 4}, &state.view);
+    if (status == XXWIDGETS_OK) status = xxwidgets_scan_directory_set_scanner(state.view, scanner, user);
+    if (status == XXWIDGETS_OK && path && path[0]) status = xxwidgets_scan_directory_set_path(state.view, path);
+    if (status == XXWIDGETS_OK && options) status = xxwidgets_scan_directory_set_options(state.view, options);
+    if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(state.window, shortcuts, 1);
+    if (status != XXWIDGETS_OK) goto finish;
+    app->on_event = directory_dialog_event;
+    app->user_data = &state;
+    app->modal_window = state.window;
+    app->modal_default = NULL;
+    status = xxwidgets_widget_set_enabled(owner, 0);
+    if (status != XXWIDGETS_OK) goto finish;
+    disabled = 1;
+    if (app->ops->modal_owner) {
+        status = app->ops->modal_owner(state.window, owner, 1);
+        if (status != XXWIDGETS_OK) goto finish;
+        attached = 1;
+    }
+    (void)xxwidgets_widget_focus(CONTROL(state.view, PATH));
+    while (status == XXWIDGETS_OK && !app->quit) {
+        xxwidgets_scan_directory_progress progress;
+        status = xxwidgets_app_poll(app, 30);
+        if (status != XXWIDGETS_OK || app->quit) break;
+        if (state.relayout) {
+            xxwidgets_rect bounds;
+            state.relayout = 0;
+            if (xxwidgets_widget_get_rect(state.window, &bounds) == XXWIDGETS_OK && bounds.width >= 66 && bounds.height >= 19) {
+                (void)xxwidgets_scan_directory_set_rect(state.view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 4});
+                (void)xxwidgets_widget_set_rect(state.close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
+            }
+        }
+        if (state.close_requested) {
+            state.close_requested = 0;
+            closing = 1;
+            (void)xxwidgets_scan_directory_cancel(state.view);
+        }
+        /* The form's own Options dialog is modal too: step aside for it. */
+        app->modal_window = NULL;
+        status = xxwidgets_scan_directory_poll(state.view);
+        app->modal_window = state.window;
+        if (closing && xxwidgets_scan_directory_get_progress(state.view, &progress) == XXWIDGETS_OK &&
+            progress.state != XXWIDGETS_SCAN_DIRECTORY_RUNNING)
+            break;
+    }
+finish:
+    if (state.view) {
+        /* A worker still running must end before the form can go. */
+        (void)xxwidgets_scan_directory_cancel(state.view);
+        app->modal_window = NULL;
+        for (int tries = 0; tries < 6000; ++tries) {
+            xxwidgets_scan_directory_progress progress;
+            if (xxwidgets_scan_directory_get_progress(state.view, &progress) != XXWIDGETS_OK || progress.state != XXWIDGETS_SCAN_DIRECTORY_RUNNING) break;
+            xx_thread_sleep(10);
+            (void)xxwidgets_scan_directory_poll(state.view);
+        }
+    }
+    if (disabled) {
+        cleanup = xxwidgets_widget_set_enabled(owner, owner_enabled);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (attached) {
+        cleanup = app->ops->modal_owner(state.window, owner, 0);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    app->modal_window = NULL;
+    app->modal_default = previous_default;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
+    if (state.view) {
+        cleanup = xxwidgets_scan_directory_destroy(state.view);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (state.window) {
+        cleanup = xxwidgets_widget_destroy(state.window);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    return status;
+}
+
 xxwidgets_status xxwidgets_scan_directory_destroy(xxwidgets_scan_directory *view)
 {
     if (!view)

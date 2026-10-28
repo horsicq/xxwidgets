@@ -194,6 +194,7 @@ struct xxwidgets_widget {
     uint64_t binary_revision;
     struct xxwidgets_die_signature_edit_state *die_signature_edit;
     struct xxwidgets_debugger_table_state *debugger_table;
+    struct xxwidgets_text_table_state *text_table; /* XXWIDGETS_TABLE; rows use debugger_revision. */
     uint64_t debugger_revision;
     int process_selection; /* Transactional replacement selection hint. */
     char **scan_cells; /* Escaped cells, row * 4 + column. */
@@ -203,6 +204,13 @@ struct xxwidgets_widget {
     char **data_struct_cells; /* Escaped cells, row * 9 + column. */
     size_t data_struct_column_width[9];
     uint64_t data_struct_revision;
+    /* Table filters (xxwidgets_table_*): text per column, and the model rows
+     * they let through, rebuilt when the rows or the filters change. */
+    char **table_filters;
+    size_t table_filter_count;
+    size_t *table_rows, table_row_count;
+    uint64_t table_filter_revision, table_rows_key, table_rows_filter;
+    int table_rows_valid;
     struct xxwidgets_tree_state *tree;
     uint64_t tree_revision;
     uint64_t tree_content_revision;
@@ -300,8 +308,9 @@ static inline int xxwidgets_entropy_table(const xxwidgets_widget *widget)
 { return widget && (widget->kind == XXWIDGETS_ENTROPY_REGIONS || widget->kind == XXWIDGETS_ENTROPY_BYTES); }
 static inline int xxwidgets_binaryviewer_kind(const xxwidgets_widget *widget)
 { return widget && widget->kind >= XXWIDGET_RESOURCESVIEWER && widget->kind <= XXWIDGET_SYMBOLSVIEWER; }
+/* XXWIDGETS_TABLE is drawn like the debugger tables. */
 static inline int xxwidgets_debugger_table_kind(const xxwidgets_widget *widget)
-{ return widget && ((widget->kind >= XXWIDGETS_DEBUGGER_DISASM && widget->kind <= XXWIDGETS_DEBUGGER_STACK) || widget->kind == XXWIDGETS_MEMORY_MAP); }
+{ return widget && ((widget->kind >= XXWIDGETS_DEBUGGER_DISASM && widget->kind <= XXWIDGETS_DEBUGGER_STACK) || widget->kind == XXWIDGETS_MEMORY_MAP || widget->kind == XXWIDGETS_TABLE); }
 static inline int xxwidgets_tabular_kind(const xxwidgets_widget *widget)
 { return widget && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)); }
 /* Plot primitives use top-left coordinates, RGB colors, and borrowed text.
@@ -322,7 +331,8 @@ static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 }
 static inline uint64_t xxwidgets_row_revision(const xxwidgets_widget *widget)
 {
-    return xxwidgets_debugger_table_kind(widget) ? widget->debugger_revision
+    /* A filter change rebuilds the rows too. */
+    return widget->table_filter_revision + (xxwidgets_debugger_table_kind(widget) ? widget->debugger_revision
            : xxwidgets_binaryviewer_kind(widget) ? widget->binary_revision
            : xxwidgets_entropy_table(widget) ? widget->entropy_revision
            : widget->kind == XXWIDGETS_TREEVIEW         ? widget->tree_revision
@@ -330,7 +340,7 @@ static inline uint64_t xxwidgets_row_revision(const xxwidgets_widget *widget)
            : widget->kind == XXWIDGETS_DATA_STRUCT_TABLE ? widget->data_struct_revision
            : widget->kind == XXWIDGETS_ARCHIVEBROWSER ? widget->browser_revision
            : widget->kind == XXWIDGETS_ARCHIVEVIEW    ? widget->archive_revision
-                                                      : widget->hex_revision;
+                                                      : widget->hex_revision);
 }
 
 /* Backend input helpers. selection_input refreshes the cursor marker but does
@@ -422,7 +432,22 @@ void xxwidgets_data_struct_table_dispose(xxwidgets_widget *widget);
 void xxwidgets_data_struct_table_init(xxwidgets_widget *widget);
 const char *xxwidgets_data_struct_table_cell(const xxwidgets_widget *widget, size_t row, size_t column);
 size_t xxwidgets_data_struct_table_column_width(const xxwidgets_widget *widget, size_t column);
+/* Tables address rows as shown, after their filters: row text, cells and
+ * counts below take shown rows; widget->value and events stay model rows.
+ * tabular_value/tabular_row convert (-1 for none or hidden). */
 const char *xxwidgets_tabular_cell(const xxwidgets_widget *widget, size_t row, size_t column);
+const char *xxwidgets_tabular_model_cell(const xxwidgets_widget *widget, size_t model_row, size_t column);
+const char *xxwidgets_tabular_row_text(const xxwidgets_widget *widget, size_t row);
+size_t xxwidgets_tabular_rows(const xxwidgets_widget *widget);
+size_t xxwidgets_tabular_model_row(const xxwidgets_widget *widget, size_t row);
+size_t xxwidgets_tabular_display_row(const xxwidgets_widget *widget, size_t model);
+int xxwidgets_tabular_value(const xxwidgets_widget *widget, int row);
+int xxwidgets_tabular_row(const xxwidgets_widget *widget, int value);
+int xxwidgets_table_filterable(const xxwidgets_widget *widget);
+/* User input in a column's filter: applies it, rebuilds the view, reports a
+ * selection it hid with SELECT -1, then the change with CHANGE (the column). */
+xxwidgets_status xxwidgets_table_filter_input(xxwidgets_widget *widget, size_t column, const char *text);
+void xxwidgets_table_filter_dispose(xxwidgets_widget *widget);
 size_t xxwidgets_tabular_column_width(const xxwidgets_widget *widget, size_t column);
 size_t xxwidgets_tabular_column_count(const xxwidgets_widget *widget);
 const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_t column);
@@ -431,6 +456,14 @@ xxwidgets_status xxwidgets_binaryviewer_get_record(const xxwidgets_widget *, xxw
 xxwidgets_status xxwidgets_binaryviewer_get_selection(xxwidgets_widget *, xxwidgets_kind, size_t *, void *);
 void xxwidgets_binaryviewer_dispose(xxwidgets_widget *);
 void xxwidgets_debugger_table_dispose(xxwidgets_widget *);
+/* XXWIDGETS_TABLE: init takes the titles from widget->text. */
+xxwidgets_status xxwidgets_text_table_init(xxwidgets_widget *);
+/* set_rows selecting the given model row, or the first shown when filtered out. */
+xxwidgets_status xxwidgets_text_table_replace(xxwidgets_widget *, const char *const *cells, size_t rows, int selection);
+void xxwidgets_text_table_dispose(xxwidgets_widget *);
+const char *xxwidgets_text_table_title(const xxwidgets_widget *, size_t);
+const char *xxwidgets_text_table_cell(const xxwidgets_widget *, size_t, size_t);
+size_t xxwidgets_text_table_column_width(const xxwidgets_widget *, size_t);
 size_t xxwidgets_debugger_table_column_count(const xxwidgets_widget *);
 const char *xxwidgets_debugger_table_column_title(const xxwidgets_widget *, size_t);
 const char *xxwidgets_debugger_table_cell(const xxwidgets_widget *, size_t, size_t);

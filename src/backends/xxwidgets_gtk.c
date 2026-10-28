@@ -70,6 +70,7 @@ typedef struct gtk_app_state {
 
 typedef struct gtk_widget_state {
     GtkWidget *root;               /* Scrolled container for a list, otherwise the control. */
+    GtkWidget *filters[9];         /* Tables: a filter entry above each column. */
     GtkWidget *content;            /* A window's GtkLayout. */
     GtkWidget *content_box, *menu_bar;
     int menu_height;
@@ -887,10 +888,28 @@ static void scanresults_selection_read(xxwidgets_widget *widget)
     if (gtk_tree_selection_get_selected(selection, &model, &iter)) {
         GtkTreePath *path = gtk_tree_model_get_path(model, &iter);
         if (path) {
-            widget->value = gtk_tree_path_get_indices(path)[0];
+            /* The store holds the rows the filters show. */
+            int row = gtk_tree_path_get_indices(path)[0];
+            widget->value = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_value(widget, row) : row;
             gtk_tree_path_free(path);
         }
     }
+}
+
+static void table_filter_changed(GtkEditable *entry, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    size_t column = (size_t)GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(entry), "xxwidgets-filter-column"));
+    if (widget->app->syncing || !xxwidgets_focusable(widget)) return;
+    (void)xxwidgets_table_filter_input(widget, column, gtk_entry_get_text(GTK_ENTRY(entry)));
+}
+
+/* A filter entry is as wide as the column under it. */
+static void table_column_resized(GObject *object, GParamSpec *spec, gpointer data)
+{
+    GtkWidget *entry = data;
+    (void)spec;
+    gtk_widget_set_size_request(entry, gtk_tree_view_column_get_width(GTK_TREE_VIEW_COLUMN(object)), -1);
 }
 
 static void gtk_hex_pick(GtkMenuItem *item, gpointer data)
@@ -1248,7 +1267,7 @@ static void scanresults_sync(xxwidgets_widget *widget)
             }
         }
         gtk_list_store_clear(store);
-        for (row = 0; row < widget->item_count; ++row) {
+        for (row = 0; row < xxwidgets_tabular_rows(widget); ++row) {
             GtkTreeIter iter;
             gtk_list_store_append(store, &iter);
             for (column = 0; column < columns; ++column) {
@@ -1262,11 +1281,15 @@ static void scanresults_sync(xxwidgets_widget *widget)
         state->rendered_items = widget->item_count;
         state->rendered_hex_revision = xxwidgets_row_revision(widget);
     }
+    for (size_t column = 0; column < 9 && xxwidgets_table_filterable(widget); ++column)
+        if (state->filters[column] && strcmp(gtk_entry_get_text(GTK_ENTRY(state->filters[column])), xxwidgets_table_filter(widget, column)))
+            gtk_entry_set_text(GTK_ENTRY(state->filters[column]), xxwidgets_table_filter(widget, column));
     scanresults_selection_read(widget);
     if (refreshed || widget->value != previous) {
+        int shown = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_row(widget, previous) : previous;
         gtk_tree_selection_unselect_all(selection);
-        if (previous >= 0) {
-            GtkTreePath *path = gtk_tree_path_new_from_indices(previous, -1);
+        if (shown >= 0) {
+            GtkTreePath *path = gtk_tree_path_new_from_indices(shown, -1);
             gtk_tree_selection_select_path(selection, path);
             gtk_tree_view_set_cursor(tree, path, NULL, FALSE);
             gtk_tree_view_scroll_to_cell(tree, path, NULL, FALSE, 0, 0);
@@ -1721,9 +1744,9 @@ static void table_activated(GtkTreeView *native, GtkTreePath *path,
     (void)native;
     (void)column;
     if (widget->app->syncing || !xxwidgets_focusable(widget) || row < 0 ||
-        (size_t)row >= widget->item_count) return;
-    widget->value = row;
-    xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, row);
+        (size_t)row >= xxwidgets_tabular_rows(widget)) return;
+    widget->value = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_value(widget, row) : row;
+    xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
 }
 
 static gboolean gtk_die_key(GtkWidget *, GdkEventKey *, gpointer);
@@ -2585,6 +2608,7 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
         case XXWIDGETS_MEMORY_MAP:
+        case XXWIDGETS_TABLE:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -2623,6 +2647,16 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
                     gtk_tree_view_column_set_expand(view_column, column == 0);
                 g_object_set(renderer, "single-paragraph-mode", TRUE, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
                 gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
+                if (xxwidgets_table_filterable(widget) && column < 9) {
+                    GtkWidget *entry = gtk_entry_new();
+                    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), XXW_TR(widget->app, "Filter"));
+                    gtk_entry_set_width_chars(GTK_ENTRY(entry), 1);
+                    gtk_widget_set_size_request(entry, gtk_tree_view_column_get_fixed_width(view_column), -1);
+                    g_object_set_data(G_OBJECT(entry), "xxwidgets-filter-column", GUINT_TO_POINTER((unsigned)column));
+                    g_signal_connect(entry, "changed", G_CALLBACK(table_filter_changed), widget);
+                    g_signal_connect(view_column, "notify::width", G_CALLBACK(table_column_resized), entry);
+                    state->filters[column] = entry;
+                }
                 if (xxwidgets_debugger_table_kind(widget)) g_object_set(renderer, "family", "monospace", NULL);
                 if (widget->kind == XXWIDGETS_HEXVIEW) {
                     GtkWidget *button = gtk_tree_view_column_get_button(view_column);
@@ -2635,6 +2669,21 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
                     g_signal_connect(view_column, "notify::width", G_CALLBACK(gtk_hex_resized), widget);
                     g_signal_connect(button, "button-press-event", G_CALLBACK(gtk_hex_header_right), widget);
                 }
+            }
+            if (xxwidgets_table_filterable(widget)) {
+                /* The filters in a row above the column titles; GTK gives
+                 * header buttons the clicks a header entry would need. */
+                GtkWidget *scroll = state->root, *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+                GtkWidget *filters = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+                for (column = 0; column < columns && column < 9; ++column)
+                    if (state->filters[column]) gtk_box_pack_start(GTK_BOX(filters), state->filters[column], FALSE, FALSE, 0);
+                gtk_box_pack_start(GTK_BOX(box), filters, FALSE, FALSE, 0);
+                gtk_box_pack_start(GTK_BOX(box), scroll, TRUE, TRUE, 0);
+                g_object_unref(scroll);
+                g_object_ref_sink(box);
+                gtk_widget_show_all(filters);
+                gtk_widget_show(scroll);
+                state->root = box;
             }
             g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(native)), "changed", G_CALLBACK(scanresults_selected), widget);
             if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) {
@@ -3060,6 +3109,7 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
         case XXWIDGETS_MEMORY_MAP:
+        case XXWIDGETS_TABLE:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:

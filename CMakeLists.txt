@@ -245,6 +245,8 @@ add_library(xxwidgets
     src/xxwidgets_dialog.c
     src/xxwidgets_about.c
     src/xxwidgets_open_url.c
+    src/xxwidgets_table_filter.c
+    src/xxwidgets_table.c
     src/xxwidgets_process.c
     src/xxwidget_systemprocessesviewer.c
     src/xxwidget_systemprocessesviewer_hexview.c
@@ -702,7 +704,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_shortcuts.c
             src/die_engine/xxwidgets_die_signature_edit.c src/die_engine/xxwidgets_die_signature_editor.c)
         target_sources(xxwidgets_core_tests PRIVATE src/scan/xxwidgets_scanresults.c)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_data_struct_table.c src/xxwidgets_data_struct_view.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_data_struct_table.c src/xxwidgets_data_struct_view.c src/xxwidgets_table_filter.c src/xxwidgets_table.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_debugger_tables.c src/xxwidgets_debugger.c)
         target_sources(xxwidgets_core_tests PRIVATE tests/test_debugger_session.c src/xxwidgets_debugger_session.c
             src/xxwidgets_debugger/xxwidgets_debugger_arch.c
@@ -727,7 +729,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             XXWIDGETS_SCAN_BULK="${CMAKE_CURRENT_BINARY_DIR}/scan-directory-bulk")
         target_sources(xxwidgets_core_tests PRIVATE tests/test_shortcuts.c tests/test_hex_columns.c)
         target_sources(xxwidgets_core_tests PRIVATE tests/test_file_drops.c tests/test_canvas.c src/xxwidgets_canvas.c src/xxwidgets_entropy.c tests/test_entropy.c)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_strings.c tests/test_strings.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_strings.c tests/test_strings.c tests/test_table.c)
         if(UNIX)
             target_link_libraries(xxwidgets_core_tests PRIVATE m)
         endif()

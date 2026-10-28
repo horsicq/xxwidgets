@@ -32,7 +32,8 @@ appearance, keyboard behavior, accessibility, and input methods.
 - ScanResults with copied Type/Name/Version/Info metadata, row selection, and report export
 - ResourcesViewer, ImportsViewer, ExportsViewer and SymbolsViewer with typed xxfclib records and native/TUI tables
 - A two-panel data-structure browser and a nine-column structure-field table
-- A strings viewer composite with copied UTF-8 records, offset/byte/character metadata, filtering, selection, clipboard copy and CSV export
+- A table of text cells (`XXWIDGETS_TABLE`) with up to nine titled columns, and a filter under every column title in all tables
+- A strings viewer composite with copied UTF-8 records in a #/Offset/Address/Region/Size/Type/String table, filtering, selection, clipboard copy and CSV export
 - TreeView with copied hierarchy nodes, expansion, and stable node selection
 - A complete ScanPanel with a result tree, file-type combo, Flags/Databases checkbox combos, and Scan/Report buttons
 - UTF-8 text, visibility, enablement, focus, application/widget user data
@@ -1324,12 +1325,37 @@ The optional `xxwidgets::settings` adapter provides
 the named list from `xx_shortcuts_load()` into numeric application actions.
 Unknown names are ignored; recognized bindings use the same validation rules.
 
+## Tables and column filters
+
+`xxwidgets_table_create(owner, bounds, titles, columns, &table)` makes an
+`XXWIDGETS_TABLE`: 1 to `XXWIDGETS_TABLE_MAX_COLUMNS` (9) columns under the
+given titles. `xxwidgets_table_set_rows(table, cells, rows)` copies
+`rows * columns` UTF-8 cells row by row (NULL is empty), selects the first row
+and keeps the old rows when it fails. The value is the selected row; Enter or a
+double click emits ACTIVATE. Cells use a fixed-pitch font, control characters
+show as `\xNN`, and the columns grow to fit their cells.
+
+Every table has a filter under each column title: this table, the Resources,
+Imports, Exports, Symbols and Strings viewers, Memory Map, data structures,
+entropy regions, scan results and processes. A filter is a case-insensitive
+substring; a row stays when it matches every non-empty filter. Windows uses the
+list header's own filter bar, GTK an entry above each column, and the terminal
+a "Filter" row under the titles (tables at least 6 rows high): `/` starts
+typing, Left/Right pick the column, Enter or Up/Down end it. macOS shows the
+filtered rows; it has no filter input yet.
+
+`xxwidgets_table_set_filter`, `xxwidgets_table_filter`,
+`xxwidgets_table_clear_filters` and `xxwidgets_table_visible_count` work on all
+of these tables. Values, events and record getters keep the indexes of all
+rows. Typing in a filter emits CHANGE with the column as its value, after
+SELECT -1 when it hid the selected row; setters emit no events.
+
 ## Strings viewer
 
-`xxwidgets_strings` presents copied scanner results with 64-bit offsets, byte
-sizes, decoded character counts, encoding names and UTF-8 text. It provides a
-filter, selection metadata, full-text copy and CSV export through native and
-terminal controls. Include `xxwidgets/xxwidgets_strings.h`; see the
+`xxwidgets_strings` presents copied scanner results with 64-bit offsets,
+addresses, regions, byte sizes, decoded character counts, encoding names and
+UTF-8 text. It provides a filter, a filter per column, selection metadata,
+full-text copy and CSV export through native and terminal controls. Include `xxwidgets/xxwidgets_strings.h`; see the
 [strings viewer reference](docs/strings-viewer-reference.md) for ownership,
 event routing and integration details. The widget is independent of a scanner.
 
@@ -1550,7 +1576,8 @@ handling and Close/Esc. It reuses the table, filter, selection, clipboard and
 CSV-export APIs. View (or activating a result) opens the complete selected
 text in an owned text dialog and then returns to the same browser/filter.
 Text dialogs may be owned by the current modal; unrelated nested modals remain
-busy. TUI archive rows now emit ACTIVATE on Enter, as native rows do.
+busy. TUI archive rows now emit ACTIVATE on Enter, as native rows do. The
+modal is 128 × 32 cells; in the terminal it takes its owner's size.
 
 Save CSV is deferred until after input dispatch, asks for a native destination,
 exports the visible records and invokes the optional host callback with a

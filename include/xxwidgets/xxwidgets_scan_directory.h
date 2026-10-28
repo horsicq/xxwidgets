@@ -88,6 +88,12 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_get_progress(
 XXWIDGETS_API size_t xxwidgets_scan_directory_result_count(const xxwidgets_scan_directory *view);
 /* Borrowed strings/detections survive polling; invalidated by start or destroy.
  * Rows include files with no detections and file/directory errors. */
+/* The scanner in its own modal window over owner, as Detect It Easy's
+ * Directory button opens it: path (may be NULL) and options preset, scanner
+ * as above. Close or Escape stops a running scan, waits for it and returns.
+ * Modal rules are those of xxwidgets_about_dialog_show. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_dialog(xxwidgets_widget *owner, const char *title, const char *path,
+    const xxwidgets_scan_options *options, xxwidgets_scan_directory_file_fn scanner, void *user);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_get_result(
     const xxwidgets_scan_directory *view, size_t index, xxwidgets_scan_directory_result *result);
 #ifdef __cplusplus

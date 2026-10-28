@@ -384,16 +384,18 @@ xxwidgets_status xxwidgets_die_signature_editor_clear_result(xxwidgets_die_signa
 }
 
 typedef struct editor_dialog {
-    xxwidgets_widget *window, *close;
+    xxwidgets_widget *window, *close, *list; /* list: the Signatures window only */
     xxwidgets_die_signature_editor *editor;
-    int close_requested, relayout, warned, done;
+    int close_requested, relayout, warned, done, list_width, pending_select;
 } editor_dialog;
 
 static void editor_dialog_layout(editor_dialog *state)
 {
     xxwidgets_rect bounds;
-    if (xxwidgets_widget_get_rect(state->window, &bounds) != XXWIDGETS_OK || bounds.width < 74 || bounds.height < 25) return;
-    (void)xxwidgets_die_signature_editor_set_rect(state->editor, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 4});
+    int left = state->list ? state->list_width + 2 : 1;
+    if (xxwidgets_widget_get_rect(state->window, &bounds) != XXWIDGETS_OK || bounds.width < left + 73 || bounds.height < 25) return;
+    if (state->list) (void)xxwidgets_widget_set_rect(state->list, (xxwidgets_rect){1, 1, state->list_width, bounds.height - 4});
+    (void)xxwidgets_die_signature_editor_set_rect(state->editor, (xxwidgets_rect){left, 1, bounds.width - left - 1, bounds.height - 4});
     (void)xxwidgets_widget_set_rect(state->close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
 }
 
@@ -411,6 +413,10 @@ static void editor_dialog_event(xxwidgets_app *app, const xxwidgets_event *event
         state->relayout = 1;
         return;
     }
+    if (state->list && event->widget == state->list && event->type == XXWIDGETS_EVENT_SELECT) {
+        state->pending_select = event->value;
+        return;
+    }
     if (!state->editor) return;
     if (event->type == XXWIDGETS_EVENT_SHORTCUT) {
         xxwidgets_event action = {0};
@@ -426,8 +432,30 @@ static void editor_dialog_event(xxwidgets_app *app, const xxwidgets_event *event
     (void)xxwidgets_die_signature_editor_handle_event(state->editor, event);
 }
 
-xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, const char *title,
-    const char *source, const char *path, xxwidgets_die_signature_editor_run_fn run, void *user_data)
+typedef struct catalog {
+    const char *const *names;
+    size_t count, current;
+    xxwidgets_die_signature_load_fn load;
+    void *user;
+} catalog;
+
+/* Puts entry index in the editor; the list follows what is shown. */
+static xxwidgets_status catalog_show(editor_dialog *state, catalog *entries, size_t index)
+{
+    char *source = NULL;
+    const char *path = NULL;
+    xxwidgets_status status = entries->load(index, &source, &path, entries->user);
+    if (status == XXWIDGETS_OK && !source) status = XXWIDGETS_INVALID_ARGUMENT;
+    if (status == XXWIDGETS_OK) status = xxwidgets_die_signature_editor_set_source(state->editor, source, path, 1);
+    free(source);
+    if (status != XXWIDGETS_OK) return status;
+    entries->current = index;
+    state->warned = 0;
+    return state->list ? xxwidgets_widget_set_value(state->list, (int)index) : XXWIDGETS_OK;
+}
+
+static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *title, const char *source, const char *path,
+    catalog *entries, xxwidgets_die_signature_editor_run_fn run, void *user_data)
 {
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}, {"Ctrl+F", 2}, {"Meta+F", 2}, {"F3", 3}, {"Ctrl+S", 4}, {"Meta+S", 4}};
     editor_dialog state = {0};
@@ -436,8 +464,9 @@ xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, 
     xxwidgets_event_fn previous_event;
     void *previous_user;
     xxwidgets_status status, cleanup;
-    int width = 100, height = 36, owner_enabled, disabled = 0, attached = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !source) return XXWIDGETS_INVALID_ARGUMENT;
+    int width = 100, height = 36, owner_enabled, disabled = 0, attached = 0, left = 1;
+    size_t i;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || (!source && !entries)) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     if (xxwidgets_app_backend(app) == XXWIDGETS_BACKEND_TUI) {
@@ -445,6 +474,12 @@ xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, 
         width = owner->rect.width - 4 > 74 ? owner->rect.width - 4 : 74;
         height = owner->rect.height - 2 > 25 ? owner->rect.height - 2 : 25;
     }
+    if (entries && (xxwidgets_app_backend(app) != XXWIDGETS_BACKEND_TUI || width >= 100)) {
+        state.list_width = xxwidgets_app_backend(app) == XXWIDGETS_BACKEND_TUI ? width / 4 : 32;
+        left = state.list_width + 2;
+        if (xxwidgets_app_backend(app) != XXWIDGETS_BACKEND_TUI) width += left - 1;
+    }
+    state.pending_select = -1;
     if (owner->rect.x > INT_MAX - width - 2 || owner->rect.y > INT_MAX - height - 1) return XXWIDGETS_INVALID_ARGUMENT;
     previous_event = app->on_event;
     previous_user = app->user_data;
@@ -462,13 +497,17 @@ xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, 
         (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 1, width, height}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
-    status = xxwidgets_window_set_minimum_size(state.window, 74, 25);
+    status = xxwidgets_window_set_minimum_size(state.window, left + 73, 25);
+    if (status == XXWIDGETS_OK && state.list_width)
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LISTBOX, "", (xxwidgets_rect){1, 1, state.list_width, height - 4}, &state.list);
+    for (i = 0; status == XXWIDGETS_OK && state.list && i < entries->count; ++i) status = xxwidgets_listbox_add(state.list, entries->names[i]);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"),
             (xxwidgets_rect){width - 13, height - 3, 12, 2}, &state.close);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_die_signature_editor_create(state.window, (xxwidgets_rect){1, 1, width - 2, height - 4}, &state.editor);
-    if (status == XXWIDGETS_OK) status = xxwidgets_die_signature_editor_set_source(state.editor, source, path, 1);
+        status = xxwidgets_die_signature_editor_create(state.window, (xxwidgets_rect){left, 1, width - left - 1, height - 4}, &state.editor);
+    if (status == XXWIDGETS_OK)
+        status = entries ? catalog_show(&state, entries, entries->current) : xxwidgets_die_signature_editor_set_source(state.editor, source, path, 1);
     if (status == XXWIDGETS_OK && run) status = xxwidgets_die_signature_editor_set_run_callback(state.editor, run, user_data);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(state.window, shortcuts, sizeof(shortcuts) / sizeof(shortcuts[0]));
     if (status != XXWIDGETS_OK) goto finish;
@@ -499,6 +538,20 @@ xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, 
             (void)xxwidgets_widget_set_text(state.editor->controls[XXWIDGETS_DIE_EDITOR_STATUS],
                 XXW_TR(app, "Unsaved changes. Close again to discard them."));
         }
+        if (state.pending_select >= 0) {
+            size_t chosen = (size_t)state.pending_select;
+            state.pending_select = -1;
+            if (chosen < entries->count && chosen != entries->current) {
+                if (xxwidgets_die_signature_editor_modified(state.editor) && !state.warned) {
+                    /* Keep the draft once: the list goes back to it. */
+                    state.warned = 1;
+                    (void)xxwidgets_widget_set_value(state.list, (int)entries->current);
+                    (void)xxwidgets_widget_set_text(state.editor->controls[XXWIDGETS_DIE_EDITOR_STATUS],
+                        XXW_TR(app, "Unsaved changes. Choose again to discard them."));
+                } else if (catalog_show(&state, entries, chosen) != XXWIDGETS_OK)
+                    (void)xxwidgets_widget_set_value(state.list, (int)entries->current);
+            }
+        }
         (void)xxwidgets_die_signature_editor_process_pending(state.editor);
     }
 finish:
@@ -524,6 +577,25 @@ finish:
     app->user_data = previous_user;
     if (focus) (void)xxwidgets_widget_focus(focus);
     return status;
+}
+
+xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, const char *title,
+    const char *source, const char *path, xxwidgets_die_signature_editor_run_fn run, void *user_data)
+{
+    return editor_dialog_run(owner, title, source, path, NULL, run, user_data);
+}
+
+xxwidgets_status xxwidgets_die_signatures_dialog(xxwidgets_widget *owner, const char *title,
+    const char *const *names, size_t count, size_t selected, xxwidgets_die_signature_load_fn load,
+    xxwidgets_die_signature_editor_run_fn run, void *user_data)
+{
+    catalog entries;
+    size_t i;
+    if (!names || !count || count > INT_MAX || selected >= count || !load) return XXWIDGETS_INVALID_ARGUMENT;
+    for (i = 0; i < count; ++i) if (!names[i] || !xxwidgets_valid_utf8(names[i])) return XXWIDGETS_INVALID_ARGUMENT;
+    entries.names = names; entries.count = count; entries.current = selected;
+    entries.load = load; entries.user = user_data;
+    return editor_dialog_run(owner, title, NULL, NULL, &entries, run, user_data);
 }
 
 xxwidgets_status xxwidgets_die_signature_editor_set_run_callback(xxwidgets_die_signature_editor *editor,

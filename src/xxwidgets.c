@@ -289,7 +289,7 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     xxwidgets_status status;
     if (!out_widget) return XXWIDGETS_INVALID_ARGUMENT;
     *out_widget = NULL;
-    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_MEMORY_MAP || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
+    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_TABLE || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
         (kind == XXWIDGETS_WINDOW ? parent != NULL : (!parent || parent->app != app || parent->kind != XXWIDGETS_WINDOW)))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (app->dispatch_depth || app->polling) return XXWIDGETS_BUSY;
@@ -312,6 +312,10 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     if (kind == XXWIDGETS_DATA_STRUCT_TABLE) xxwidgets_data_struct_table_init(widget);
     if (kind == XXWIDGETS_DIE_SIGNATURE_EDIT) {
         status = xxwidgets_die_edit_init(widget);
+        if (status != XXWIDGETS_OK) { free(widget->text); free(widget); return status; }
+    }
+    if (kind == XXWIDGETS_TABLE) {
+        status = xxwidgets_text_table_init(widget);
         if (status != XXWIDGETS_OK) { free(widget->text); free(widget); return status; }
     }
     tail = &app->widgets;
@@ -361,7 +365,9 @@ xxwidgets_status xxwidgets_widget_destroy(xxwidgets_widget *widget)
     xxwidgets_combobox_dispose(widget);
     xxwidgets_scanresults_dispose(widget);
     xxwidgets_binaryviewer_dispose(widget);
+    xxwidgets_table_filter_dispose(widget);
     xxwidgets_debugger_table_dispose(widget);
+    xxwidgets_text_table_dispose(widget);
     free(widget->processes);
     xxwidgets_data_struct_table_dispose(widget);
     xxwidgets_entropy_table_dispose(widget);

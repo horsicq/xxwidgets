@@ -12,10 +12,15 @@ typedef struct xxwidgets_strings xxwidgets_strings;
 /* Display metadata supplied by a scanner. Strings are valid UTF-8 and copied;
  * text is decoded text, encoding is a nonempty display name. Offsets and byte
  * sizes describe the original bytes, character_length counts decoded symbols.
- * The widget neither scans files nor retains their bytes. */
+ * region names the section or segment holding the string (NULL for none) and
+ * address is where it is loaded when has_address is nonzero. The widget
+ * neither scans files nor retains their bytes. */
 typedef struct xxwidgets_string_record {
     uint64_t offset, byte_size, character_length;
     const char *encoding, *text;
+    const char *region;
+    uint64_t address;
+    int has_address;
 } xxwidgets_string_record;
 
 typedef enum xxwidgets_strings_control_id {
@@ -35,9 +40,12 @@ typedef enum xxwidgets_strings_control_id {
  * its child controls. Destroy before its WINDOW owner/application. Forward
  * events to handle_event: filtering, selection and Copy are handled here.
  * VIEW and SAVE clicks are left to the caller; defer modal dialogs and file
- * writes until after the event callback. RESULTS is an ARCHIVEVIEW row renderer;
- * use this composite's getters for string records. ACTIVATE may also open View.
- * No setters emit user-input events. */
+ * writes until after the event callback. RESULTS is an XXWIDGETS_TABLE with the
+ * columns #, Offset, Address, Region, Size, Type and String, each with its own
+ * filter (xxwidgets_table_set_filter); its rows are the records FILTER lets
+ * through and its value indexes them. Use this composite's getters for string
+ * records. HEADER is kept hidden. ACTIVATE may also open View. No setters emit
+ * user-input events. */
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_strings **out);
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_destroy(xxwidgets_strings *view);
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_set_rect(xxwidgets_strings *view, xxwidgets_rect bounds);
@@ -48,7 +56,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_strings_handle_event(xxwidgets_strings 
  * preserve the preceding records and displayed rows. */
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_set_records(xxwidgets_strings *view, const xxwidgets_string_record *records, size_t count);
 /* Substring search over text/encoding, ASCII case-insensitive; other UTF-8
- * bytes compare exactly. Keeps selection if that record remains visible. */
+ * bytes compare exactly. Keeps selection if that record remains visible.
+ * Visible records pass this filter and the column filters of RESULTS. */
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_set_filter(xxwidgets_strings *view, const char *filter);
 XXWIDGETS_API size_t xxwidgets_strings_count(const xxwidgets_strings *view);
 XXWIDGETS_API size_t xxwidgets_strings_visible_count(const xxwidgets_strings *view);

@@ -44,6 +44,18 @@ typedef enum xxwidgets_scan_panel_control_id {
     XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
     XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL,
     XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL,
+    XXWIDGETS_SCAN_PANEL_SIGNATURES,
+    XXWIDGETS_SCAN_PANEL_DIRECTORY,
+    XXWIDGETS_SCAN_PANEL_LOG,
+    XXWIDGETS_SCAN_PANEL_ELAPSED,
+    XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL,
+    XXWIDGETS_SCAN_PANEL_ENDIANNESS,
+    XXWIDGETS_SCAN_PANEL_MODE_LABEL,
+    XXWIDGETS_SCAN_PANEL_MODE,
+    XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL,
+    XXWIDGETS_SCAN_PANEL_ARCHITECTURE,
+    XXWIDGETS_SCAN_PANEL_TYPE_LABEL,
+    XXWIDGETS_SCAN_PANEL_TYPE,
     XXWIDGETS_SCAN_PANEL_CONTROL_COUNT
 } xxwidgets_scan_panel_control_id;
 
@@ -58,10 +70,13 @@ enum {
     XXWIDGETS_SCAN_DATABASE_CUSTOM = 1u << 1
 };
 
-/* Complete scan UI: a file-type combo box, labeled checkbox combo boxes,
- * Scan/Report push buttons, and a hierarchical result tree. The application
- * supplies the scan engine. Bounds use text cells, require width >= 44 and
- * height >= 14. Children belong
+/* Complete scan UI laid out like Detect It Easy's: the file type ("Scan")
+ * with the file's Endianness, Mode, Architecture and Type on top, the result
+ * tree, then Signatures, Flags, Database, the include/exclude tag filters and
+ * a tall Scan button, and below them Directory, Log, the report (">") and the
+ * scan time. The Flags, Database and tag labels exist but stay hidden: their
+ * combo boxes name themselves. The application supplies the scan engine.
+ * Bounds use text cells, require width >= 44 and height >= 14. Children belong
  * to the owner WINDOW and events use its app callback. Destroy the panel before
  * its owner/app; borrowed control handles must not be destroyed separately.
  * BUTTON clicks are handled by the application; call show_report after polling.
@@ -69,6 +84,8 @@ enum {
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_panel **out_panel);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_destroy(xxwidgets_scan_panel *panel);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_rect(xxwidgets_scan_panel *panel, xxwidgets_rect bounds);
+/* Shows or hides every control; the labels DIE does without stay hidden. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_visible(xxwidgets_scan_panel *panel, int visible);
 /* Borrowed handles also allow an application to place controls using pixels.
  * FILE_TYPE is a normal COMBOBOX initially containing selected "Automatic"
  * with UINT64 value 0. Replace its records using xxwidgets_combobox_set_records
@@ -104,6 +121,12 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_tree(xxwidgets_scan_pane
     const xxwidgets_tree_color *colors, size_t node_count, size_t detection_count, const char *report);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_results(xxwidgets_scan_panel *panel, const char *file_label, const xxwidgets_scan_result *results, size_t count,
                                                                 const char *report);
+/* What the format parser says about the scanned file, shown above the
+ * results; NULL or "" leaves a field empty. Cleared with the results. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_file_info(xxwidgets_scan_panel *panel, const char *endianness,
+    const char *mode, const char *architecture, const char *type);
+/* The last scan's duration, shown as "N msec"; a negative value clears it. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_elapsed(xxwidgets_scan_panel *panel, long long msec);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_clear(xxwidgets_scan_panel *panel);
 XXWIDGETS_API size_t xxwidgets_scan_panel_count(const xxwidgets_scan_panel *panel);
 /* required includes NUL; short output remains valid UTF-8. */

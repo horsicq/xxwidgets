@@ -1740,8 +1740,9 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 {
     if (!widget || widget->app->syncing || !xxwidgets_focusable(widget)) return;
     NSInteger row = [(NSTableView *)sender clickedRow];
-    if (row < 0 || (size_t)row >= widget->item_count) return;
-    widget->value = (int)row;
+    if (row < 0 || (size_t)row >= xxwidgets_tabular_rows(widget)) return;
+    /* The table shows the rows its filters let through. */
+    widget->value = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_value(widget, (int)row) : (int)row;
     xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
 }
 
@@ -1921,14 +1922,15 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)table
 {
     (void)table;
-    return widget ? (NSInteger)widget->item_count : 0;
+    if (!widget) return 0;
+    return xxwidgets_table_filterable(widget) ? (NSInteger)xxwidgets_tabular_rows(widget) : (NSInteger)widget->item_count;
 }
 
 - (id)tableView:(NSTableView *)table objectValueForTableColumn:(NSTableColumn *)column
              row:(NSInteger)row
 {
     (void)table;
-    if (!widget || row < 0 || (size_t)row >= widget->item_count) return @"";
+    if (!widget || row < 0 || (size_t)row >= (xxwidgets_table_filterable(widget) ? xxwidgets_tabular_rows(widget) : widget->item_count)) return @"";
     if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
         const char *value = xxwidgets_archivebrowser_cell(widget, (size_t)row,
             (xxwidgets_archive_column)[[column identifier] intValue]);
@@ -2031,6 +2033,7 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 {
     if (!widget || widget->app->syncing || !xxwidgets_focusable(widget)) return;
     int value = (int)[(NSTableView *)[notification object] selectedRow];
+    if (xxwidgets_table_filterable(widget)) value = xxwidgets_tabular_value(widget, value);
     if (widget->kind == XXWIDGETS_HEXVIEW) {
         if (xxwidgets_hexview_selection_input(widget, value) != XXWIDGETS_OK) return;
     } else widget->value = value;
@@ -2559,6 +2562,7 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
         case XXWIDGETS_MEMORY_MAP:
+        case XXWIDGETS_TABLE:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -2871,6 +2875,7 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
         case XXWIDGETS_MEMORY_MAP:
+        case XXWIDGETS_TABLE:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -2978,7 +2983,8 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
             }
             if (widget->kind == XXWIDGETS_ARCHIVEBROWSER || xxwidgets_tabular_kind(widget))
                 cocoa_size_table(widget);
-            BOOL selection_changed = [table selectedRow] != widget->value;
+            int shown = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_row(widget, widget->value) : widget->value;
+            BOOL selection_changed = [table selectedRow] != shown;
             if (widget->kind == XXWIDGETS_ARCHIVEBROWSER) {
                 NSMutableIndexSet *indexes = [NSMutableIndexSet indexSet];
                 for (size_t i = 0; i < widget->item_count; ++i)
@@ -2986,12 +2992,12 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
                 selection_changed = ![indexes isEqualToIndexSet:[table selectedRowIndexes]];
                 if (selection_changed) [table selectRowIndexes:indexes byExtendingSelection:NO];
             } else if (selection_changed) {
-                if (widget->value < 0) [table deselectAll:nil];
-                else [table selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)widget->value]
+                if (shown < 0) [table deselectAll:nil];
+                else [table selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)shown]
                         byExtendingSelection:NO];
             }
-            if (xxwidgets_formatted_rows(widget) && widget->value >= 0 &&
-                (refreshed || selection_changed)) [table scrollRowToVisible:widget->value];
+            if (xxwidgets_formatted_rows(widget) && shown >= 0 &&
+                (refreshed || selection_changed)) [table scrollRowToVisible:shown];
             [table setAccessibilityLabel:text];
             break;
         }

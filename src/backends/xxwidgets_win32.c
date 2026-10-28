@@ -119,6 +119,7 @@ static LRESULT CALLBACK win32_checkcombo_control_proc(HWND handle, UINT message,
 static xxwidgets_status win32_sync_combo(xxwidgets_widget *widget);
 static xxwidgets_status win32_scanresults_columns(xxwidgets_widget *widget);
 static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
+static LRESULT CALLBACK win32_table_filter_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
 static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
 static void win32_hexview_overview_sync(xxwidgets_widget *widget);
 static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
@@ -1478,30 +1479,47 @@ static size_t win32_tree_mark_at(xxwidgets_widget *control, HWND handle, int x, 
     return count - 1 - (size_t)((client.right - 1 - x) / width);
 }
 
+/* Light or dark pair of a node's colors for the current system palette. */
+static void win32_tree_colors(xxwidgets_widget *control, size_t index, uint32_t *foreground, uint32_t *background)
+{
+    xxwidgets_tree_color colors = xxwidgets_treeview_node_color(control, index);
+    COLORREF window = GetSysColor(COLOR_WINDOW), text = GetSysColor(COLOR_WINDOWTEXT);
+    int dark = GetRValue(window) + GetGValue(window) + GetBValue(window) <
+        GetRValue(text) + GetGValue(text) + GetBValue(text);
+    *foreground = dark ? colors.dark_foreground : colors.foreground;
+    *background = dark ? colors.dark_background : colors.background;
+}
+
+static COLORREF win32_rgb(uint32_t color) { return RGB((color >> 16) & 255, (color >> 8) & 255, color & 255); }
+
+/* As DIE draws its S and ? columns: the labels in the row's own colors. */
 static void win32_tree_draw_marks(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
 {
     HWND handle = draw->nmcd.hdr.hwndFrom;
     HDC dc = draw->nmcd.hdc;
     RECT client, row = draw->nmcd.rc;
-    size_t mark, count = xxwidgets_treeview_mark_count(control);
-    unsigned int marks = xxwidgets_treeview_node_marks(control, (size_t)draw->nmcd.lItemlParam);
+    size_t mark, count = xxwidgets_treeview_mark_count(control), index = (size_t)draw->nmcd.lItemlParam;
+    unsigned int marks = xxwidgets_treeview_node_marks(control, index);
+    uint32_t foreground, background;
     int width, height = row.bottom - row.top, left, mode;
     COLORREF text;
+    HBRUSH fill;
     if (!count || !GetClientRect(handle, &client) || height <= 0) return;
-    text = SetTextColor(dc, GetSysColor(control->enabled ? COLOR_BTNTEXT : COLOR_GRAYTEXT));
+    win32_tree_colors(control, index, &foreground, &background);
+    text = SetTextColor(dc, !control->enabled ? GetSysColor(COLOR_GRAYTEXT) :
+        foreground != UINT32_MAX ? win32_rgb(foreground) : GetSysColor(COLOR_WINDOWTEXT));
     mode = SetBkMode(dc, TRANSPARENT);
     width = win32_tree_mark_width(control, dc, height);
     left = client.right - width * (int)count;
     row.left = left; row.right = client.right;
-    FillRect(dc, &row, GetSysColorBrush(COLOR_WINDOW));
+    fill = background != UINT32_MAX && control->enabled ? CreateSolidBrush(win32_rgb(background)) : NULL;
+    FillRect(dc, &row, fill ? fill : GetSysColorBrush(COLOR_WINDOW));
+    if (fill) DeleteObject(fill);
     for (mark = 0; mark < count; ++mark) {
-        RECT button = {left + width * (int)mark + 1, row.top + 1, left + width * (int)(mark + 1) - 1, row.bottom - 1};
+        RECT cell = {left + width * (int)mark, row.top, left + width * (int)(mark + 1), row.bottom};
         wchar_t *label;
-        if (!(marks >> mark & 1u)) continue;
-        FillRect(dc, &button, GetSysColorBrush(COLOR_BTNFACE));
-        FrameRect(dc, &button, GetSysColorBrush(COLOR_3DSHADOW));
-        if (win32_wide(xxwidgets_treeview_mark_label(control, mark), &label) != XXWIDGETS_OK) continue;
-        DrawTextW(dc, label, -1, &button, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        if (!(marks >> mark & 1u) || win32_wide(xxwidgets_treeview_mark_label(control, mark), &label) != XXWIDGETS_OK) continue;
+        DrawTextW(dc, label, -1, &cell, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         free(label);
     }
     SetBkMode(dc, mode);
@@ -1519,12 +1537,8 @@ static LRESULT win32_tree_draw(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
         return CDRF_DODEFAULT;
     }
     if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
-        xxwidgets_tree_color colors = xxwidgets_treeview_node_color(control, (size_t)draw->nmcd.lItemlParam);
-        COLORREF window = GetSysColor(COLOR_WINDOW), text = GetSysColor(COLOR_WINDOWTEXT);
-        int dark = GetRValue(window) + GetGValue(window) + GetBValue(window) <
-            GetRValue(text) + GetGValue(text) + GetBValue(text);
-        uint32_t color = dark ? colors.dark_foreground : colors.foreground;
-        uint32_t background = dark ? colors.dark_background : colors.background;
+        uint32_t color, background;
+        win32_tree_colors(control, (size_t)draw->nmcd.lItemlParam, &color, &background);
         if (color != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
             draw->clrText = RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
         if (background != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
@@ -1931,7 +1945,7 @@ static void win32_systemprocessesviewer_context(xxwidgets_widget *widget, LPARAM
         memset(&hit, 0, sizeof(hit));
         hit.pt = point;
         row = (int)SendMessageW(handle, LVM_SUBITEMHITTEST, 0, (LPARAM)&hit);
-        if (row >= 0 && (size_t)row >= widget->item_count) row = -1;
+        if (row >= 0 && (size_t)row >= xxwidgets_tabular_rows(widget)) row = -1;
         ++widget->app->syncing;
         {
             LVITEMW item;
@@ -1943,14 +1957,14 @@ static void win32_systemprocessesviewer_context(xxwidgets_widget *widget, LPARAM
                 SendMessageW(handle, LVM_SETITEMSTATE, (WPARAM)row, (LPARAM)&item);
             }
         }
-        widget->value = row;
+        widget->value = xxwidgets_tabular_value(widget, row);
         --widget->app->syncing;
         SetFocus(handle);
-        xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, row);
+        xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
         if (win32_read_value(widget) != XXWIDGETS_OK) return;
-        row = widget->value;
+        row = xxwidgets_tabular_row(widget, widget->value);
     }
-    widget->value = row;
+    widget->value = xxwidgets_tabular_value(widget, row);
     if (keyboard) {
         RECT bounds, client;
         point.x = 8;
@@ -1969,7 +1983,7 @@ static void win32_systemprocessesviewer_context(xxwidgets_widget *widget, LPARAM
             if (point.y >= client.bottom) point.y = client.bottom > 0 ? client.bottom - 1 : 0;
         }
     }
-    xxwidgets_emit_context(widget, row, (int)point.x, (int)point.y);
+    xxwidgets_emit_context(widget, widget->value, (int)point.x, (int)point.y);
 }
 
 static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT message, WPARAM wp,
@@ -2622,6 +2636,7 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
         case XXWIDGETS_MEMORY_MAP:
+        case XXWIDGETS_TABLE:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
@@ -2680,6 +2695,8 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_HEXVIEW)
         status = win32_hexview_create_overview(widget, x, y, width, height);
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER && !SetWindowSubclass(handle, win32_systemprocessesviewer_proc, 1, (DWORD_PTR)widget))
+        status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && xxwidgets_table_filterable(widget) && !SetWindowSubclass(handle, win32_table_filter_proc, 7, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && (xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) && !SetWindowSubclass(handle, win32_binaryviewer_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
@@ -3565,14 +3582,68 @@ static xxwidgets_status win32_scanresults_columns(xxwidgets_widget *widget)
         free(title);
         if (status != XXWIDGETS_OK) return status;
     }
+    if (xxwidgets_table_filterable(widget)) {
+        /* The header's own filter bar: a text filter under every title. */
+        HWND header = (HWND)SendMessageW(handle, LVM_GETHEADER, 0, 0);
+        if (!header) return XXWIDGETS_PLATFORM_ERROR;
+        SetWindowLongPtrW(header, GWL_STYLE, GetWindowLongPtrW(header, GWL_STYLE) | HDS_FILTERBAR);
+        SendMessageW(header, HDM_SETFILTERCHANGETIMEOUT, 0, 300);
+        for (column = 0; column < count; ++column) {
+            wchar_t *text = NULL;
+            HD_TEXTFILTERW filter;
+            HDITEMW item;
+            xxwidgets_status status = win32_wide(xxwidgets_table_filter(widget, column), &text);
+            if (status != XXWIDGETS_OK) return status;
+            filter.pszText = text;
+            filter.cchTextMax = 256;
+            memset(&item, 0, sizeof(item));
+            item.mask = HDI_FILTER;
+            item.type = HDFT_ISSTRING;
+            item.pvFilter = &filter;
+            SendMessageW(header, HDM_SETITEMW, (WPARAM)column, (LPARAM)&item);
+            free(text);
+        }
+        SetWindowPos(handle, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    }
     return XXWIDGETS_OK;
+}
+
+/* Text typed in the header's filter bar goes to the table, which rebuilds the
+ * rows it shows. A column of -1 means every filter changed. */
+static LRESULT CALLBACK win32_table_filter_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
+{
+    xxwidgets_widget *widget = (xxwidgets_widget *)data;
+    if (message == WM_NOTIFY && lp && ((NMHDR *)lp)->hwndFrom == (HWND)SendMessageW(handle, LVM_GETHEADER, 0, 0)) {
+        NMHEADERW *change = (NMHEADERW *)lp;
+        if (change->hdr.code == HDN_FILTERBTNCLICK) return FALSE;
+        if (change->hdr.code == HDN_FILTERCHANGE) {
+            int count = (int)xxwidgets_tabular_column_count(widget), column = change->iItem < 0 ? 0 : change->iItem;
+            int last = change->iItem < 0 ? count : change->iItem + 1;
+            for (; column < last && column < count && !widget->app->syncing && xxwidgets_focusable(widget); ++column) {
+                wchar_t buffer[256] = {0};
+                char text[1024];
+                HD_TEXTFILTERW filter = {buffer, 255};
+                HDITEMW item;
+                memset(&item, 0, sizeof(item));
+                item.mask = HDI_FILTER;
+                item.type = HDFT_ISSTRING;
+                item.pvFilter = &filter;
+                if (!SendMessageW(change->hdr.hwndFrom, HDM_GETITEMW, (WPARAM)column, (LPARAM)&item)) continue;
+                if (!WideCharToMultiByte(CP_UTF8, 0, buffer, -1, text, sizeof(text), NULL, NULL)) text[0] = 0;
+                (void)xxwidgets_table_filter_input(widget, (size_t)column, text);
+            }
+            return 0;
+        }
+    }
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_table_filter_proc, id);
+    return DefSubclassProc(handle, message, wp, lp);
 }
 
 static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
 {
     HWND handle = (HWND)widget->native;
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
-    size_t row, column, count = widget->item_count, columns = xxwidgets_tabular_column_count(widget);
+    size_t row, column, count = xxwidgets_tabular_rows(widget), columns = xxwidgets_tabular_column_count(widget);
     wchar_t **cells = NULL;
     LVITEMW item;
     uint64_t revision = xxwidgets_row_revision(widget);
@@ -3662,15 +3733,17 @@ static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
         native->list_initialized = 1;
     }
     {
+        /* The selected model row, where the filters show it. */
+        int shown = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_row(widget, widget->value) : widget->value;
         int current = (int)SendMessageW(handle, LVM_GETNEXTITEM, (WPARAM)-1, LVNI_SELECTED);
-        if (rebuild || current != widget->value) {
+        if (rebuild || current != shown) {
             memset(&item, 0, sizeof(item));
             item.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
             SendMessageW(handle, LVM_SETITEMSTATE, (WPARAM)-1, (LPARAM)&item);
-            if (widget->value >= 0) {
+            if (shown >= 0) {
                 item.state = LVIS_SELECTED | LVIS_FOCUSED;
-                SendMessageW(handle, LVM_SETITEMSTATE, (WPARAM)widget->value, (LPARAM)&item);
-                SendMessageW(handle, LVM_ENSUREVISIBLE, (WPARAM)widget->value, FALSE);
+                SendMessageW(handle, LVM_SETITEMSTATE, (WPARAM)shown, (LPARAM)&item);
+                SendMessageW(handle, LVM_ENSUREVISIBLE, (WPARAM)shown, FALSE);
             }
         }
     }
@@ -3904,12 +3977,16 @@ static xxwidgets_status win32_read_value(xxwidgets_widget *widget)
         case XXWIDGETS_DEBUGGER_DISASM:
         case XXWIDGETS_DEBUGGER_REGISTERS:
         case XXWIDGETS_MEMORY_MAP:
+        case XXWIDGETS_TABLE:
         case XXWIDGETS_DEBUGGER_STACK:
         case XXWIDGET_SYSTEMPROCESSESVIEWER:
         case XXWIDGETS_ENTROPY_REGIONS:
         case XXWIDGETS_ENTROPY_BYTES:
         case XXWIDGETS_HEXVIEW:
-        case XXWIDGETS_DATA_STRUCT_TABLE: widget->value = (int)SendMessageW(handle, LVM_GETNEXTITEM, (WPARAM)-1, LVNI_SELECTED); break;
+        case XXWIDGETS_DATA_STRUCT_TABLE: {
+            int row = (int)SendMessageW(handle, LVM_GETNEXTITEM, (WPARAM)-1, LVNI_SELECTED);
+            widget->value = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_value(widget, row) : row;
+        } break;
         case XXWIDGETS_TREEVIEW: {
             xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
             TVITEMW item;
