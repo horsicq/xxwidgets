@@ -448,8 +448,14 @@ const char *xxwidgets_combobox_caption(xxwidgets_widget *widget)
             if (!count) first = i;
             ++count;
         }
-    if (!count) return widget->text[0] ? widget->text : "None selected";
+    if (!count) return widget->text[0] ? widget->text : XXW_TR(widget->app, "None selected");
     if (count == 1) return widget->items[first];
-    snprintf(widget->combo->summary, sizeof(widget->combo->summary), "%zu selected", count);
+    {
+        /* Shown for two or more; the translation must keep the single %zu. */
+        const char *format = XXW_TR(widget->app, "%zu selected");
+        const char *conversion = format ? strstr(format, "%zu") : NULL;
+        if (!conversion || strchr(format, '%') != conversion || strchr(conversion + 3, '%')) format = "%zu selected";
+        snprintf(widget->combo->summary, sizeof(widget->combo->summary), format, count);
+    }
     return widget->combo->summary;
 }

@@ -16,6 +16,7 @@ static xxwidgets_status replace(xxwidgets_app *app, xx_translation *catalog,
     }
     xx_translation_destroy(app->translation);
     app->translation = catalog;
+    if (app->ops && app->ops->translation_changed && app->platform) app->ops->translation_changed(app);
     return XXWIDGETS_OK;
 }
 xxwidgets_status xxwidgets_app_load_po(xxwidgets_app *app, const void *data,

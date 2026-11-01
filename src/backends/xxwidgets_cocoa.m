@@ -2235,7 +2235,15 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 }
 @end
 
-static void install_menu(void)
+/* The base menu bar: the application menu and a standard Edit menu whose
+ * titles come from the app's catalog (rebuilt when the catalog changes). */
+static NSString *menu_title(const xxwidgets_app *app, const char *msgid)
+{
+    const char *text = XXW_TR(app, msgid);
+    NSString *title = text ? [NSString stringWithUTF8String:text] : nil;
+    return title ? title : [NSString stringWithUTF8String:msgid];
+}
+static void install_menu(const xxwidgets_app *app)
 {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
     NSMenuItem *app_item = [[NSMenuItem alloc] initWithTitle:@"" action:NULL keyEquivalent:@""];
@@ -2249,19 +2257,44 @@ static void install_menu(void)
     [menu addItem:app_item];
     [quit release]; [app_menu release]; [app_item release];
 
-    NSMenuItem *edit_item = [[NSMenuItem alloc] initWithTitle:@"Edit" action:NULL keyEquivalent:@""];
-    NSMenu *edit_menu = [[NSMenu alloc] initWithTitle:@"Edit"];
-    [edit_menu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
-    [edit_menu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"Z"];
+    NSMenuItem *edit_item = [[NSMenuItem alloc] initWithTitle:menu_title(app, XXW_N_("Edit")) action:NULL keyEquivalent:@""];
+    NSMenu *edit_menu = [[NSMenu alloc] initWithTitle:menu_title(app, XXW_N_("Edit"))];
+    [edit_menu addItemWithTitle:menu_title(app, XXW_N_("Undo")) action:@selector(undo:) keyEquivalent:@"z"];
+    [edit_menu addItemWithTitle:menu_title(app, XXW_N_("Redo")) action:@selector(redo:) keyEquivalent:@"Z"];
     [edit_menu addItem:[NSMenuItem separatorItem]];
-    [edit_menu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
-    [edit_menu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
-    [edit_menu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
-    [edit_menu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [edit_menu addItemWithTitle:menu_title(app, XXW_N_("Cut")) action:@selector(cut:) keyEquivalent:@"x"];
+    [edit_menu addItemWithTitle:menu_title(app, XXW_N_("Copy")) action:@selector(copy:) keyEquivalent:@"c"];
+    [edit_menu addItemWithTitle:menu_title(app, XXW_N_("Paste")) action:@selector(paste:) keyEquivalent:@"v"];
+    [edit_menu addItemWithTitle:menu_title(app, XXW_N_("Select All")) action:@selector(selectAll:) keyEquivalent:@"a"];
     [edit_item setSubmenu:edit_menu];
     [menu addItem:edit_item];
     [NSApp setMainMenu:menu];
     [edit_menu release]; [edit_item release]; [menu release];
+}
+/* Rebuild the base menu bar from the new catalog. Windows that already
+ * carry a menu of their own keep it until their menu is set again. */
+static void cocoa_translation_changed(xxwidgets_app *app)
+{
+    cocoa_app_state *state = app->platform;
+    if (!state || active_app != app) return;
+    @autoreleasepool {
+        NSMenu *previous = state->base_menu;
+        install_menu(app);
+        state->base_menu = [[NSApp mainMenu] retain];
+        if (previous && [NSApp mainMenu] != previous) {
+            /* install_menu made the new bar current; keep a window's own menu
+             * current when one was showing. */
+            NSWindow *key = [NSApp keyWindow] ? [NSApp keyWindow] : [NSApp mainWindow];
+            NSMenu *current = nil;
+            if (key && [[key delegate] isKindOfClass:[XXWidgetsDelegate class]]) {
+                xxwidgets_widget *widget = ((XXWidgetsDelegate *)[key delegate])->widget;
+                cocoa_widget_state *window_state = widget ? widget->platform : NULL;
+                if (window_state) current = window_state->menu;
+            }
+            if (current) [NSApp setMainMenu:current];
+        }
+        [previous release];
+    }
 }
 
 static xxwidgets_status cocoa_init_backend(xxwidgets_app *app)
@@ -2293,7 +2326,7 @@ static xxwidgets_status cocoa_init_backend(xxwidgets_app *app)
         active_app = app;
         [NSApp setDelegate:state->delegate];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-        install_menu();
+        install_menu(app);
         state->base_menu = [[NSApp mainMenu] retain];
         if (!finished_launching && ![NSApp isRunning]) {
             [NSApp finishLaunching];
@@ -3506,5 +3539,5 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {
     "AppKit", cocoa_init_backend, cocoa_shutdown_backend, cocoa_poll_backend,
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
     cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
-    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font, cocoa_window_menu, NULL
+    cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font, cocoa_window_menu, NULL, cocoa_translation_changed
 };

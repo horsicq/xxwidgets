@@ -76,6 +76,9 @@ typedef struct xxwidgets_backend_ops {
     /* Optional Detect It Easy style layout for rich About items, filling the
      * window above the Close button row (XXWIDGETS_ABOUT_RICH_* cells). */
     xxwidgets_status (*about_rich_content)(xxwidgets_widget *window, const xxwidgets_about_dialog *about);
+    /* Optional: the catalog was replaced or cleared; backend-owned captions
+     * (the Cocoa Edit menu) are rebuilt from the new one. */
+    void (*translation_changed)(xxwidgets_app *app);
 } xxwidgets_backend_ops;
 
 #define XXWIDGETS_ABOUT_ITEMS_MAX 64
