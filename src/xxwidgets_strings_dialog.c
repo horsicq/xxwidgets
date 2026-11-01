@@ -88,7 +88,7 @@ static xxwidgets_status run_job(xxwidgets_widget *owner, strings_job *job, int *
     int joined;
     if (job->path) {
         xxwidgets_disk_write_result result;
-        status = xxwidgets_disk_write_run(owner, "Saving strings", job->path, strings_disk_worker, job, &result);
+        status = xxwidgets_disk_write_run(owner, XXW_TR(app, "Saving strings"), job->path, strings_disk_worker, job, &result);
         if (cancelled) *cancelled = result.cancelled;
         return status;
     }
@@ -103,7 +103,7 @@ static xxwidgets_status run_job(xxwidgets_widget *owner, strings_job *job, int *
     previous_default = app->modal_default;
     app->modal_window = NULL;
     app->modal_default = NULL;
-    status = xxwidgets_process_dialog(owner, job->path ? "Saving strings" : "Searching strings", &progress, strings_progress, job);
+    status = xxwidgets_process_dialog(owner, job->path ? XXW_TR(app, "Saving strings") : XXW_TR(app, "Searching strings"), &progress, strings_progress, job);
     app->modal_window = previous_modal;
     app->modal_default = previous_default;
     if (status != XXWIDGETS_OK) {
@@ -284,14 +284,16 @@ static uint64_t page_count(const xxwidgets_strings_source *source)
 
 static xxwidgets_status source_labels(strings_modal *modal)
 {
-    char text[192], page[32];
+    xxwidgets_app *app = modal->window->app;
+    char text[320], page[32];
     uint64_t shown = xxwidgets_strings_count(modal->view), pages = page_count(modal->source);
     xxwidgets_status status;
-    snprintf(text, sizeof(text), "Rows %" PRIu64 "-%" PRIu64 " | %" PRIu64 " / %" PRIu64 " strings",
-        shown ? modal->first + 1 : 0, modal->first + shown, modal->source->count, modal->source->total_count);
+    snprintf(text, sizeof(text), "%s %" PRIu64 "-%" PRIu64 " | %" PRIu64 " / %" PRIu64 " %s", XXW_TR(app, "Rows"),
+        shown ? modal->first + 1 : 0, modal->first + shown, modal->source->count, modal->source->total_count,
+        xxwidgets_app_ngettext(app, "string", "strings", modal->source->total_count));
     status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal->view, XXWIDGETS_STRINGS_COUNT), text);
-    snprintf(text, sizeof(text), "%" PRIu64 " bytes | Page %" PRIu64 " / %" PRIu64 " | Search applies options and filters to the complete source",
-        modal->file_size, modal->first / XXWIDGETS_STRINGS_PAGE_SIZE + 1, pages);
+    snprintf(text, sizeof(text), "%" PRIu64 " %s | %s %" PRIu64 " / %" PRIu64 " | %s", modal->file_size, XXW_TR(app, "bytes"), XXW_TR(app, "Page"),
+        modal->first / XXWIDGETS_STRINGS_PAGE_SIZE + 1, pages, XXW_TR(app, "Search applies options and filters to the complete source"));
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(modal->summary, text);
     snprintf(page, sizeof(page), "%" PRIu64, modal->first / XXWIDGETS_STRINGS_PAGE_SIZE + 1);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(modal->page, page);
@@ -359,9 +361,16 @@ static void strings_event(xxwidgets_app *app, const xxwidgets_event *event, void
     }
     if (event->type == XXWIDGETS_EVENT_ACTIVATE && event->widget == table) { modal->pending = 1; return; }
     if (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 2) { modal->pending = 3; return; }
-    if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window && modal->view) {
-        xxwidgets_rect bounds;
+    if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window) {
+        xxwidgets_rect bounds = {0};
+        /* Close is created last: lay out once every control exists. */
+        if (!modal->view || !modal->close) return;
         status = xxwidgets_widget_get_rect(modal->window, &bounds);
+        /* Backends may report less than the window minimum (Win32 and Cocoa
+         * do not enforce it, GTK caps it at the work area): lay out at the
+         * minimum and let the window clip, rather than fail the dialog. */
+        if (bounds.width < modal->window->min_columns) bounds.width = modal->window->min_columns;
+        if (bounds.height < modal->window->min_rows) bounds.height = modal->window->min_rows;
         if (status == XXWIDGETS_OK) status = source_layout(modal, bounds.width, bounds.height);
     } else if (modal->view && event->widget != modal->page &&
         event->widget != xxwidgets_strings_control(modal->view, XXWIDGETS_STRINGS_FILTER) &&
@@ -385,42 +394,44 @@ static xxwidgets_status save_csv(strings_modal *modal)
     free(path);
     if (status != XXWIDGETS_OK || accepted) {
         const char *error = status != XXWIDGETS_OK && modal->source->error ? modal->source->error(modal->source->user) : NULL;
+        xxwidgets_app *app = modal->window->app;
         return source_error(modal, error && error[0] && xxwidgets_valid_utf8(error) ? error :
-            status != XXWIDGETS_OK ? "Cannot save CSV" : cancelled ? "Save cancelled" : "CSV saved");
+            status != XXWIDGETS_OK ? XXW_TR(app, "Cannot save CSV") : cancelled ? XXW_TR(app, "Save cancelled") : XXW_TR(app, "CSV saved"));
     }
     return status;
 }
 
 static xxwidgets_status read_options(strings_modal *modal, xxwidgets_strings_search_options *options, const char **message)
 {
+    xxwidgets_app *app = modal->window->app;
     char minimum[32], *end;
     unsigned long value;
     size_t required;
-    int format, map;
+    int format = -1, map = -1;
     xxwidgets_status status;
     *options = modal->source->options;
-    *message = "Cannot read search options";
+    *message = XXW_TR(app, "Cannot read search options");
     status = xxwidgets_widget_get_text(modal->minimum, minimum, sizeof(minimum), &required);
-    if (status == XXWIDGETS_BUFFER_TOO_SMALL) { *message = "Minimum length must be an integer of at least 2"; return XXWIDGETS_INVALID_ARGUMENT; }
+    if (status == XXWIDGETS_BUFFER_TOO_SMALL) { *message = XXW_TR(app, "Minimum length must be an integer of at least 2"); return XXWIDGETS_INVALID_ARGUMENT; }
     if (status != XXWIDGETS_OK) return status;
     errno = 0; value = strtoul(minimum, &end, 10);
     if (!minimum[0] || minimum[0] == '-' || minimum[0] == '+' || *end || errno || value < 2 || value > UINT_MAX) {
-        *message = "Minimum length must be an integer of at least 2"; return XXWIDGETS_INVALID_ARGUMENT;
+        *message = XXW_TR(app, "Minimum length must be an integer of at least 2"); return XXWIDGETS_INVALID_ARGUMENT;
     }
     options->minimum_length = (unsigned)value;
 #define GET(member) if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_value(modal->member, &options->member)
     GET(ansi); GET(unicode); GET(null_terminated); GET(links); GET(regexp);
 #undef GET
     if (status != XXWIDGETS_OK) return status;
-    if (!options->ansi && !options->unicode) { *message = "Select ANSI or Unicode before searching"; return XXWIDGETS_INVALID_ARGUMENT; }
+    if (!options->ansi && !options->unicode) { *message = XXW_TR(app, "Select ANSI or Unicode before searching"); return XXWIDGETS_INVALID_ARGUMENT; }
     status = xxwidgets_widget_get_text(modal->expression, options->expression, sizeof(options->expression), &required);
-    if (status == XXWIDGETS_BUFFER_TOO_SMALL) { *message = "Regular expression exceeds 1023 UTF-8 bytes"; return XXWIDGETS_INVALID_ARGUMENT; }
+    if (status == XXWIDGETS_BUFFER_TOO_SMALL) { *message = XXW_TR(app, "Regular expression exceeds 1023 UTF-8 bytes"); return XXWIDGETS_INVALID_ARGUMENT; }
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_value(modal->format, &format);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_value(modal->map, &map);
     if (status != XXWIDGETS_OK) return status;
     options->format = format < 0 ? SIZE_MAX : (size_t)format;
     options->map_mode = map < 0 ? SIZE_MAX : (size_t)map;
-    if (!valid_options(modal->source, options)) { *message = "Select a valid format and memory map"; return XXWIDGETS_INVALID_ARGUMENT; }
+    if (!valid_options(modal->source, options)) { *message = XXW_TR(app, "Select a valid format and memory map"); return XXWIDGETS_INVALID_ARGUMENT; }
     return XXWIDGETS_OK;
 }
 
@@ -432,8 +443,10 @@ static xxwidgets_status reload_options(strings_modal *modal)
     snprintf(minimum, sizeof(minimum), "%u", options->minimum_length);
     status = xxwidgets_widget_set_text(modal->minimum, minimum);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(modal->expression, options->expression);
-    if (status == XXWIDGETS_OK) status = source_combo(modal->format, modal->source->formats, modal->source->format_count, "Binary", options->format);
-    if (status == XXWIDGETS_OK) status = source_combo(modal->map, modal->source->map_modes, modal->source->map_mode_count, "Regions", options->map_mode);
+    if (status == XXWIDGETS_OK) status = source_combo(modal->format, modal->source->formats, modal->source->format_count,
+        XXW_TR(modal->window->app, "Binary"), options->format);
+    if (status == XXWIDGETS_OK) status = source_combo(modal->map, modal->source->map_modes, modal->source->map_mode_count,
+        XXW_TR(modal->window->app, "Regions"), options->map_mode);
 #define SET(member) if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(modal->member, options->member)
     SET(ansi); SET(unicode); SET(null_terminated); SET(links); SET(regexp);
 #undef SET
@@ -474,19 +487,22 @@ static xxwidgets_status search_source(strings_modal *modal)
          * committed source, rather than the copied pre-search choices. */
         if (status == XXWIDGETS_OK && modal->source->search_ex) status = reload_options(modal);
         if (status == XXWIDGETS_OK) status = source_labels(modal);
-        if (status == XXWIDGETS_OK) status = source_error(modal, "Search complete");
+        if (status == XXWIDGETS_OK) status = source_error(modal, XXW_TR(modal->window->app, "Search complete"));
     } else {
+        xxwidgets_app *app = modal->window->app;
         (void)xxwidgets_widget_set_text(xxwidgets_strings_control(modal->view, XXWIDGETS_STRINGS_FILTER), modal->filter);
         for (size_t i = 0; i < XXWIDGETS_STRINGS_COLUMN_COUNT; ++i) (void)xxwidgets_table_set_filter(table, i, modal->columns[i]);
-        status = source_error(modal, cancelled ? "Search cancelled; previous results retained" :
+        status = source_error(modal, cancelled ? XXW_TR(app, "Search cancelled; previous results retained") :
             message && message[0] && xxwidgets_valid_utf8(message) ? message :
-            status == XXWIDGETS_INVALID_ARGUMENT ? "Cannot search strings: invalid expression or options" : "Cannot search strings");
+            status == XXWIDGETS_INVALID_ARGUMENT ? XXW_TR(app, "Cannot search strings: invalid expression or options") : XXW_TR(app, "Cannot search strings"));
     }
     free(filter);
     for (size_t i = 0; i < XXWIDGETS_STRINGS_COLUMN_COUNT; ++i) free(columns[i]);
     return status;
 }
 
+/* The option rows above the results. Created before the view, as native tab
+ * order follows creation order; finish_options fills them once it exists. */
 static xxwidgets_status create_options(strings_modal *modal)
 {
     xxwidgets_app *app = modal->window->app;
@@ -495,15 +511,22 @@ static xxwidgets_status create_options(strings_modal *modal)
     char minimum[32];
     snprintf(minimum, sizeof(minimum), "%u", options->minimum_length);
 #define CREATE(member, kind, text) if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, modal->window, kind, text, (xxwidgets_rect){0, 0, 1, 1}, &modal->member)
-    CREATE(format, XXWIDGETS_COMBOBOX, "Format"); CREATE(map, XXWIDGETS_COMBOBOX, "Memory map");
-    CREATE(ansi, XXWIDGETS_CHECKBOX, "ANSI"); CREATE(unicode, XXWIDGETS_CHECKBOX, "Unicode");
-    CREATE(null_terminated, XXWIDGETS_CHECKBOX, "Null-terminated"); CREATE(links, XXWIDGETS_CHECKBOX, "Links");
-    CREATE(minimum_label, XXWIDGETS_LABEL, "Minimum length"); CREATE(minimum, XXWIDGETS_EDIT, minimum);
-    CREATE(regexp, XXWIDGETS_CHECKBOX, "RegExp"); CREATE(expression, XXWIDGETS_EDIT, options->expression);
-    CREATE(error, XXWIDGETS_LABEL, "");
+    CREATE(format, XXWIDGETS_COMBOBOX, XXW_TR(app, "Format")); CREATE(map, XXWIDGETS_COMBOBOX, XXW_TR(app, "Memory map"));
+    CREATE(ansi, XXWIDGETS_CHECKBOX, XXW_TR(app, "ANSI")); CREATE(unicode, XXWIDGETS_CHECKBOX, XXW_TR(app, "Unicode"));
+    CREATE(null_terminated, XXWIDGETS_CHECKBOX, XXW_TR(app, "Null-terminated")); CREATE(links, XXWIDGETS_CHECKBOX, XXW_TR(app, "Links"));
+    CREATE(minimum_label, XXWIDGETS_LABEL, XXW_TR(app, "Minimum length")); CREATE(minimum, XXWIDGETS_EDIT, minimum);
+    CREATE(regexp, XXWIDGETS_CHECKBOX, XXW_TR(app, "RegExp")); CREATE(expression, XXWIDGETS_EDIT, options->expression);
 #undef CREATE
+    return status;
+}
+
+/* The message row below the results, the option values and the Save label. */
+static xxwidgets_status finish_options(strings_modal *modal)
+{
+    xxwidgets_app *app = modal->window->app;
+    xxwidgets_status status = xxwidgets_widget_create(app, modal->window, XXWIDGETS_LABEL, "", (xxwidgets_rect){0, 0, 1, 1}, &modal->error);
     if (status == XXWIDGETS_OK) status = reload_options(modal);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal->view, XXWIDGETS_STRINGS_SAVE), "Save");
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal->view, XXWIDGETS_STRINGS_SAVE), XXW_TR(app, "Save"));
     return status;
 }
 
@@ -521,7 +544,7 @@ static xxwidgets_status page_source(strings_modal *modal, int action)
         const char *text = modal->page->text;
         errno = 0; page = strtoull(text, &end, 10);
         if (!text[0] || text[0] == '-' || *end || errno || !page || page > page_count(modal->source))
-            return xxwidgets_widget_set_text(xxwidgets_strings_control(modal->view, XXWIDGETS_STRINGS_DETAILS), "Invalid page number");
+            return xxwidgets_widget_set_text(xxwidgets_strings_control(modal->view, XXWIDGETS_STRINGS_DETAILS), XXW_TR(modal->window->app, "Invalid page number"));
         first = ((uint64_t)page - 1) * XXWIDGETS_STRINGS_PAGE_SIZE;
     }
     status = xxwidgets_strings_source_set_page(modal->view, modal->source, first);
@@ -573,8 +596,12 @@ xxwidgets_status xxwidgets_strings_source_dialog(xxwidgets_widget *owner, const 
     previous_default = app->modal_default; app->modal_default = NULL;
     previous_event = app->on_event; previous_user = app->user_data; enabled = owner->enabled;
     hidden = app->create_hidden; app->create_hidden = 1;
+    /* Return focus to the owner's focused control, else its first one. */
     for (widget = app->widgets; widget; widget = widget->next)
-        if (widget->parent == owner && xxwidgets_focusable(widget)) { focus = widget; break; }
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            if (!focus) focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) { focus = widget; break; }
+        }
     app->on_event = strings_event; app->user_data = &modal;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
         (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, width, height}, &modal.window);
@@ -582,28 +609,35 @@ xxwidgets_status xxwidgets_strings_source_dialog(xxwidgets_widget *owner, const 
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = modal.window;
     status = xxwidgets_window_set_minimum_size(modal.window, source->search_ex ? 128 : 90, source->search_ex ? 32 : 24);
+    /* Native tab order is creation order: create the controls top to bottom,
+     * left to right, as source_layout places them. */
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, path, (xxwidgets_rect){1, 1, width - 2, 1}, &modal.path);
+    /* One row: a long path keeps its file name, and '&' is shown as is. */
+    if (status == XXWIDGETS_OK) modal.path->keep_end = 1;
     snprintf(description, sizeof(description), "%" PRIu64 " bytes | %" PRIu64 " strings", size, source->count);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, description, (xxwidgets_rect){1, 3, width - 2, 1}, &modal.summary);
+    if (status == XXWIDGETS_OK && source->search_ex) status = create_options(&modal);
+#define BUTTON(member, label) if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, label, (xxwidgets_rect){0, 0, 1, 1}, &modal.member)
+    BUTTON(search, XXW_TR(app, "Search"));
     if (status == XXWIDGETS_OK)
         status = xxwidgets_strings_create_internal(modal.window, (xxwidgets_rect){1, 5, width - 2, height - 10}, source->search_ex != NULL, &modal.view);
     if (status == XXWIDGETS_OK) {
         xxwidgets_strings_control(modal.view, XXWIDGETS_STRINGS_RESULTS)->table_external_filters = 1;
         status = xxwidgets_strings_source_set_page(modal.view, source, 0);
     }
-#define BUTTON(member, label) if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, label, (xxwidgets_rect){0, 0, 1, 1}, &modal.member)
-    BUTTON(close, "Close"); BUTTON(search, "Search"); BUTTON(previous, "Previous"); BUTTON(next, "Next"); BUTTON(go, "Go");
-#undef BUTTON
+    if (status == XXWIDGETS_OK && source->search_ex) status = finish_options(&modal);
+    BUTTON(previous, XXW_TR(app, "Previous")); BUTTON(next, XXW_TR(app, "Next"));
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_EDIT, "1", (xxwidgets_rect){0, 0, 1, 1}, &modal.page);
-    if (status == XXWIDGETS_OK && source->search_ex) status = create_options(&modal);
+    BUTTON(go, XXW_TR(app, "Go")); BUTTON(close, XXW_TR(app, "Close"));
+#undef BUTTON
     if (status == XXWIDGETS_OK) status = source_layout(&modal, width, height);
     if (status == XXWIDGETS_OK) status = source_labels(&modal);
     if (status == XXWIDGETS_OK && source->records_are_previews) {
-        status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal.view, XXWIDGETS_STRINGS_VIEW), "View preview");
-        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal.view, XXWIDGETS_STRINGS_COPY), "Copy preview");
-        if (status == XXWIDGETS_OK) status = source_error(&modal, "Row text is a preview; Save exports complete strings");
+        status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal.view, XXWIDGETS_STRINGS_VIEW), XXW_TR(app, "View preview"));
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal.view, XXWIDGETS_STRINGS_COPY), XXW_TR(app, "Copy preview"));
+        if (status == XXWIDGETS_OK) status = source_error(&modal, XXW_TR(app, "Row text is a preview; Save exports complete strings"));
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, 2);
     if (status != XXWIDGETS_OK) goto finish;
@@ -633,7 +667,8 @@ xxwidgets_status xxwidgets_strings_source_dialog(xxwidgets_widget *owner, const 
                 xxwidgets_string_record record;
                 status = xxwidgets_strings_get_selection(modal.view, &index, &record);
                 if (status == XXWIDGETS_OK && index != SIZE_MAX)
-                    status = xxwidgets_text_dialog(modal.window, source->records_are_previews ? "Decoded string preview" : "Decoded string", record.text);
+                    status = xxwidgets_text_dialog(modal.window, source->records_are_previews ? XXW_TR(app, "Decoded string preview") : XXW_TR(app, "Decoded string"),
+                        record.text);
             } else if (action == 2 && (source->save || source->save_ex)) status = save_csv(&modal);
             else if (action == 3 && (source->search || source->search_ex)) status = search_source(&modal);
             else if (action >= 4) status = page_source(&modal, action);

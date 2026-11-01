@@ -48,6 +48,9 @@ typedef struct xxwidgets_win32_app {
     int owns_role_font[XXWIDGETS_FONT_ROLE_COUNT];
     int cell_width;
     int cell_height;
+    /* The message font's cell and its width of the cell sample: a Controls
+     * font's cell is measured against them (win32_cell_size). */
+    int base_cell_width, base_cell_height, base_sample_width;
     ATOM window_class;
     wchar_t class_name[80];
     ATOM browser_class;
@@ -59,7 +62,7 @@ typedef struct win32_font_layout {
         HWND handle;
         RECT rect;
         int extra_height;
-    } children[40];
+    } children[64]; /* font options: 8 per role, 6 roles, error line and 3 buttons */
     HWND last_focus;
     size_t count;
     int width, height, x, y, client_width, client_height, step_x, step_y;
@@ -109,6 +112,19 @@ typedef struct xxwidgets_win32_widget {
     uint32_t die_surrogate;
     size_t die_rows, die_columns;
     int owner_hidden; /* WINDOW: Windows hid it with its minimized owner; it shows it on restore. */
+    /* WINDOW: a resizable text dialog, and the grid its buttons were last laid out for. */
+    int about_resizable, about_columns, about_rows;
+    char *restore_text; /* BUTTON in an about window: the label its click replaced, put back by a timer. */
+    /* WINDOW: win32_cells_relayout held it to (or moved it into) the work area. The size in cells
+     * and the place it had before, and the rect and frame it was given: while
+     * nobody moved or resized it, the next relayout asks for that size there
+     * again, so a font that grew the cells and went back gives back every
+     * window as it was. */
+    int held;
+    int held_width, held_height;
+    POINT held_origin;
+    xxwidgets_rect held_rect;
+    RECT held_frame;
 } xxwidgets_win32_widget;
 
 static xxwidgets_status win32_sync(xxwidgets_widget *widget);
@@ -125,6 +141,9 @@ static void win32_hexview_overview_sync(xxwidgets_widget *widget);
 static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data);
 static void win32_tree_expansion_input(xxwidgets_widget *widget, size_t index, HTREEITEM item, int expanded);
 static xxwidgets_status win32_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options);
+static int win32_cell_sample_width(HDC dc, HFONT font, TEXTMETRICW *metrics);
+static void win32_cell_size(const xxwidgets_win32_app *state, HFONT font, int *width, int *height);
+static void win32_cells_relayout(xxwidgets_app *app);
 static COLORREF win32_rgb(uint32_t color);
 static xxwidgets_status win32_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted);
 static xxwidgets_status win32_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role, const xxwidgets_font *font);
@@ -133,6 +152,17 @@ static LRESULT CALLBACK win32_browser_proc(HWND handle, UINT message, WPARAM wp,
 #define XXWIDGETS_BROWSER_UP_ID 1
 #define XXWIDGETS_BROWSER_ADDRESS_ID 2
 #define XXWIDGETS_BROWSER_LIST_ID 3
+/* Posted to a dialog win32_modal_owner resized while events were held back,
+ * and to every window win32_cells_relayout re-laid out. */
+#define XXWIDGETS_WIN32_RESIZED (WM_APP + 0x581)
+#define XXWIDGETS_WIN32_RELABEL_TIMER 0x5852
+#define XXWIDGETS_WIN32_TEXT_MIN_COLUMNS 40
+#define XXWIDGETS_WIN32_TEXT_MIN_ROWS 10
+/* The cells grow with the Controls font only as far as a dialog this many
+ * cells large still fits the work area: an Options dialog with a 29-row page,
+ * the largest whose buttons have a fixed row (win32_cell_size). */
+#define XXWIDGETS_WIN32_FIT_COLUMNS 120
+#define XXWIDGETS_WIN32_FIT_ROWS 35
 
 static void win32_browser_context(xxwidgets_widget *widget, LPARAM position)
 {
@@ -517,6 +547,7 @@ static xxwidgets_status win32_apply_fonts(xxwidgets_app *app, const xxwidgets_fo
     int owned[XXWIDGETS_FONT_ROLE_COUNT] = {0}, previous_owned[XXWIDGETS_FONT_ROLE_COUNT];
     xxwidgets_widget *widget;
     size_t role;
+    int cell_width, cell_height;
     xxwidgets_status status;
     for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
         status = win32_make_font(native, (xxwidgets_font_role)role, &options->fonts[role], &fonts[role], &owned[role]);
@@ -532,6 +563,13 @@ static xxwidgets_status win32_apply_fonts(xxwidgets_app *app, const xxwidgets_fo
     memcpy(native->role_fonts, fonts, sizeof(fonts));
     memcpy(native->owns_role_font, owned, sizeof(owned));
     for (widget = app->widgets; widget; widget = widget->next) win32_apply_widget_font(widget);
+    /* The cells follow the Controls font; existing windows take the new ones. */
+    win32_cell_size(native, native->role_fonts[XXWIDGETS_FONT_CONTROLS], &cell_width, &cell_height);
+    if (cell_width != native->cell_width || cell_height != native->cell_height) {
+        native->cell_width = cell_width;
+        native->cell_height = cell_height;
+        win32_cells_relayout(app);
+    }
     for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role)
         if (previous_owned[role]) DeleteObject(previous[role]);
     return XXWIDGETS_OK;
@@ -799,8 +837,11 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
     if (status != XXWIDGETS_OK) return status;
     layout = native->font_layout;
     if (first || refresh) {
+        /* xxwidgets_font_options_dialog: role r has its row at y 1 + 4r and its
+         * preview (and Default) at 3 + 4r; then the error line and the buttons. */
+        enum { ROLES = XXWIDGETS_FONT_ROLE_COUNT, LAST_ROW = 1 + 4 * (ROLES - 1), LAST_PREVIEW = 3 + 4 * (ROLES - 1), ERROR_ROW = 2 + 4 * ROLES };
         TEXTMETRICW controls, edits;
-        int row_y[4], preview_y[4], preview_height[4], role, y;
+        int row_y[ROLES], preview_y[ROLES], preview_height[ROLES], role, y;
         int cw = app->cell_width, height = app->cell_height, gap = app->cell_height / 2;
         int preview_width = 0, right_column, footer_y;
         HDC dc;
@@ -812,11 +853,11 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
         if (height < controls.tmHeight + controls.tmExternalLeading + 8) height = controls.tmHeight + controls.tmExternalLeading + 8;
         if (height < edits.tmHeight + edits.tmExternalLeading + 8) height = edits.tmHeight + edits.tmExternalLeading + 8;
         if (gap < 4) gap = 4;
-        for (role = 0; role < 4; ++role) preview_height[role] = height;
+        for (role = 0; role < ROLES; ++role) preview_height[role] = height;
         dc = GetDC(window);
         if (!dc) return XXWIDGETS_PLATFORM_ERROR;
         for (child = dialog->app->widgets; child; child = child->next) {
-            if (child->parent == dialog && child->kind == XXWIDGETS_LABEL && child->rect.y >= 3 && child->rect.y <= 15 && (child->rect.y - 3) % 4 == 0) {
+            if (child->parent == dialog && child->kind == XXWIDGETS_LABEL && child->rect.y >= 3 && child->rect.y <= LAST_PREVIEW && (child->rect.y - 3) % 4 == 0) {
                 wchar_t text[192];
                 TEXTMETRICW metrics;
                 SIZE size;
@@ -838,7 +879,7 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
         right_column = 88 * cw;
         if (right_column < 22 * cw + preview_width + gap) right_column = 22 * cw + preview_width + gap;
         y = gap;
-        for (role = 0; role < 4; ++role) {
+        for (role = 0; role < ROLES; ++role) {
             row_y[role] = y;
             preview_y[role] = y + height + gap;
             y = preview_y[role] + preview_height[role] + 2 * gap;
@@ -855,7 +896,7 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
             if (layout->count == sizeof(layout->children) / sizeof(layout->children[0])) return XXWIDGETS_PLATFORM_ERROR;
             rect.left = child->rect.x * cw;
             rect.right = rect.left + child->rect.width * cw;
-            if (child->rect.y >= 1 && child->rect.y <= 13 && (child->rect.y - 1) % 4 == 0) {
+            if (child->rect.y >= 1 && child->rect.y <= LAST_ROW && (child->rect.y - 1) % 4 == 0) {
                 role = (child->rect.y - 1) / 4;
                 rect.top = row_y[role];
                 rect.bottom = rect.top + height;
@@ -863,7 +904,7 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
                     rect.left = right_column;
                     rect.right = rect.left + 10 * cw;
                 }
-            } else if (child->rect.y >= 3 && child->rect.y <= 15 && (child->rect.y - 3) % 4 == 0) {
+            } else if (child->rect.y >= 3 && child->rect.y <= LAST_PREVIEW && (child->rect.y - 3) % 4 == 0) {
                 role = (child->rect.y - 3) / 4;
                 rect.top = preview_y[role];
                 rect.bottom = rect.top + preview_height[role];
@@ -871,7 +912,7 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
                     rect.left = right_column;
                     rect.right = rect.left + 10 * cw;
                 } else rect.right = right_column - gap;
-            } else if (child->rect.y == 18) {
+            } else if (child->rect.y == ERROR_ROW) {
                 rect.top = y;
                 rect.bottom = y + height;
                 rect.right = layout->width - 2 * cw;
@@ -1154,11 +1195,15 @@ static xxwidgets_status win32_choose_file(xxwidgets_widget *owner, xxwidgets_fil
     OPENFILENAMEW dialog = {0};
     wchar_t *caption = NULL, *name = NULL, *buffer = calloc(32768, sizeof(wchar_t));
     xxwidgets_status status = XXWIDGETS_OK;
+    BOOL chosen;
     if (!buffer) return XXWIDGETS_OUT_OF_MEMORY;
     if (title) { status = win32_wide(title, &caption); if (status != XXWIDGETS_OK) goto done; }
     if (initial && *initial) {
+        wchar_t *slash;
         status = win32_wide(initial, &name); if (status != XXWIDGETS_OK) goto done;
         if (wcslen(name) >= 32768) { status = XXWIDGETS_INVALID_ARGUMENT; goto done; }
+        /* The dialog refuses a start name with '/' (FNERR_INVALIDFILENAME) and shows nothing. */
+        for (slash = name; *slash; ++slash) if (*slash == L'/') *slash = L'\\';
         DWORD attributes = GetFileAttributesW(name);
         if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) dialog.lpstrInitialDir = name;
         else wcscpy(buffer, name);
@@ -1167,7 +1212,13 @@ static xxwidgets_status win32_choose_file(xxwidgets_widget *owner, xxwidgets_fil
     dialog.lpstrTitle = caption; dialog.lpstrFile = buffer; dialog.nMaxFile = 32768;
     dialog.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST |
         (mode == XXWIDGETS_FILE_DIALOG_OPEN ? OFN_FILEMUSTEXIST : OFN_OVERWRITEPROMPT);
-    if (mode == XXWIDGETS_FILE_DIALOG_OPEN ? GetOpenFileNameW(&dialog) : GetSaveFileNameW(&dialog)) {
+    chosen = mode == XXWIDGETS_FILE_DIALOG_OPEN ? GetOpenFileNameW(&dialog) : GetSaveFileNameW(&dialog);
+    if (!chosen && buffer[0] && CommDlgExtendedError()) {
+        /* A start name the dialog still refuses (a reserved device name, say): open it without one. */
+        buffer[0] = 0;
+        chosen = mode == XXWIDGETS_FILE_DIALOG_OPEN ? GetOpenFileNameW(&dialog) : GetSaveFileNameW(&dialog);
+    }
+    if (chosen) {
         int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buffer, -1, NULL, 0, NULL, NULL);
         if (!bytes) { status = XXWIDGETS_PLATFORM_ERROR; goto done; }
         *path = malloc((size_t)bytes);
@@ -1587,6 +1638,269 @@ static LRESULT win32_tree_draw(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
     return CDRF_DODEFAULT;
 }
 
+/* Lowers a window's minimum in cells to the client cells the work area of
+ * its monitor holds: a layout minimum larger than the screen (a large font,
+ * scaling, a small screen) must not keep the window and its bottom buttons
+ * off the screen. GTK and Cocoa cap theirs the same way. */
+static void win32_work_area_cells(const xxwidgets_widget *widget, HWND handle, int *columns, int *rows)
+{
+    const xxwidgets_win32_app *state = (const xxwidgets_win32_app *)widget->app->platform;
+    MONITORINFO monitor;
+    RECT frame = {0, 0, 0, 0};
+    int most;
+    ZeroMemory(&monitor, sizeof(monitor));
+    monitor.cbSize = sizeof(monitor);
+    if (!state || state->cell_width <= 0 || state->cell_height <= 0 ||
+        !GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor) ||
+        !AdjustWindowRectEx(&frame, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE)))
+        return;
+    most = (monitor.rcWork.right - monitor.rcWork.left - (frame.right - frame.left)) / state->cell_width;
+    if (most > 0 && *columns > most) *columns = most;
+    most = (monitor.rcWork.bottom - monitor.rcWork.top - (frame.bottom - frame.top)) / state->cell_height;
+    if (most > 0 && *rows > most) *rows = most;
+}
+
+/* The smallest frame a window may be given: the layout minimum of
+ * xxwidgets_window_set_minimum_size (or a resizable text dialog's own), held
+ * to the work area, plus what its style adds. 0 when it has none. */
+static int win32_minimum_frame(const xxwidgets_widget *widget, HWND handle, int *width, int *height)
+{
+    const xxwidgets_win32_app *state = (const xxwidgets_win32_app *)widget->app->platform;
+    const xxwidgets_win32_widget *native = (const xxwidgets_win32_widget *)widget->platform;
+    int columns = widget->has_minimum ? widget->min_columns : 0, rows = widget->has_minimum ? widget->min_rows : 0;
+    RECT frame;
+    if (native && native->about_resizable) {
+        if (columns < XXWIDGETS_WIN32_TEXT_MIN_COLUMNS) columns = XXWIDGETS_WIN32_TEXT_MIN_COLUMNS;
+        if (rows < XXWIDGETS_WIN32_TEXT_MIN_ROWS) rows = XXWIDGETS_WIN32_TEXT_MIN_ROWS;
+    }
+    if (!state || widget->kind != XXWIDGETS_WINDOW || (columns <= 0 && rows <= 0)) return 0;
+    win32_work_area_cells(widget, handle, &columns, &rows);
+    frame.left = frame.top = 0;
+    frame.right = columns * state->cell_width;
+    frame.bottom = rows * state->cell_height;
+    if (!AdjustWindowRectEx(&frame, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE)))
+        return 0;
+    *width = frame.right - frame.left;
+    *height = frame.bottom - frame.top;
+    return 1;
+}
+
+/* The rect follows the client area, in whole cells. */
+static void win32_window_resized(xxwidgets_widget *widget, HWND handle, int notify)
+{
+    xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    RECT client;
+    if (!native || !GetClientRect(handle, &client)) return;
+    widget->rect.width = (client.right - client.left) / state->cell_width;
+    widget->rect.height = (client.bottom - client.top) / state->cell_height;
+    if (widget->rect.width < 1) widget->rect.width = 1;
+    if (widget->rect.height < 1) widget->rect.height = 1;
+    native->applied_rect = widget->rect;
+    if (notify) xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+}
+
+/* A resizable text dialog: the text fills the window above the button row,
+ * and the buttons keep that bottom row and their side (Copy all on the left,
+ * Close on the right). For every size, also one set while syncing. */
+static void win32_about_layout(xxwidgets_widget *window, HWND handle)
+{
+    xxwidgets_win32_app *state = (xxwidgets_win32_app *)window->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)window->platform;
+    xxwidgets_widget *child;
+    RECT client;
+    int columns, rows, width, height, padding;
+    if (!native || !native->about_resizable || !native->about_edit || !GetClientRect(handle, &client)) return;
+    padding = 2 * state->cell_width;
+    columns = client.right / state->cell_width;
+    rows = client.bottom / state->cell_height;
+    width = client.right - 2 * padding;
+    height = (rows - 5) * state->cell_height;
+    MoveWindow(native->about_edit, padding, state->cell_height, width > state->cell_width ? width : state->cell_width,
+               height > state->cell_height ? height : state->cell_height, TRUE);
+    if (columns == native->about_columns && rows == native->about_rows) return;
+    ++window->app->syncing;
+    for (child = window->app->widgets; child; child = child->next)
+        if (child->parent == window && child->kind == XXWIDGETS_BUTTON && child->native) {
+            if (2 * child->rect.x + child->rect.width > native->about_columns) child->rect.x += columns - native->about_columns;
+            child->rect.y += rows - native->about_rows;
+            if (child->rect.x < 0) child->rect.x = 0;
+            if (child->rect.y < 0) child->rect.y = 0;
+            (void)win32_sync(child);
+        }
+    --window->app->syncing;
+    native->about_columns = columns;
+    native->about_rows = rows;
+}
+
+/* The cell sample: how much wider than the message font's a font's text runs
+ * is measured on these letters (Windows' dialog base units use them too). */
+static const wchar_t win32_cell_sample[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+/* The width of the cell sample in font, 0 if it cannot be measured, and the
+ * font's metrics. */
+static int win32_cell_sample_width(HDC dc, HFONT font, TEXTMETRICW *metrics)
+{
+    HGDIOBJ previous = SelectObject(dc, font);
+    SIZE extent = {0, 0};
+    int measured;
+    if (!previous || previous == HGDI_ERROR) return 0;
+    measured = GetTextMetricsW(dc, metrics) &&
+        GetTextExtentPoint32W(dc, win32_cell_sample, (int)(sizeof(win32_cell_sample) / sizeof(win32_cell_sample[0])) - 1, &extent);
+    SelectObject(dc, previous);
+    return measured && extent.cx > 0 ? extent.cx : 0;
+}
+
+/* The cells follow the Controls font. The message font gives the base cell
+ * (its average character by its line height plus 4 pixels), and exactly that
+ * cell as the Controls font, also when named. Another font's cell is its line
+ * height plus 4 pixels high and the base cell widened as much as its text runs
+ * wider, rounded up from a quarter of a pixel (a font a percent wider, or an
+ * italic one, keeps the base width). Only when the base text could not be
+ * measured is it as wide as the font's average character. It is never
+ * smaller than the base cell: a check box's square and a button's frame do
+ * not shrink with the text, and a layout made for the base cell counts on the
+ * room they take there. Nor does it grow past the cell in which a
+ * XXWIDGETS_WIN32_FIT_COLUMNS x XXWIDGETS_WIN32_FIT_ROWS dialog fits the
+ * primary work area: a larger font is clipped there, as every font was before
+ * the cells followed it, and the dialog's buttons stay on the screen. */
+static void win32_cell_size(const xxwidgets_win32_app *state, HFONT font, int *width, int *height)
+{
+    TEXTMETRICW metrics;
+    RECT work, frame = {0, 0, 0, 0};
+    HDC dc;
+    int sample;
+    *width = state->base_cell_width;
+    *height = state->base_cell_height;
+    if (!font || font == state->font || (dc = GetDC(NULL)) == NULL) return;
+    sample = win32_cell_sample_width(dc, font, &metrics);
+    ReleaseDC(NULL, dc);
+    if (!sample) return;
+    if (state->base_sample_width <= 0) {
+        if (*width < metrics.tmAveCharWidth) *width = metrics.tmAveCharWidth;
+    } else if (sample > state->base_sample_width) {
+        int64_t widened = ((int64_t)state->base_cell_width * sample + (int64_t)state->base_sample_width * 3 / 4) / state->base_sample_width;
+        if (*width < widened) *width = widened > 4096 ? 4096 : (int)widened;
+    }
+    if (*height < metrics.tmHeight + metrics.tmExternalLeading + 4) *height = metrics.tmHeight + metrics.tmExternalLeading + 4;
+    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0) && AdjustWindowRectEx(&frame, WS_OVERLAPPEDWINDOW, FALSE, 0)) {
+        int most_width = (work.right - work.left - (frame.right - frame.left)) / XXWIDGETS_WIN32_FIT_COLUMNS;
+        int most_height = (work.bottom - work.top - (frame.bottom - frame.top)) / XXWIDGETS_WIN32_FIT_ROWS;
+        if (*width > most_width) *width = most_width > state->base_cell_width ? most_width : state->base_cell_width;
+        if (*height > most_height) *height = most_height > state->base_cell_height ? most_height : state->base_cell_height;
+    }
+}
+
+/* After the cells changed (as GTK's grid_fit widens its grid): every control
+ * takes its rect in the new cells, and every window its rect's new size where
+ * it is, held to the work area of its monitor. The window's rect then follows
+ * its frame, and it reports RESIZE once events run, so a program that places
+ * controls in pixels places them again. A window held smaller or moved gets
+ * its own size and place back at the next relayout, unless it was moved or
+ * resized since (the held_* fields). A maximized window keeps its frame; a
+ * minimized one is restored to the new size. The font and optimization
+ * dialogs place their controls themselves and are left to it. */
+static void win32_cells_relayout(xxwidgets_app *app)
+{
+    xxwidgets_win32_app *state = (xxwidgets_win32_app *)app->platform;
+    xxwidgets_widget *widget;
+    ++app->syncing;
+    for (widget = app->widgets; widget; widget = widget->next) {
+        xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+        const xxwidgets_widget *top = widget;
+        HWND handle = (HWND)widget->native;
+        MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
+        RECT frame;
+        POINT origin;
+        int x, y, width, height, on_monitor, requested_width, requested_height, held = 0, give_back = 0;
+        while (top->parent) top = top->parent;
+        if (native && handle && widget->kind == XXWIDGETS_WINDOW && native->held) {
+            /* Held by an earlier relayout and neither moved nor resized since:
+             * it asks for its own size again, where it was. */
+            if (GetWindowRect(handle, &frame) && EqualRect(&frame, &native->held_frame) &&
+                widget->rect.width == native->held_rect.width && widget->rect.height == native->held_rect.height) {
+                widget->rect.width = native->held_width;
+                widget->rect.height = native->held_height;
+                give_back = 1;
+            }
+            native->held = 0;
+        }
+        requested_width = widget->rect.width;
+        requested_height = widget->rect.height;
+        if (!native || !handle || !top->platform || ((const xxwidgets_win32_widget *)top->platform)->font_layout ||
+            win32_geometry(widget, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE), &x, &y, &width, &height) != XXWIDGETS_OK)
+            continue;
+        if (widget->kind != XXWIDGETS_WINDOW) {
+            if (widget->kind == XXWIDGETS_COMBOBOX) height += 10 * state->cell_height;
+            SetWindowPos(native->hex_container ? native->hex_container : handle, NULL, x, y, width, height, SWP_NOACTIVATE | SWP_NOZORDER);
+            native->applied_rect = widget->rect;
+            continue;
+        }
+        on_monitor = GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor);
+        if (on_monitor) {
+            if (width > monitor.rcWork.right - monitor.rcWork.left) { width = monitor.rcWork.right - monitor.rcWork.left; held = 1; }
+            if (height > monitor.rcWork.bottom - monitor.rcWork.top) { height = monitor.rcWork.bottom - monitor.rcWork.top; held = 1; }
+        }
+        if (IsIconic(handle)) {
+            /* Its rect stays the size it is restored to (see win32_sync). */
+            WINDOWPLACEMENT placement;
+            placement.length = sizeof(placement);
+            if (GetWindowPlacement(handle, &placement)) {
+                placement.rcNormalPosition.right = placement.rcNormalPosition.left + width;
+                placement.rcNormalPosition.bottom = placement.rcNormalPosition.top + height;
+                placement.showCmd = (GetWindowLongPtrW(handle, GWL_STYLE) & WS_VISIBLE) ? SW_SHOWMINNOACTIVE : SW_HIDE;
+                SetWindowPlacement(handle, &placement);
+            }
+            continue;
+        }
+        if (!GetWindowRect(handle, &frame)) continue;
+        origin.x = give_back ? native->held_origin.x : frame.left;
+        origin.y = give_back ? native->held_origin.y : frame.top;
+        if (!IsZoomed(handle)) {
+            x = origin.x;
+            y = origin.y;
+            if (on_monitor) {
+                if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
+                if (x < monitor.rcWork.left) x = monitor.rcWork.left;
+                if (y + height > monitor.rcWork.bottom) y = monitor.rcWork.bottom - height;
+                if (y < monitor.rcWork.top) y = monitor.rcWork.top;
+            }
+            if (x != origin.x || y != origin.y) held = 1;
+            if (SetWindowPos(handle, NULL, x, y, width, height, SWP_NOACTIVATE | SWP_NOZORDER)) SetRect(&frame, x, y, x + width, y + height);
+        }
+        /* In whole cells, as WM_MOVE and WM_SIZE keep it. */
+        widget->rect.x = frame.left / state->cell_width;
+        widget->rect.y = frame.top / state->cell_height;
+        win32_window_resized(widget, handle, 0);
+        if (held && !IsZoomed(handle) && GetWindowRect(handle, &native->held_frame)) {
+            native->held = 1;
+            native->held_width = requested_width;
+            native->held_height = requested_height;
+            native->held_origin = origin;
+            native->held_rect = widget->rect;
+        }
+        win32_about_layout(widget, handle);
+        PostMessageW(handle, XXWIDGETS_WIN32_RESIZED, 0, 0);
+    }
+    --app->syncing;
+}
+
+/* A click that relabels its own button in a text or about dialog ("Copy all"
+ * becoming "Copied") is undone after a moment, ready for the next one. */
+static void win32_relabel_later(xxwidgets_app *app, HWND window, HWND button, char *label)
+{
+    xxwidgets_widget *control = label ? win32_find_widget(app, button) : NULL;
+    xxwidgets_win32_widget *native = control ? (xxwidgets_win32_widget *)control->platform : NULL;
+    if (native && win32_find_widget(app, window) && strcmp(control->text, label)) {
+        if (!native->restore_text) {
+            native->restore_text = label;
+            label = NULL;
+        }
+        SetTimer(window, XXWIDGETS_WIN32_RELABEL_TIMER, 1500, NULL);
+    }
+    free(label);
+}
+
 static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)GetWindowLongPtrW(handle, GWLP_USERDATA);
@@ -1615,7 +1929,14 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                         break;
                     case XXWIDGETS_CHECKCOMBOBOX: break;
                     case XXWIDGETS_BUTTON:
-                        if (HIWORD(wp) == BN_CLICKED) xxwidgets_emit(control, XXWIDGETS_EVENT_CLICK, 0);
+                        if (HIWORD(wp) == BN_CLICKED) {
+                            xxwidgets_app *app = widget->app;
+                            xxwidgets_win32_widget *frame = (xxwidgets_win32_widget *)widget->platform;
+                            char *label = frame && frame->about_edit ? xxwidgets_strdup(control->text) : NULL;
+                            xxwidgets_emit(control, XXWIDGETS_EVENT_CLICK, 0);
+                            /* The callback may have destroyed both; look them up again. */
+                            if (label) win32_relabel_later(app, handle, control_handle, label);
+                        }
                         break;
                     case XXWIDGETS_CHECKBOX:
                         if (HIWORD(wp) == BN_CLICKED) {
@@ -1721,18 +2042,41 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
             }
             break;
         case WM_SIZE:
-            if (wp != SIZE_MINIMIZED && !widget->app->syncing && widget->platform) {
-                xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
-                xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
-                RECT client;
-                if (GetClientRect(handle, &client)) {
-                    widget->rect.width = (client.right - client.left) / state->cell_width;
-                    widget->rect.height = (client.bottom - client.top) / state->cell_height;
-                    if (widget->rect.width < 1) widget->rect.width = 1;
-                    if (widget->rect.height < 1) widget->rect.height = 1;
-                    native->applied_rect = widget->rect;
-                    xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+            if (wp != SIZE_MINIMIZED) win32_about_layout(widget, handle);
+            if (wp != SIZE_MINIMIZED && !widget->app->syncing && widget->platform) win32_window_resized(widget, handle, 1);
+            break;
+        case XXWIDGETS_WIN32_RESIZED:
+            /* The size win32_modal_owner gave a dialog, reported once events run. */
+            if (!widget->app->syncing && widget->platform && !IsIconic(handle)) win32_window_resized(widget, handle, 1);
+            return 0;
+        case WM_GETMINMAXINFO:
+            /* Neither the user nor the program sizes a window below its layout
+             * minimum, which its RESIZE relayout could not fit. */
+            if (lp && widget->platform) {
+                MINMAXINFO *limits = (MINMAXINFO *)lp;
+                int width, height;
+                if (win32_minimum_frame(widget, handle, &width, &height)) {
+                    if (limits->ptMinTrackSize.x < width) limits->ptMinTrackSize.x = width;
+                    if (limits->ptMinTrackSize.y < height) limits->ptMinTrackSize.y = height;
+                    return 0;
                 }
+            }
+            break;
+        case WM_TIMER:
+            if (wp == XXWIDGETS_WIN32_RELABEL_TIMER) {
+                xxwidgets_widget *child;
+                if (widget->app->syncing) return 0;
+                KillTimer(handle, wp);
+                for (child = widget->app->widgets; child; child = child->next) {
+                    xxwidgets_win32_widget *native = child->parent == widget ? (xxwidgets_win32_widget *)child->platform : NULL;
+                    if (native && native->restore_text) {
+                        char *label = native->restore_text;
+                        native->restore_text = NULL;
+                        (void)xxwidgets_widget_set_text(child, label);
+                        free(label);
+                    }
+                }
+                return 0;
             }
             break;
         case WM_NCDESTROY:
@@ -1783,13 +2127,19 @@ static xxwidgets_status win32_init(xxwidgets_app *app)
     dc = GetDC(NULL);
     if (dc) {
         HGDIOBJ previous = SelectObject(dc, state->font);
+        SIZE sample = {0, 0};
         if (GetTextMetricsW(dc, &font_metrics)) {
             if (font_metrics.tmAveCharWidth > 0) state->cell_width = font_metrics.tmAveCharWidth;
             if (font_metrics.tmHeight > 0) state->cell_height = font_metrics.tmHeight + font_metrics.tmExternalLeading + 4;
         }
+        if (GetTextExtentPoint32W(dc, win32_cell_sample, (int)(sizeof(win32_cell_sample) / sizeof(win32_cell_sample[0])) - 1, &sample) && sample.cx > 0)
+            state->base_sample_width = sample.cx;
         if (previous && previous != HGDI_ERROR) SelectObject(dc, previous);
         ReleaseDC(NULL, dc);
     }
+    /* The message font's cell; win32_apply_fonts follows the Controls font from it. */
+    state->base_cell_width = state->cell_width;
+    state->base_cell_height = state->cell_height;
     swprintf(state->class_name, sizeof(state->class_name) / sizeof(state->class_name[0]), L"xxwidgets_window_%p", (void *)app);
     memset(&window_class, 0, sizeof(window_class));
     window_class.cbSize = sizeof(window_class);
@@ -2604,6 +2954,27 @@ static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPA
     return DefSubclassProc(handle, message, wp, lp);
 }
 
+/* A single-line edit reports Enter as ACTIVATE, as GTK's "activate" and the
+ * Cocoa action do. It sees Enter only when no button takes it: a modal
+ * dialog's focused, default or OK button comes first (win32_poll). */
+static LRESULT CALLBACK win32_edit_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
+{
+    xxwidgets_widget *widget = (xxwidgets_widget *)data;
+    if (message == WM_GETDLGCODE && lp) {
+        const MSG *key = (const MSG *)lp;
+        if (key->message == WM_KEYDOWN && key->wParam == VK_RETURN) return DefSubclassProc(handle, message, wp, lp) | DLGC_WANTMESSAGE;
+    }
+    if (message == WM_KEYDOWN && wp == VK_RETURN) {
+        if (!widget->app->syncing && xxwidgets_focusable(widget) && win32_read_text(widget) == XXWIDGETS_OK)
+            xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, 0);
+        return 0;
+    }
+    /* The character Enter also makes would only beep. */
+    if (message == WM_CHAR && (wp == '\r' || wp == '\n')) return 0;
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_edit_proc, id);
+    return DefSubclassProc(handle, message, wp, lp);
+}
+
 static xxwidgets_status win32_create(xxwidgets_widget *widget)
 {
     xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
@@ -2623,7 +2994,7 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_LABEL:
             class_name = L"STATIC";
-            style |= SS_LEFT;
+            style |= SS_LEFT | SS_NOPREFIX; /* Label text is data: an '&' is shown (see win32_sync). */
             break;
         case XXWIDGETS_BUTTON:
             class_name = L"BUTTON";
@@ -2748,6 +3119,8 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && !SetWindowSubclass(handle, win32_die_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_EDIT && !SetWindowSubclass(handle, win32_edit_proc, 1, (DWORD_PTR)widget))
+        status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK) status = win32_sync(widget);
     if (status != XXWIDGETS_OK) {
         if (native->hex_container) DestroyWindow(native->hex_container);
@@ -2783,6 +3156,7 @@ static void win32_destroy(xxwidgets_widget *widget)
     if (native && native->hex_font) DeleteObject(native->hex_font);
     if (native && native->hex_regular_font) DeleteObject(native->hex_regular_font);
     if (native && native->hex_bold_font) DeleteObject(native->hex_bold_font);
+    if (native) free(native->restore_text);
     if (native) free(native->font_layout);
     if (native) free(native->tree_items);
     free(widget->platform);
@@ -3896,6 +4270,15 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
     wchar_t *text;
     wchar_t *current;
     if (!handle || !native) return XXWIDGETS_PLATFORM_ERROR;
+    if (widget->kind == XXWIDGETS_WINDOW && widget->has_minimum) {
+        /* Windows keeps the frame at least the minimum (WM_GETMINMAXINFO, held
+         * to the work area), also for a smaller rect or a raised minimum; the
+         * rect says so too. */
+        int columns = widget->min_columns, rows = widget->min_rows;
+        win32_work_area_cells(widget, handle, &columns, &rows);
+        if (widget->rect.width < columns) widget->rect.width = columns;
+        if (widget->rect.height < rows) widget->rect.height = rows;
+    }
     if (!win32_same_rect(native->applied_rect, widget->rect)) {
         int x, y, width, height;
         status = win32_geometry(widget, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE), &x, &y, &width, &height);
@@ -3974,10 +4357,11 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
     }
     if (widget->kind == XXWIDGETS_LABEL) {
         /* A path too long for its label (keep_end) loses its middle, on one
-         * line, rather than its end on a second, clipped one; and an '&' in
-         * a file name is shown, not taken as a mnemonic. */
+         * line, rather than its end on a second, clipped one. Label text is
+         * data (a file name, a message), as in GTK and Cocoa: an '&' is
+         * shown, never taken as a mnemonic. */
         LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
-        LONG_PTR wanted = widget->keep_end ? (style & ~(LONG_PTR)SS_ELLIPSISMASK) | SS_PATHELLIPSIS | SS_NOPREFIX : style;
+        LONG_PTR wanted = (style & ~(LONG_PTR)SS_ELLIPSISMASK) | SS_NOPREFIX | (widget->keep_end ? SS_PATHELLIPSIS : 0);
         if (wanted != style) {
             SetWindowLongPtrW(handle, GWL_STYLE, wanted);
             InvalidateRect(handle, NULL, TRUE);
@@ -3987,8 +4371,21 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
      * A window Windows hid with its minimized owner stays hidden until the
      * owner is restored, when Windows shows it again. */
     HWND root = native->hex_container ? native->hex_container : handle;
-    if (!!(GetWindowLongPtrW(root, GWL_STYLE) & WS_VISIBLE) != !!widget->visible && !(widget->visible && native->owner_hidden))
-        ShowWindow(root, widget->visible ? (widget->kind == XXWIDGETS_WINDOW ? SW_SHOWNORMAL : SW_SHOW) : SW_HIDE);
+    if (!!(GetWindowLongPtrW(root, GWL_STYLE) & WS_VISIBLE) != !!widget->visible && !(widget->visible && native->owner_hidden)) {
+        HWND owner = widget->kind == XXWIDGETS_WINDOW && !widget->visible && GetActiveWindow() == handle ? GetWindow(handle, GW_OWNER) : NULL;
+        if (owner && !IsWindowEnabled(owner) && IsWindowVisible(owner)) {
+            /* An active modal dialog hidden before its modality ends (About,
+             * the text dialogs, Options, Extractor): Windows activates no
+             * disabled window, and the next window it finds may be another
+             * program's, which then takes the foreground. As EndDialog enables
+             * the owner first, the owner is enabled and activated while the
+             * dialog hides; it stays disabled until the modality ends. */
+            EnableWindow(owner, TRUE);
+            SetActiveWindow(owner);
+            ShowWindow(root, SW_HIDE);
+            EnableWindow(owner, FALSE);
+        } else ShowWindow(root, widget->visible ? (widget->kind == XXWIDGETS_WINDOW ? SW_SHOWNORMAL : SW_SHOW) : SW_HIDE);
+    }
     return XXWIDGETS_OK;
 }
 
@@ -4155,6 +4552,20 @@ static xxwidgets_status win32_poll(xxwidgets_app *app, int timeout_ms)
                     if (app->quit || processed >= 256 || (timeout_ms > 0 && GetTickCount() - started >= (DWORD)timeout_ms)) return XXWIDGETS_OK;
                     continue;
                 }
+                /* Escape and Enter close a dropped combo list (Enter keeping
+                 * the highlighted item): they neither close the dialog, click
+                 * its default button nor run a shortcut. */
+                if (focused && message.message == WM_KEYDOWN && (message.wParam == VK_ESCAPE || message.wParam == VK_RETURN) &&
+                    xxwidgets_combo_kind(focused) && SendMessageW(message.hwnd, CB_GETDROPPEDSTATE, 0, 0)) {
+                    if (focused->kind == XXWIDGETS_CHECKCOMBOBOX) SendMessageW(message.hwnd, CB_SHOWDROPDOWN, FALSE, 0);
+                    else {
+                        TranslateMessage(&message);
+                        DispatchMessageW(&message);
+                    }
+                    ++processed;
+                    if (app->quit || processed >= 256 || (timeout_ms > 0 && GetTickCount() - started >= (DWORD)timeout_ms)) return XXWIDGETS_OK;
+                    continue;
+                }
             }
             if (app->modal_window && root == (HWND)app->modal_window->native && message.message == WM_KEYDOWN) {
                 if (message.wParam == VK_ESCAPE) {
@@ -4162,7 +4573,11 @@ static xxwidgets_status win32_poll(xxwidgets_app *app, int timeout_ms)
                     continue;
                 }
                 if (message.wParam == VK_RETURN) {
-                    xxwidgets_widget *button = app->modal_default, *candidate;
+                    /* Enter clicks the focused button, else the dialog's default
+                     * one, else the first one captioned "OK" (also translated, as
+                     * on GTK and Cocoa). With none of them it is the focused
+                     * control's: a table row or an edit's ACTIVATE. */
+                    xxwidgets_widget *button = NULL, *ok = NULL, *candidate;
                     HWND focus = GetFocus();
                     for (candidate = app->widgets; candidate; candidate = candidate->next)
                         if (candidate->parent == app->modal_window && candidate->kind == XXWIDGETS_BUTTON) {
@@ -4170,10 +4585,13 @@ static xxwidgets_status win32_poll(xxwidgets_app *app, int timeout_ms)
                                 button = candidate;
                                 break;
                             }
-                            if (!strcmp(candidate->text, "OK")) button = candidate;
+                            if (!ok && (!strcmp(candidate->text, "OK") || !strcmp(candidate->text, XXW_TR(app, "OK")))) ok = candidate;
                         }
-                    if (button) SendMessageW((HWND)button->native, BM_CLICK, 0, 0);
-                    continue;
+                    if (!button) button = app->modal_default ? app->modal_default : ok;
+                    if (button && button->native) {
+                        SendMessageW((HWND)button->native, BM_CLICK, 0, 0);
+                        continue;
+                    }
                 }
             }
             window = root ? win32_find_widget(app, root) : NULL;
@@ -4207,20 +4625,38 @@ static xxwidgets_status win32_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
     if (!SetWindowLongPtrW(window, GWLP_HWNDPARENT, active ? (LONG_PTR)parent : 0) && GetLastError()) return XXWIDGETS_PLATFORM_ERROR;
     /* Centred on where the owner is, or is restored to when minimized. */
     if (active && GetWindowRect(window, &bounds) && win32_frame_rect(parent, &area)) {
-        int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
-        int x = area.left + ((area.right - area.left) - width) / 2;
-        int y = area.top + ((area.bottom - area.top) - height) / 2;
-        /* A dialog wider than its owner must still open inside the work area. */
-        {
-            MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
-            if (GetMonitorInfoW(MonitorFromWindow(parent, MONITOR_DEFAULTTONEAREST), &monitor)) {
-                if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
-                if (x < monitor.rcWork.left) x = monitor.rcWork.left;
-                if (y + height > monitor.rcWork.bottom) y = monitor.rcWork.bottom - height;
-                if (y < monitor.rcWork.top) y = monitor.rcWork.top;
+        MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
+        int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top, x, y, resized = 0;
+        int on_monitor = GetMonitorInfoW(MonitorFromWindow(parent, MONITOR_DEFAULTTONEAREST), &monitor);
+        /* A resizable dialog larger than the work area (a large font or
+         * scaling) is shrunk to it, though not below its layout minimum (which
+         * is itself held to the work area): its RESIZE relayout then keeps the
+         * bottom buttons on the screen. */
+        if (on_monitor && (GetWindowLongPtrW(window, GWL_STYLE) & WS_THICKFRAME) && !IsIconic(window)) {
+            int least_width, least_height;
+            if (win32_minimum_frame(dialog, window, &least_width, &least_height)) {
+                int most_width = monitor.rcWork.right - monitor.rcWork.left, most_height = monitor.rcWork.bottom - monitor.rcWork.top;
+                if (most_width < least_width) most_width = least_width;
+                if (most_height < least_height) most_height = least_height;
+                if (width > most_width) { width = most_width; resized = 1; }
+                if (height > most_height) { height = most_height; resized = 1; }
             }
         }
-        SetWindowPos(window, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        x = area.left + ((area.right - area.left) - width) / 2;
+        y = area.top + ((area.bottom - area.top) - height) / 2;
+        /* A dialog wider than its owner must still open inside the work area. */
+        if (on_monitor) {
+            if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
+            if (x < monitor.rcWork.left) x = monitor.rcWork.left;
+            if (y + height > monitor.rcWork.bottom) y = monitor.rcWork.bottom - height;
+            if (y < monitor.rcWork.top) y = monitor.rcWork.top;
+        }
+        SetWindowPos(window, NULL, x, y, width, height, (resized ? 0 : SWP_NOSIZE) | SWP_NOZORDER);
+        if (resized) {
+            /* Events are held back here: the rect follows now, RESIZE once they run. */
+            win32_window_resized(dialog, window, 0);
+            PostMessageW(window, XXWIDGETS_WIN32_RESIZED, 0, 0);
+        }
     }
     if (active) {
         SendMessageW(window, WM_SETICON, ICON_BIG, SendMessageW(parent, WM_GETICON, ICON_BIG, 0));
@@ -4231,6 +4667,9 @@ static xxwidgets_status win32_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
         xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)dialog->platform;
         if (native) native->owner_hidden = 0;
         SetActiveWindow(parent);
+        /* Already active (it took the activation while the dialog hid, see
+         * win32_sync), it lost the focus when it was disabled again. */
+        if (GetActiveWindow() == parent && !GetFocus()) SetFocus(parent);
     }
     return XXWIDGETS_OK;
 }
@@ -4248,7 +4687,11 @@ static xxwidgets_status win32_about_content(xxwidgets_widget *window, const xxwi
     int text_x = about->image ? image_box + 2 * padding : padding;
     xxwidgets_status status;
     LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
-    SetWindowLongPtrW(handle, GWL_STYLE, style & ~(WS_THICKFRAME | WS_MAXIMIZEBOX));
+    /* A text dialog (xxwidgets_text_dialog: no program name, picture or
+     * items) shows a log or an error of any length: it can be resized, down
+     * to a minimum. About keeps its fixed frame. */
+    int resizable = !about->image && !about->item_count && !*about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME];
+    if (!resizable) SetWindowLongPtrW(handle, GWL_STYLE, style & ~(WS_THICKFRAME | WS_MAXIMIZEBOX));
     if (!SetWindowPos(handle, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER) || !GetClientRect(handle, &client))
         return XXWIDGETS_PLATFORM_ERROR;
     if (length > (SIZE_MAX - 1) / 2) return XXWIDGETS_OUT_OF_MEMORY;
@@ -4269,6 +4712,13 @@ static xxwidgets_status win32_about_content(xxwidgets_widget *window, const xxwi
         return XXWIDGETS_PLATFORM_ERROR;
     }
     native->about_edit = edit;
+    if (resizable) {
+        /* The buttons, created next, are placed for this grid. */
+        native->about_columns = client.right / app->cell_width;
+        native->about_rows = client.bottom / app->cell_height;
+        native->about_resizable = 1;
+        win32_about_layout(window, handle);
+    }
     SendMessageW(edit, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_TEXT_EDITS], FALSE);
     SendMessageW(edit, EM_SETLIMITTEXT, (WPARAM)INT_MAX - 1, 0);
     if (!SetWindowTextW(edit, wide)) {

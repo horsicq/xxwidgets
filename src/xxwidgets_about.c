@@ -219,7 +219,7 @@ static void about_event(xxwidgets_app *app, const xxwidgets_event *event, void *
         state->done = 1;
     else if (event->widget == state->copy && event->type == XXWIDGETS_EVENT_CLICK) {
         xxwidgets_status status = app->ops->copy_text(state->window, state->body);
-        xxwidgets_widget_set_text(state->copy, status == XXWIDGETS_OK ? "Copied" : "Copy failed");
+        xxwidgets_widget_set_text(state->copy, status == XXWIDGETS_OK ? XXW_TR(app, "Copied") : XXW_TR(app, "Copy failed"));
     }
 }
 
@@ -287,10 +287,14 @@ static xxwidgets_status show_content(xxwidgets_about_dialog *dialog, xxwidgets_w
     previous_modal = app->modal_window; previous_default = app->modal_default;
     previous_event = app->on_event;
     previous_user = app->user_data;
+    /* Focus goes back to the control that had it, else the first one. */
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
-            previous_focus = widget;
-            break;
+            if (!previous_focus) previous_focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) {
+                previous_focus = widget;
+                break;
+            }
         }
     app->on_event = about_event;
     app->user_data = &state;
@@ -374,6 +378,7 @@ xxwidgets_status xxwidgets_text_dialog(xxwidgets_widget *owner, const char *titl
     if (status == XXWIDGETS_OK) status = xxwidgets_about_dialog_set_text(content, XXWIDGETS_ABOUT_TITLE, title);
     if (status == XXWIDGETS_OK) status = xxwidgets_about_dialog_set_text(content, XXWIDGETS_ABOUT_PROGRAM_NAME, "");
     if (status == XXWIDGETS_OK) status = xxwidgets_about_dialog_set_text(content, XXWIDGETS_ABOUT_DESCRIPTION, text);
+    if (status == XXWIDGETS_OK) status = xxwidgets_about_dialog_set_text(content, XXWIDGETS_ABOUT_CLOSE_LABEL, XXW_TR(owner->app, "Close"));
     if (status == XXWIDGETS_OK) status = show_content(content, owner, 1);
     if (content) xxwidgets_about_dialog_destroy(content);
     return status;

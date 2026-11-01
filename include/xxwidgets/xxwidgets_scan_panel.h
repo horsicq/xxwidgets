@@ -66,6 +66,8 @@ enum {
     XXWIDGETS_SCAN_AGGRESSIVE = 1u << 3,
     XXWIDGETS_SCAN_HIDE_UNKNOWN = 1u << 4,
     XXWIDGETS_SCAN_FORMAT = 1u << 5,
+    /* Deprecated: there is no extra database any more. Setters accept this
+     * bit and ignore it; getters never return it. */
     XXWIDGETS_SCAN_DATABASE_EXTRA = 1u << 0,
     XXWIDGETS_SCAN_DATABASE_CUSTOM = 1u << 1
 };
@@ -93,9 +95,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_visible(xxwidgets_scan_p
  * Labels and values use the regular combo ownership and selection contract. */
 XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_panel_control(const xxwidgets_scan_panel *panel, xxwidgets_scan_panel_control_id control);
 
-/* Flags use the six bits above. Database checks select Extra and Custom; the
- * main database is always used. Setters emit no input events. Defaults are
- * Deep/Heuristic/Verbose and both optional databases. Invalid bits are rejected.
+/* Flags use the six bits above. The Database check selects Custom; the main
+ * database is always used. Setters emit no input events. Defaults are
+ * Deep/Heuristic/Verbose and Custom. Invalid bits are rejected; the deprecated
+ * EXTRA bit is accepted and ignored, and get_databases never returns it.
  */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_flags(xxwidgets_scan_panel *panel, unsigned int flags);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_flags(const xxwidgets_scan_panel *panel, unsigned int *flags);

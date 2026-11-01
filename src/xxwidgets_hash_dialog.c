@@ -19,8 +19,13 @@ static void hash_event(xxwidgets_app *app, const xxwidgets_event *event, void *u
         (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->close) ||
         (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) modal->done = 1;
     else if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window && modal->view) {
-        xxwidgets_rect bounds;
+        xxwidgets_rect bounds = {0};
         status = xxwidgets_widget_get_rect(modal->window, &bounds);
+        /* Backends may report less than the window minimum (Win32 and Cocoa
+         * do not enforce it, GTK caps it at the work area): lay out at the
+         * minimum and let the window clip, rather than fail the dialog. */
+        if (bounds.width < modal->window->min_columns) bounds.width = modal->window->min_columns;
+        if (bounds.height < modal->window->min_rows) bounds.height = modal->window->min_rows;
         if (status == XXWIDGETS_OK)
             status = xxwidgets_hash_set_rect(modal->view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 6});
         if (status == XXWIDGETS_OK)
@@ -45,8 +50,12 @@ xxwidgets_status xxwidgets_hash_dialog(xxwidgets_widget *owner, const char *titl
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     previous_event = app->on_event; previous_user = app->user_data; enabled = owner->enabled;
+    /* Return focus to the owner's focused control, else its first one. */
     for (widget = app->widgets; widget; widget = widget->next)
-        if (widget->parent == owner && xxwidgets_focusable(widget)) { focus = widget; break; }
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            if (!focus) focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) { focus = widget; break; }
+        }
     app->on_event = hash_event; app->user_data = &modal;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
         (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 100, 24}, &modal.window);
@@ -58,7 +67,7 @@ xxwidgets_status xxwidgets_hash_dialog(xxwidgets_widget *owner, const char *titl
     if (status == XXWIDGETS_OK)
         status = xxwidgets_hash_set_data(modal.view, path, size, entries, count);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, "Close", (xxwidgets_rect){87, 21, 12, 2}, &modal.close);
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){87, 21, 12, 2}, &modal.close);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, 1);
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_set_enabled(owner, 0);

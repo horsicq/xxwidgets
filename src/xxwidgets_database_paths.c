@@ -29,7 +29,7 @@ static void paths_event(xxwidgets_app *app, const xxwidgets_event *event, void *
         if (event->widget == state->ok) state->action = 1;
         else if (event->widget == state->defaults) state->action = 2;
         else for (int i = 0; i < 3; ++i)
-            if (event->widget == state->browse[i]) state->action = 3 + i;
+            if (state->browse[i] && event->widget == state->browse[i]) state->action = 3 + i;
     }
 }
 
@@ -51,7 +51,9 @@ static xxwidgets_status read_path(xxwidgets_widget *edit, char **path)
 xxwidgets_status xxwidgets_database_paths_dialog(xxwidgets_widget *owner, const char *title,
     const char *const paths[3], const xxwidgets_database_paths_callbacks *callbacks, void *user, int *accepted)
 {
-    const char *labels[] = {"Main database", "Extra database", "Custom database"};
+    /* Rows for main and custom; slot 1 (the deprecated extra folder) has none,
+     * so its edits/browse entries stay NULL and apply receives "" for it. */
+    static const char *const labels[3] = {XXW_N_("Main database"), "", XXW_N_("Custom database")};
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}};
     paths_state state = {0};
     xxwidgets_app *app;
@@ -64,7 +66,7 @@ xxwidgets_status xxwidgets_database_paths_dialog(xxwidgets_widget *owner, const 
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) ||
         !accepted || !paths || !callbacks || !callbacks->apply || owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2)
         return XXWIDGETS_INVALID_ARGUMENT;
-    for (int i = 0; i < 3; ++i) if (!valid_path(paths[i])) return XXWIDGETS_INVALID_ARGUMENT;
+    for (int i = 0; i < 3; ++i) if (i != 1 && !valid_path(paths[i])) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     previous_event = app->on_event; previous_user = app->user_data; previous_default = app->modal_default;
@@ -73,29 +75,31 @@ xxwidgets_status xxwidgets_database_paths_dialog(xxwidgets_widget *owner, const 
         if (widget->parent == owner && xxwidgets_focusable(widget)) { focus = widget; break; }
     app->on_event = paths_event; app->user_data = &state; app->modal_default = NULL;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 100, 22}, &state.window);
+        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 100, 18}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
-    status = xxwidgets_window_set_minimum_size(state.window, 100, 22);
+    status = xxwidgets_window_set_minimum_size(state.window, 100, 18);
     for (int i = 0; status == XXWIDGETS_OK && i < 3; ++i) {
         xxwidgets_widget *label;
-        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL, labels[i], (xxwidgets_rect){2, 2 + i * 4, 94, 1}, &label);
+        int y = i ? 6 : 2;
+        if (i == 1) continue;
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL, XXW_TR(app, labels[i]), (xxwidgets_rect){2, y, 94, 1}, &label);
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_EDIT, paths[i],
-            (xxwidgets_rect){2, 3 + i * 4, 78, 2}, &state.edits[i]);
-        if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, "Browse...",
-            (xxwidgets_rect){82, 3 + i * 4, 16, 2}, &state.browse[i]);
+            (xxwidgets_rect){2, y + 1, 78, 2}, &state.edits[i]);
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Browse..."),
+            (xxwidgets_rect){82, y + 1, 16, 2}, &state.browse[i]);
         if (status == XXWIDGETS_OK && !callbacks->browse) status = xxwidgets_widget_set_enabled(state.browse[i], 0);
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL,
-        "Empty paths use the default signature folders.", (xxwidgets_rect){2, 15, 96, 1}, &widget);
+        XXW_TR(app, "Empty paths use the default signature folders."), (xxwidgets_rect){2, 11, 96, 1}, &widget);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL,
-        "", (xxwidgets_rect){2, 16, 96, 2}, &state.error);
+        "", (xxwidgets_rect){2, 12, 96, 2}, &state.error);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON,
-        "Defaults", (xxwidgets_rect){2, 19, 16, 2}, &state.defaults);
+        XXW_TR(app, "Defaults"), (xxwidgets_rect){2, 15, 16, 2}, &state.defaults);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON,
-        "OK", (xxwidgets_rect){66, 19, 14, 2}, &state.ok);
+        XXW_TR(app, "OK"), (xxwidgets_rect){66, 15, 14, 2}, &state.ok);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON,
-        "Cancel", (xxwidgets_rect){82, 19, 16, 2}, &state.cancel);
+        XXW_TR(app, "Cancel"), (xxwidgets_rect){82, 15, 16, 2}, &state.cancel);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(state.window, shortcuts, 1);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_default = state.ok;
@@ -111,7 +115,7 @@ xxwidgets_status xxwidgets_database_paths_dialog(xxwidgets_widget *owner, const 
         if (status != XXWIDGETS_OK || state.done || app->quit) break;
         int action = state.action; state.action = 0;
         if (action == 2) {
-            for (int i = 0; status == XXWIDGETS_OK && i < 3; ++i) status = xxwidgets_widget_set_text(state.edits[i], "");
+            for (int i = 0; status == XXWIDGETS_OK && i < 3; ++i) if (state.edits[i]) status = xxwidgets_widget_set_text(state.edits[i], "");
         } else if (action >= 3 && action <= 5) {
             char *initial = NULL, *path = NULL; int chosen = 0;
             status = read_path(state.edits[action - 3], &initial);
@@ -122,19 +126,19 @@ xxwidgets_status xxwidgets_database_paths_dialog(xxwidgets_widget *owner, const 
             free(initial); free(path);
         } else if (action == 1) {
             char *values[3] = {0}, error[512] = {0};
-            for (int i = 0; status == XXWIDGETS_OK && i < 3; ++i) status = read_path(state.edits[i], &values[i]);
+            for (int i = 0; status == XXWIDGETS_OK && i < 3; ++i) if (state.edits[i]) status = read_path(state.edits[i], &values[i]);
             if (status == XXWIDGETS_OK) {
-                const char *borrowed[3] = {values[0], values[1], values[2]};
+                const char *borrowed[3] = {values[0], "", values[2]};
                 int applied = callbacks->apply(borrowed, error, sizeof(error), user);
                 error[sizeof(error) - 1] = 0;
                 if (applied) state.done = state.accepted = 1;
                 else status = xxwidgets_widget_set_text(state.error,
-                    error[0] && xxwidgets_valid_utf8(error) ? error : "Cannot load databases. Check the main folder and try again.");
+                    error[0] && xxwidgets_valid_utf8(error) ? error : XXW_TR(app, "Cannot load databases. Check the main folder and try again."));
             }
             for (int i = 0; i < 3; ++i) free(values[i]);
         }
         if (status == XXWIDGETS_INVALID_ARGUMENT) {
-            status = xxwidgets_widget_set_text(state.error, "Enter a valid UTF-8 path shorter than 16384 bytes.");
+            status = xxwidgets_widget_set_text(state.error, XXW_TR(app, "Enter a valid UTF-8 path shorter than 16384 bytes."));
         }
     }
 finish:
@@ -161,22 +165,29 @@ static int widget_bounds_valid(xxwidgets_rect bounds)
         bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
 }
 
+/* The deprecated extra row (slot 1) is never created: its controls stay NULL. */
+static int extra_control(int control)
+{
+    return control >= XXWIDGETS_DATABASE_PATHS_EXTRA_LABEL && control <= XXWIDGETS_DATABASE_PATHS_EXTRA_BROWSE;
+}
+
 static void widget_rects(xxwidgets_rect bounds, xxwidgets_rect *rects)
 {
+    /* Main on the first row, Custom on the second; slot 1 repeats Main's. */
     for (int i = 0; i < 3; ++i) {
-        int y = bounds.y + i * 3;
+        int y = bounds.y + (i == 2 ? 3 : 0);
         rects[i * 3] = (xxwidgets_rect){bounds.x, y, bounds.width, 1};
         rects[i * 3 + 1] = (xxwidgets_rect){bounds.x, y + 1, bounds.width - 14, 1};
         rects[i * 3 + 2] = (xxwidgets_rect){bounds.x + bounds.width - 12, y + 1, 12, 1};
     }
-    rects[XXWIDGETS_DATABASE_PATHS_NOTE] = (xxwidgets_rect){bounds.x, bounds.y + 9, bounds.width, 1};
+    rects[XXWIDGETS_DATABASE_PATHS_NOTE] = (xxwidgets_rect){bounds.x, bounds.y + 6, bounds.width, 1};
 }
 
 xxwidgets_status xxwidgets_database_paths_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
     const xxwidgets_database_paths_callbacks *callbacks, void *user, xxwidgets_database_paths_widget **out_widget)
 {
     static const char *const labels[XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT] = {
-        XXW_N_("Main database"), "", XXW_N_("Browse..."), XXW_N_("Extra database"), "", XXW_N_("Browse..."),
+        XXW_N_("Main database"), "", XXW_N_("Browse..."), "", "", "",
         XXW_N_("Custom database"), "", XXW_N_("Browse..."), XXW_N_("Empty paths use the default signature folders.")};
     xxwidgets_rect rects[XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT];
     xxwidgets_database_paths_widget *widget;
@@ -193,6 +204,7 @@ xxwidgets_status xxwidgets_database_paths_widget_create(xxwidgets_widget *owner,
     widget_rects(bounds, rects);
     for (int i = 0; status == XXWIDGETS_OK && i < XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT; ++i) {
         xxwidgets_kind kind = i == XXWIDGETS_DATABASE_PATHS_NOTE || i % 3 == 0 ? XXWIDGETS_LABEL : i % 3 == 1 ? XXWIDGETS_EDIT : XXWIDGETS_BUTTON;
+        if (extra_control(i)) continue;
         status = xxwidgets_widget_create(owner->app, owner, kind, labels[i][0] ? XXW_TR(owner->app, labels[i]) : "", rects[i], &widget->controls[i]);
         if (status == XXWIDGETS_OK && kind == XXWIDGETS_BUTTON && !widget->callbacks.browse)
             status = xxwidgets_widget_set_enabled(widget->controls[i], 0);
@@ -229,9 +241,10 @@ xxwidgets_status xxwidgets_database_paths_widget_set(xxwidgets_database_paths_wi
 {
     xxwidgets_status status = XXWIDGETS_OK;
     if (!widget || !paths) return XXWIDGETS_INVALID_ARGUMENT;
-    for (int i = 0; i < 3; ++i)
+    /* Main (0) and custom (2); the deprecated extra slot 1 is ignored. */
+    for (int i = 0; i < 3; i += 2)
         if (paths[i] && !valid_path(paths[i])) return XXWIDGETS_INVALID_ARGUMENT;
-    for (int i = 0; status == XXWIDGETS_OK && i < 3; ++i)
+    for (int i = 0; status == XXWIDGETS_OK && i < 3; i += 2)
         status = xxwidgets_widget_set_text(widget->controls[i * 3 + 1], paths[i] ? paths[i] : "");
     return status;
 }
@@ -242,6 +255,13 @@ xxwidgets_status xxwidgets_database_paths_widget_get(const xxwidgets_database_pa
     size_t size = 0;
     xxwidgets_status status;
     if (!widget || index > 2) return XXWIDGETS_INVALID_ARGUMENT;
+    if (index == 1) {
+        /* The deprecated extra folder has no edit: always "". */
+        if (!buffer && capacity) return XXWIDGETS_INVALID_ARGUMENT;
+        if (required) *required = 1;
+        if (capacity) buffer[0] = 0;
+        return capacity || !buffer ? XXWIDGETS_OK : XXWIDGETS_BUFFER_TOO_SMALL;
+    }
     status = xxwidgets_widget_get_text(widget->controls[index * 3 + 1], NULL, 0, &size);
     if (status != XXWIDGETS_OK) return status;
     if (!size || size > 16384) return XXWIDGETS_INVALID_ARGUMENT;
@@ -253,11 +273,12 @@ xxwidgets_status xxwidgets_database_paths_widget_set_rect(xxwidgets_database_pat
     xxwidgets_rect rects[XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT], previous[XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT];
     if (!widget || !widget_bounds_valid(bounds)) return XXWIDGETS_INVALID_ARGUMENT;
     widget_rects(bounds, rects);
-    for (int i = 0; i < XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT; ++i) previous[i] = widget->controls[i]->rect;
+    for (int i = 0; i < XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT; ++i) previous[i] = widget->controls[i] ? widget->controls[i]->rect : rects[i];
     for (int i = 0; i < XXWIDGETS_DATABASE_PATHS_CONTROL_COUNT; ++i) {
+        if (!widget->controls[i]) continue;
         xxwidgets_status status = xxwidgets_widget_set_rect(widget->controls[i], rects[i]);
         if (status != XXWIDGETS_OK) {
-            for (int j = 0; j < i; ++j) (void)xxwidgets_widget_set_rect(widget->controls[j], previous[j]);
+            for (int j = 0; j < i; ++j) if (widget->controls[j]) (void)xxwidgets_widget_set_rect(widget->controls[j], previous[j]);
             return status;
         }
     }
@@ -269,7 +290,7 @@ xxwidgets_status xxwidgets_database_paths_widget_handle_event(xxwidgets_database
     if (!widget || !event) return XXWIDGETS_INVALID_ARGUMENT;
     if (event->type == XXWIDGETS_EVENT_CLICK)
         for (int i = 0; i < 3; ++i)
-            if (event->widget == widget->controls[i * 3 + 2]) widget->pending_browse = i + 1;
+            if (widget->controls[i * 3 + 2] && event->widget == widget->controls[i * 3 + 2]) widget->pending_browse = i + 1;
     return XXWIDGETS_OK;
 }
 

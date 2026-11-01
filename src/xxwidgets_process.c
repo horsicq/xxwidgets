@@ -279,7 +279,7 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
     xxwidgets_rect rect = {2, 1, 0, 1};
     xxwidgets_status status;
     char text[160], prefix[48], label[sizeof(progress->records[0].status) + 4];
-    int i, row = 0, fit_width;
+    int i, row = 0, fit_width, idle;
     rect.width = columns - 4;
 #ifdef _WIN32
     /* A native font is proportional: capitals and digits are wider than the
@@ -322,16 +322,45 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
             }
             ++row;
         }
+        if (!i) continue; /* Level 0 also carries the idle row, below. */
         status = xxwidgets_widget_set_visible(state->bars[i], state->shown[i]);
         if (status != XXWIDGETS_OK) return status;
         status = xxwidgets_widget_set_visible(state->labels[i], state->shown[i]);
         if (status != XXWIDGETS_OK) return status;
     }
+    idle = !row;
+    if (idle) {
+        /* Nothing reported yet (connecting, preparing): level 0's row says the
+         * job is alive, with a bar that moves every tenth of a second, so the
+         * dialog is not an empty frame around Cancel. */
+        const char *working = XXW_TR(state->window->app, "Working...");
+        unsigned int step = (unsigned int)(elapsed / 100 % 18);
+        int pulse = 10 + (int)(step < 9 ? step : 18 - step) * 10;
+        if (strcmp(state->labels[0]->text, working)) {
+            status = xxwidgets_widget_set_text(state->labels[0], working);
+            if (status != XXWIDGETS_OK) return status;
+        }
+        rect.y = 1;
+        status = xxwidgets_widget_set_rect(state->labels[0], rect);
+        if (status != XXWIDGETS_OK) return status;
+        ++rect.y;
+        status = xxwidgets_widget_set_rect(state->bars[0], rect);
+        if (status != XXWIDGETS_OK) return status;
+        if (state->bars[0]->value != pulse) {
+            status = xxwidgets_widget_set_value(state->bars[0], pulse);
+            if (status != XXWIDGETS_OK) return status;
+        }
+        row = 1;
+    }
+    status = xxwidgets_widget_set_visible(state->bars[0], state->shown[0] || idle);
+    if (status != XXWIDGETS_OK) return status;
+    status = xxwidgets_widget_set_visible(state->labels[0], state->shown[0] || idle);
+    if (status != XXWIDGETS_OK) return status;
     state->rendered = 1;
     /* Tenths of a second: a millisecond counter changed on every pass of the
      * dialog loop, so the toolkit always had a redraw pending and the loop
      * never waited. */
-    snprintf(text, sizeof(text), "Elapsed: %" PRIu64 ".%u s", elapsed / 1000, (unsigned int)(elapsed % 1000 / 100));
+    snprintf(text, sizeof(text), "%s %" PRIu64 ".%u s", XXW_TR(state->window->app, "Elapsed:"), elapsed / 1000, (unsigned int)(elapsed % 1000 / 100));
     if (strcmp(text, state->elapsed_text)) {
         status = xxwidgets_widget_set_text(state->elapsed, text);
         if (status != XXWIDGETS_OK) return status;
@@ -347,7 +376,7 @@ static xxwidgets_status process_render(process_state *state, const xx_pd_struct 
     status = xxwidgets_widget_set_rect(state->cancel, rect);
     if (status != XXWIDGETS_OK) return status;
     if (state->stop_requested) {
-        status = xxwidgets_widget_set_text(state->cancel, "Stopping...");
+        status = xxwidgets_widget_set_text(state->cancel, XXW_TR(state->window->app, "Stopping..."));
         if (status != XXWIDGETS_OK) return status;
         status = xxwidgets_widget_set_enabled(state->cancel, 0);
         if (status != XXWIDGETS_OK) return status;

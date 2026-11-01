@@ -69,6 +69,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_rect(xxwidgets_scan_
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_scanner(
     xxwidgets_scan_directory *view, xxwidgets_scan_directory_file_fn scanner, void *user);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_path(xxwidgets_scan_directory *view, const char *path);
+/* The deprecated XXWIDGETS_SCAN_DATABASE_EXTRA bit is accepted and dropped:
+ * get_options and the scanner callback never see it. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_options(xxwidgets_scan_directory *view, const xxwidgets_scan_options *options);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_get_options(const xxwidgets_scan_directory *view, xxwidgets_scan_options *options);
 /* Successful start replaces previous results and snapshots path/options. Hidden

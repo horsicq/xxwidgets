@@ -43,7 +43,7 @@ static void options_event(xxwidgets_app *app, const xxwidgets_event *event, void
 
 xxwidgets_status xxwidgets_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_option *options, size_t count, int *accepted)
 {
-    xxwidgets_widget *controls[16] = {0}, *previous_focus = NULL, *widget;
+    xxwidgets_widget *controls[16] = {0}, *previous_focus = NULL, *widget, *previous_modal, *previous_default;
     int values[16], owner_enabled, owner_disabled = 0, modal_attached = 0;
     size_t i;
     xxwidgets_rect bounds;
@@ -55,16 +55,24 @@ xxwidgets_status xxwidgets_options_dialog(xxwidgets_widget *owner, const char *t
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !accepted || (!options && count) || count > 16) return XXWIDGETS_INVALID_ARGUMENT;
     *accepted = 0;
     app = owner->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
+    /* The current modal window may own a confirmation (an editor's "discard
+     * changes?"); any other modal blocks it. */
+    if (app->dispatch_depth || app->polling || app->syncing || (app->modal_window && app->modal_window != owner) || app->quit) return XXWIDGETS_BUSY;
     for (i = 0; i < count; ++i)
         if (!options[i].label || (options[i].value != 0 && options[i].value != 1)) return XXWIDGETS_INVALID_ARGUMENT;
     previous_event = app->on_event;
     previous_user = app->user_data;
+    previous_modal = app->modal_window;
+    previous_default = app->modal_default;
     owner_enabled = owner->enabled;
+    /* Focus goes back to the control that had it, else the first one. */
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
-            previous_focus = widget;
-            break;
+            if (!previous_focus) previous_focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) {
+                previous_focus = widget;
+                break;
+            }
         }
     app->on_event = options_event;
     app->user_data = &state;
@@ -93,6 +101,8 @@ xxwidgets_status xxwidgets_options_dialog(xxwidgets_widget *owner, const char *t
     bounds.x = 46;
     status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), bounds, &state.cancel);
     if (status != XXWIDGETS_OK) goto finish;
+    /* Enter is OK even when a catalog translates its caption. */
+    app->modal_default = state.ok;
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
     owner_disabled = 1;
@@ -120,7 +130,8 @@ finish:
         cleanup = xxwidgets_widget_destroy(state.window);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    app->modal_window = NULL;
+    app->modal_window = previous_modal;
+    app->modal_default = previous_default;
     app->on_event = previous_event;
     app->user_data = previous_user;
     if (previous_focus) xxwidgets_widget_focus(previous_focus);
@@ -128,6 +139,110 @@ finish:
         for (i = 0; i < count; ++i) options[i].value = values[i];
         *accepted = 1;
     }
+    return status;
+}
+
+/* The same modal shell as the options dialog: labels instead of checkboxes,
+ * yes where OK is and no where Cancel is, so options_event serves both. */
+xxwidgets_status xxwidgets_question_dialog(xxwidgets_widget *owner, const char *title, const char *text,
+                                           const char *yes_label, const char *no_label, int *accepted)
+{
+    xxwidgets_widget *previous_focus = NULL, *widget, *previous_modal, *previous_default, *label;
+    int owner_enabled, owner_disabled = 0, modal_attached = 0;
+    size_t lines = 0, i;
+    const char *cursor, *start;
+    char line[256];
+    xxwidgets_rect bounds;
+    xxwidgets_app *app;
+    xxwidgets_event_fn previous_event;
+    void *previous_user;
+    options_state state = {0};
+    xxwidgets_status status = XXWIDGETS_OK, cleanup;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !text || !yes_label || !no_label || !accepted) return XXWIDGETS_INVALID_ARGUMENT;
+    *accepted = 0;
+    for (cursor = text; *cursor; ++cursor)
+        if (*cursor == '\n') ++lines;
+    if (cursor > text && cursor[-1] != '\n') ++lines;
+    if (lines > 12) return XXWIDGETS_INVALID_ARGUMENT;
+    app = owner->app;
+    if (app->dispatch_depth || app->polling || app->syncing || (app->modal_window && app->modal_window != owner) || app->quit) return XXWIDGETS_BUSY;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    previous_modal = app->modal_window;
+    previous_default = app->modal_default;
+    owner_enabled = owner->enabled;
+    for (widget = app->widgets; widget; widget = widget->next)
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            if (!previous_focus) previous_focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) {
+                previous_focus = widget;
+                break;
+            }
+        }
+    app->on_event = options_event;
+    app->user_data = &state;
+    bounds.x = owner->rect.x + 2;
+    bounds.y = owner->rect.y + 2;
+    bounds.width = 68;
+    bounds.height = (int)lines + 5;
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, bounds, &state.window);
+    if (status != XXWIDGETS_OK) goto finish;
+    app->modal_window = state.window;
+    for (i = 0, start = text; i < lines; ++i) {
+        size_t bytes;
+        for (cursor = start; *cursor && *cursor != '\n'; ++cursor) {}
+        bytes = (size_t)(cursor - start);
+        if (bytes >= sizeof(line)) {
+            bytes = sizeof(line) - 1;
+            while (bytes && ((unsigned char)start[bytes] & 0xc0) == 0x80) --bytes;
+        }
+        memcpy(line, start, bytes);
+        line[bytes] = 0;
+        bounds.x = 2;
+        bounds.y = 1 + (int)i;
+        bounds.width = 64;
+        bounds.height = 1;
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL, line, bounds, &label);
+        if (status != XXWIDGETS_OK) goto finish;
+        start = *cursor ? cursor + 1 : cursor;
+    }
+    bounds.y = (int)lines + 2;
+    bounds.x = 42;
+    bounds.width = 10;
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, yes_label, bounds, &state.ok);
+    if (status != XXWIDGETS_OK) goto finish;
+    bounds.x = 54;
+    status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, no_label, bounds, &state.cancel);
+    if (status != XXWIDGETS_OK) goto finish;
+    app->modal_default = state.ok;
+    status = xxwidgets_widget_set_enabled(owner, 0);
+    if (status != XXWIDGETS_OK) goto finish;
+    owner_disabled = 1;
+    status = xxwidgets_window_set_modality(state.window, owner, XXWIDGETS_WINDOW_MODAL);
+    if (status != XXWIDGETS_OK) goto finish;
+    modal_attached = 1;
+    status = xxwidgets_widget_focus(state.ok);
+    while (status == XXWIDGETS_OK && !state.done && !app->quit) status = xxwidgets_app_poll(app, 30);
+    if (status != XXWIDGETS_OK || app->quit) state.accepted = 0;
+finish:
+    if (owner_disabled) {
+        cleanup = xxwidgets_widget_set_enabled(owner, owner_enabled);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (modal_attached) {
+        cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (state.window) {
+        cleanup = xxwidgets_widget_destroy(state.window);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    app->modal_window = previous_modal;
+    app->modal_default = previous_default;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
+    if (previous_focus) xxwidgets_widget_focus(previous_focus);
+    if (status == XXWIDGETS_OK && state.accepted) *accepted = 1;
     return status;
 }
 

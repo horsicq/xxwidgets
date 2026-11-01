@@ -546,8 +546,11 @@ static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *t
     owner_enabled = owner->enabled;
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
-            focus = widget;
-            break;
+            if (!focus) focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) {
+                focus = widget;
+                break;
+            }
         }
     app->on_event = editor_dialog_event;
     app->user_data = &state;
@@ -721,8 +724,9 @@ xxwidgets_status xxwidgets_die_signature_editor_process_pending(xxwidgets_die_si
     if (action == XXWIDGETS_DIE_EDITOR_OPEN || action == XXWIDGETS_DIE_EDITOR_SAVE_AS ||
         (action == XXWIDGETS_DIE_EDITOR_SAVE && !editor->path[0])) {
         if (action == XXWIDGETS_DIE_EDITOR_OPEN && xxwidgets_die_signature_editor_modified(editor)) {
-            xxwidgets_option discard = {"Discard the unsaved signature changes", 0};
-            status = xxwidgets_options_dialog(editor->owner, "Unsaved signature", &discard, 1, &accepted);
+            /* Owned by the editor's window, which may be the modal one. */
+            xxwidgets_option discard = {XXW_TR(editor->owner->app, "Discard the unsaved signature changes"), 0};
+            status = xxwidgets_options_dialog(editor->owner, XXW_TR(editor->owner->app, "Unsaved signature"), &discard, 1, &accepted);
             if (status != XXWIDGETS_OK || !accepted || !discard.value) return status;
             discard_modified = 1;
             accepted = 0;
@@ -730,16 +734,25 @@ xxwidgets_status xxwidgets_die_signature_editor_process_pending(xxwidgets_die_si
         if (xxwidgets_file_dialog_available(editor->owner->app)) {
             status = xxwidgets_file_dialog(editor->owner,
                 action == XXWIDGETS_DIE_EDITOR_OPEN ? XXWIDGETS_FILE_DIALOG_OPEN : XXWIDGETS_FILE_DIALOG_SAVE,
-                action == XXWIDGETS_DIE_EDITOR_OPEN ? "Open DIE signature" : "Save DIE signature",
+                action == XXWIDGETS_DIE_EDITOR_OPEN ? XXW_TR(editor->owner->app, "Open DIE signature") : XXW_TR(editor->owner->app, "Save DIE signature"),
                 editor->controls[XXWIDGETS_DIE_EDITOR_PATH]->text, &path, &accepted);
-            if (status != XXWIDGETS_OK || !accepted) { free(path); return status; }
+            if (status != XXWIDGETS_OK || !accepted) {
+                free(path);
+                if (status != XXWIDGETS_OK) {
+                    /* A picker that cannot open says so, rather than the click doing nothing. */
+                    char message[160];
+                    snprintf(message, sizeof(message), "%s; document retained", xxwidgets_status_string(status));
+                    (void)describe(editor, message);
+                }
+                return status;
+            }
         } else {
             path = copy_text(editor->controls[XXWIDGETS_DIE_EDITOR_PATH]->text);
             if (!path) return XXWIDGETS_OUT_OF_MEMORY;
             if (!*path) { free(path); (void)describe(editor, "Enter a file path above first"); return XXWIDGETS_INVALID_ARGUMENT; }
             if (action != XXWIDGETS_DIE_EDITOR_OPEN && xx_io_file_exists_a(path)) {
-                xxwidgets_option replace = {"Replace the existing file", 0};
-                status = xxwidgets_options_dialog(editor->owner, "Confirm signature replacement", &replace, 1, &accepted);
+                xxwidgets_option replace = {XXW_TR(editor->owner->app, "Replace the existing file"), 0};
+                status = xxwidgets_options_dialog(editor->owner, XXW_TR(editor->owner->app, "Confirm signature replacement"), &replace, 1, &accepted);
                 if (status != XXWIDGETS_OK || !accepted || !replace.value) { free(path); return status; }
             }
         }

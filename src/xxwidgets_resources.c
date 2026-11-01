@@ -65,11 +65,11 @@ static void id_text(uint32_t id, char *out)
     else
         snprintf(out, 16, "%" PRIu32, id);
 }
-static void describe(const xx_resource_record *r, char *out, size_t capacity)
+static void describe(const xxwidgets_app *app, const xx_resource_record *r, char *out, size_t capacity)
 {
     char offset[32], size[32], type[16], name[16], language[16];
     if (!r) {
-        snprintf(out, capacity, "No resource selected");
+        snprintf(out, capacity, "%s", XXW_TR(app, "No resource selected"));
         return;
     }
     if (r->offset < 0)
@@ -124,14 +124,15 @@ static xxwidgets_status refresh_summary(xxwidgets_resources *v, const xxwidgets_
     xxwidgets_status status;
     if (count == v->displayed_count)
         return XXWIDGETS_OK;
-    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " bytes | %zu / %zu resources", data->format, data->file_size, count, data->count);
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s | %zu / %zu %s", data->format, data->file_size, XXW_TR(v->owner->app, "bytes"), count,
+             data->count, xxwidgets_app_ngettext(v->owner->app, "resource", "resources", data->count));
     status = xxwidgets_widget_set_text(C(v, SUMMARY), summary);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_enabled(C(v, COPY), count != 0);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_enabled(C(v, COPY_ALL), count != 0);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_text(C(v, STATUS), count ? "Select a resource" : "No resources match");
+        status = xxwidgets_widget_set_text(C(v, STATUS), count ? XXW_TR(v->owner->app, "Select a resource") : XXW_TR(v->owner->app, "No resources match"));
     if (status == XXWIDGETS_OK)
         v->displayed_count = count;
     return status;
@@ -157,13 +158,14 @@ static xxwidgets_status present(xxwidgets_resources *v, const xxwidgets_resource
             matches_id(data->records[i].name, data->records[i].name_id, filter) ||
             matches_id(data->records[i].language_name, data->records[i].language_id, filter))
             rows[count++] = data->records[i];
-    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " bytes | %zu / %zu resources", data->format, data->file_size, count, data->count);
-    describe(count ? rows : NULL, details, sizeof(details));
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s | %zu / %zu %s", data->format, data->file_size, XXW_TR(v->owner->app, "bytes"), count,
+             data->count, xxwidgets_app_ngettext(v->owner->app, "resource", "resources", data->count));
+    describe(v->owner->app, count ? rows : NULL, details, sizeof(details));
     texts[0] = xxwidgets_strdup(data->path);
     texts[1] = xxwidgets_strdup(summary);
     texts[2] = xxwidgets_strdup(filter);
     texts[3] = xxwidgets_strdup(details);
-    texts[4] = xxwidgets_strdup(count ? "Select a resource" : "No resources match");
+    texts[4] = xxwidgets_strdup(count ? XXW_TR(v->owner->app, "Select a resource") : XXW_TR(v->owner->app, "No resources match"));
     for (size_t i = 0; i < 5; ++i)
         if (!texts[i])
             goto finish;
@@ -216,7 +218,8 @@ xxwidgets_status xxwidgets_resources_create(xxwidgets_widget *owner, xxwidgets_r
 {
     static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL,          XXWIDGETS_LABEL, XXWIDGETS_LABEL,  XXWIDGETS_EDIT,   XXWIDGETS_BUTTON,
                                            XXWIDGET_RESOURCESVIEWER, XXWIDGETS_LABEL, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
-    static const char *const names[] = {"", "", "Filter", "", "Reset", "Resources", "No resource selected", "Copy row", "Copy visible", ""};
+    static const char *const names[] = {"", "", XXW_N_("Filter"), "", XXW_N_("Reset"), XXW_N_("Resources"), XXW_N_("No resource selected"),
+                                        XXW_N_("Copy row"), XXW_N_("Copy visible"), ""};
     xxwidgets_resources *v;
     xxwidgets_status status;
     if (!out)
@@ -231,10 +234,12 @@ xxwidgets_status xxwidgets_resources_create(xxwidgets_widget *owner, xxwidgets_r
         return XXWIDGETS_OUT_OF_MEMORY;
     v->owner = owner;
     for (size_t i = 0; i < XXWIDGETS_RESOURCES_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
         if (status != XXWIDGETS_OK)
             goto fail;
     }
+    /* One row: a long path keeps its file name, and '&' is shown as is. */
+    C(v, PATH)->keep_end = 1;
     /* Column headers provide the visible filters. Retain these controls for
      * the existing programmatic filtering API without a duplicate input row. */
     status = xxwidgets_widget_set_visible(C(v, FILTER_LABEL), 0);
@@ -420,7 +425,7 @@ xxwidgets_status xxwidgets_resources_handle_event(xxwidgets_resources *v, const 
         xxwidgets_status status = xxwidget_resourcesviewer_get_selection(C(v, TABLE), &index, &r);
         if (status != XXWIDGETS_OK)
             return status;
-        describe(index == SIZE_MAX ? NULL : &r, details, sizeof(details));
+        describe(v->owner->app, index == SIZE_MAX ? NULL : &r, details, sizeof(details));
         return xxwidgets_widget_set_text(C(v, DETAILS), details);
     }
     if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, FILTER))
@@ -462,7 +467,7 @@ xxwidgets_status xxwidgets_resources_process(xxwidgets_resources *v)
         if (status == XXWIDGETS_OK)
             return status;
         (void)xxwidgets_widget_set_text(C(v, FILTER), v->filter ? v->filter : "");
-        return xxwidgets_widget_set_text(C(v, STATUS), "Cannot apply filter (maximum 256 bytes)");
+        return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot apply filter (maximum 256 bytes)"));
     }
     if (action == COPY || action == COPY_ALL) {
         size_t index = SIZE_MAX, required;
@@ -475,7 +480,7 @@ xxwidgets_status xxwidgets_resources_process(xxwidgets_resources *v)
         }
         status = xxwidgets_resources_export_text(v, index, NULL, 0, &required);
         if (status != XXWIDGETS_OK)
-            return xxwidgets_widget_set_text(C(v, STATUS), "Cannot copy that many resources");
+            return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot copy that many resources"));
         text = malloc(required);
         if (!text)
             return XXWIDGETS_OUT_OF_MEMORY;
@@ -483,7 +488,8 @@ xxwidgets_status xxwidgets_resources_process(xxwidgets_resources *v)
         if (status == XXWIDGETS_OK)
             status = xxwidgets_clipboard_set_text(v->owner, text);
         free(text);
-        return xxwidgets_widget_set_text(C(v, STATUS), status == XXWIDGETS_OK ? "Copied" : "Clipboard unavailable");
+        return xxwidgets_widget_set_text(C(v, STATUS),
+                                         status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
     }
     return status;
 }

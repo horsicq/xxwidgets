@@ -145,6 +145,20 @@ xxwidgets_status xxwidgets_font_choose_dialog(xxwidgets_widget *owner, xxwidgets
     return status;
 }
 
+int xxwidgets_font_choose_available(const xxwidgets_app *app)
+{
+    return app && app->ops && app->ops->choose_font;
+}
+
+/* What a refused chooser result means to the user (one 56-cell row); not a
+ * failure of the dialog that holds the form. */
+static const char *font_choose_failure(const xxwidgets_app *app, xxwidgets_status status)
+{
+    if (status == XXWIDGETS_INVALID_ARGUMENT || status == XXWIDGETS_PLATFORM_ERROR)
+        return XXW_TR(app, "That font cannot be used. Pick 4..96 pt or edit above.");
+    return XXW_TR(app, "No font chooser now. Edit the family and size above.");
+}
+
 typedef struct font_row {
     xxwidgets_widget *family, *size, *bold, *italic, *choose, *reset, *preview;
 } font_row;
@@ -217,8 +231,9 @@ static xxwidgets_status fill_row(font_state *state, size_t role)
 
 static void font_error(font_state *state, xxwidgets_status status)
 {
-    xxwidgets_widget_set_text(state->error,
-                              status == XXWIDGETS_INVALID_ARGUMENT ? "Enter a font family and size 4..96; 0 uses the default size." : xxwidgets_status_string(status));
+    xxwidgets_widget_set_text(state->error, status == XXWIDGETS_INVALID_ARGUMENT
+                                                ? XXW_TR(state->window->app, "Enter a font family and size 4..96; 0 uses the default size.")
+                                                : xxwidgets_status_string(status));
 }
 
 static void font_event(xxwidgets_app *app, const xxwidgets_event *event, void *user_data)
@@ -294,8 +309,11 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
     owner_enabled = owner->enabled;
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
-            focus = widget;
-            break;
+            if (!focus) focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) {
+                focus = widget;
+                break;
+            }
         }
     app->on_event = font_event;
     app->user_data = &state;
@@ -350,7 +368,7 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
             if (status == XXWIDGETS_OK) status = xxwidgets_font_choose_dialog(state.window, (xxwidgets_font_role)pending, &selected, &chosen);
             if (status == XXWIDGETS_UNAVAILABLE) {
                 xxwidgets_widget_focus(state.rows[pending].family);
-                xxwidgets_widget_set_text(state.error, "Edit family, size, and style, then select Preview.");
+                xxwidgets_widget_set_text(state.error, XXW_TR(app, "Edit family, size, and style, then select Preview."));
                 status = XXWIDGETS_OK;
             } else if (status != XXWIDGETS_OK) {
                 font_error(&state, status);
@@ -456,6 +474,9 @@ xxwidgets_status xxwidgets_font_options_widget_create(xxwidgets_widget *owner, x
             if (kinds[i] != XXWIDGETS_EDIT && text[0]) text = XXW_TR(owner->app, text);
             status = xxwidgets_widget_create(owner->app, owner, kinds[i], text, rects[i], &widget->controls[role][i]);
         }
+        /* Cocoa and the terminal have no chooser: the edits are the way. */
+        if (status == XXWIDGETS_OK && !xxwidgets_font_choose_available(owner->app))
+            status = xxwidgets_widget_set_enabled(widget->controls[role][XXWIDGETS_FONT_OPTIONS_CHOOSE], 0);
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_font_options_init(&defaults);
     if (status == XXWIDGETS_OK) status = xxwidgets_font_options_widget_set(widget, &defaults);
@@ -582,6 +603,13 @@ xxwidgets_status xxwidgets_font_options_widget_process(xxwidgets_font_options_wi
         status = xxwidgets_font_choose_dialog(widget->owner, (xxwidgets_font_role)chosen_role, &font, &chosen);
         if (status == XXWIDGETS_UNAVAILABLE) status = xxwidgets_widget_focus(row.family);
         else if (status == XXWIDGETS_OK && chosen) status = fill_font_row(&row, chosen_role, &font);
+        else if (status != XXWIDGETS_OK && status != XXWIDGETS_OUT_OF_MEMORY) {
+            /* A refused font (GTK above 96 pt, a family that does not fit)
+             * must not end the dialog holding this form: say so on the row,
+             * keep every edit, and let the next edit redraw the preview. */
+            status = xxwidgets_widget_set_text(row.preview, font_choose_failure(widget->owner->app, status));
+            if (status == XXWIDGETS_OK) (void)xxwidgets_widget_focus(row.family);
+        }
     }
     return status;
 }

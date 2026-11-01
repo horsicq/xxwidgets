@@ -147,13 +147,22 @@ xxwidgets_status xxwidgets_scan_panel_get_flags(const xxwidgets_scan_panel *pane
 {
     return panel ? get_checks(panel->controls[XXWIDGETS_SCAN_PANEL_FLAGS], flags, 6) : XXWIDGETS_INVALID_ARGUMENT;
 }
+/* The Database combo has one item, Custom, which stands for the CUSTOM bit
+ * (1u << 1): the check-combo mask itself only knows bit 0. Bit 0, the
+ * deprecated EXTRA bit, is accepted and ignored. */
 xxwidgets_status xxwidgets_scan_panel_set_databases(xxwidgets_scan_panel *panel, unsigned int databases)
 {
-    return panel ? set_checks(panel->controls[XXWIDGETS_SCAN_PANEL_DATABASES], databases, 2) : XXWIDGETS_INVALID_ARGUMENT;
+    if (!panel || (databases & ~3u)) return XXWIDGETS_INVALID_ARGUMENT;
+    return set_checks(panel->controls[XXWIDGETS_SCAN_PANEL_DATABASES], (databases & XXWIDGETS_SCAN_DATABASE_CUSTOM) ? 1u : 0u, 1);
 }
 xxwidgets_status xxwidgets_scan_panel_get_databases(const xxwidgets_scan_panel *panel, unsigned int *databases)
 {
-    return panel ? get_checks(panel->controls[XXWIDGETS_SCAN_PANEL_DATABASES], databases, 2) : XXWIDGETS_INVALID_ARGUMENT;
+    unsigned int checks;
+    xxwidgets_status status;
+    if (!panel || !databases) return XXWIDGETS_INVALID_ARGUMENT;
+    status = get_checks(panel->controls[XXWIDGETS_SCAN_PANEL_DATABASES], &checks, 1);
+    if (status == XXWIDGETS_OK) *databases = (checks & 1u) ? XXWIDGETS_SCAN_DATABASE_CUSTOM : 0u;
+    return status;
 }
 
 static int tag_space(char ch)
@@ -390,7 +399,8 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
         XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
         XXWIDGETS_SCAN_PANEL_SCAN, XXWIDGETS_SCAN_PANEL_DIRECTORY, XXWIDGETS_SCAN_PANEL_LOG, XXWIDGETS_SCAN_PANEL_REPORT, XXWIDGETS_SCAN_PANEL_ELAPSED};
     static const char *const flag_names[6] = {XXW_N_("Deep scan"), XXW_N_("Heuristic scan"), XXW_N_("Verbose results"), XXW_N_("Aggressive scan"), XXW_N_("Hide unknown results"), XXW_N_("Format text report")};
-    static const char *const database_names[2] = {XXW_N_("Extra database"), XXW_N_("Custom database")};
+    static const char *const database_names[1] = {XXW_N_("Custom database")};
+    static const uint64_t database_values[1] = {XXWIDGETS_SCAN_DATABASE_CUSTOM};
     xxwidgets_scan_panel *panel;
     xxwidgets_rect rects[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT];
     xxwidgets_status status;
@@ -415,11 +425,12 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
     }
     status = fill_choices(panel->controls[XXWIDGETS_SCAN_PANEL_FLAGS], flag_names, 6);
     if (status != XXWIDGETS_OK) goto failed;
-    status = fill_choices(panel->controls[XXWIDGETS_SCAN_PANEL_DATABASES], database_names, 2);
+    /* Custom keeps its record value: the CUSTOM bit. */
+    status = xxwidgets_translated_choices(panel->controls[XXWIDGETS_SCAN_PANEL_DATABASES], database_names, database_values, 1);
     if (status != XXWIDGETS_OK) goto failed;
     status = xxwidgets_scan_panel_set_flags(panel, XXWIDGETS_SCAN_DEEP | XXWIDGETS_SCAN_HEURISTIC | XXWIDGETS_SCAN_VERBOSE);
     if (status != XXWIDGETS_OK) goto failed;
-    status = xxwidgets_scan_panel_set_databases(panel, XXWIDGETS_SCAN_DATABASE_EXTRA | XXWIDGETS_SCAN_DATABASE_CUSTOM);
+    status = xxwidgets_scan_panel_set_databases(panel, XXWIDGETS_SCAN_DATABASE_CUSTOM);
     if (status != XXWIDGETS_OK) goto failed;
     status = xxwidgets_scan_panel_set_available_tags(panel, NULL);
     if (status != XXWIDGETS_OK) goto failed;

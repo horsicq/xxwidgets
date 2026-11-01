@@ -666,6 +666,12 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
                 add_test(NAME xxwidgets_menu_gtk
                     COMMAND "${XXWIDGETS_XVFB_RUN}" -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:xxwidgets_menu_gtk_tests>)
                 set_tests_properties(xxwidgets_menu_gtk PROPERTIES TIMEOUT 30)
+                add_executable(xxwidgets_dialog_keys_gtk_tests tests/test_dialog_keys_gtk.c)
+                target_link_libraries(xxwidgets_dialog_keys_gtk_tests PRIVATE xxwidgets::xxwidgets PkgConfig::XXWIDGETS_GTK3)
+                target_compile_features(xxwidgets_dialog_keys_gtk_tests PRIVATE c_std_11)
+                add_test(NAME xxwidgets_dialog_keys_gtk
+                    COMMAND "${XXWIDGETS_XVFB_RUN}" -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:xxwidgets_dialog_keys_gtk_tests>)
+                set_tests_properties(xxwidgets_dialog_keys_gtk PROPERTIES TIMEOUT 30)
                 find_package(Python3 QUIET COMPONENTS Interpreter)
                 find_program(XXWIDGETS_XDOTOOL xdotool)
                 if(Python3_Interpreter_FOUND AND XXWIDGETS_XDOTOOL)

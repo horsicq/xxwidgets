@@ -57,11 +57,11 @@ static void free_records(xx_import_record *records, size_t count)
         }
     free(records);
 }
-static void describe(const xx_import_record *r, char *out, size_t capacity)
+static void describe(const xxwidgets_app *app, const xx_import_record *r, char *out, size_t capacity)
 {
     char offset[32], address[32];
     if (!r) {
-        snprintf(out, capacity, "No import selected");
+        snprintf(out, capacity, "%s", XXW_TR(app, "No import selected"));
         return;
     }
     if (r->offset < 0)
@@ -117,13 +117,14 @@ static xxwidgets_status present(xxwidgets_imports *v, const xxwidgets_imports_da
     for (size_t i = 0; i < data->count; ++i)
         if (matches(data->records[i].library_name, filter) || matches(data->records[i].name, filter))
             rows[count++] = data->records[i];
-    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " bytes | %zu / %zu imports", data->format, data->file_size, count, data->count);
-    describe(count ? rows : NULL, details, sizeof(details));
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s | %zu / %zu %s", data->format, data->file_size, XXW_TR(v->owner->app, "bytes"), count,
+             data->count, xxwidgets_app_ngettext(v->owner->app, "import", "imports", data->count));
+    describe(v->owner->app, count ? rows : NULL, details, sizeof(details));
     texts[0] = xxwidgets_strdup(data->path);
     texts[1] = xxwidgets_strdup(summary);
     texts[2] = xxwidgets_strdup(filter);
     texts[3] = xxwidgets_strdup(details);
-    texts[4] = xxwidgets_strdup(count ? "Select an import" : "No imports match");
+    texts[4] = xxwidgets_strdup(count ? XXW_TR(v->owner->app, "Select an import") : XXW_TR(v->owner->app, "No imports match"));
     for (size_t i = 0; i < 5; ++i)
         if (!texts[i])
             goto finish;
@@ -176,7 +177,8 @@ xxwidgets_status xxwidgets_imports_create(xxwidgets_widget *owner, xxwidgets_rec
 {
     static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL,        XXWIDGETS_LABEL, XXWIDGETS_LABEL,  XXWIDGETS_EDIT,   XXWIDGETS_BUTTON,
                                            XXWIDGET_IMPORTSVIEWER, XXWIDGETS_LABEL, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
-    static const char *const names[] = {"", "", "Filter", "", "Reset", "Imports", "No import selected", "Copy row", "Copy visible", ""};
+    static const char *const names[] = {"", "", XXW_N_("Filter"), "", XXW_N_("Reset"), XXW_N_("Imports"), XXW_N_("No import selected"),
+                                        XXW_N_("Copy row"), XXW_N_("Copy visible"), ""};
     xxwidgets_imports *v;
     xxwidgets_status status;
     if (!out)
@@ -191,10 +193,12 @@ xxwidgets_status xxwidgets_imports_create(xxwidgets_widget *owner, xxwidgets_rec
         return XXWIDGETS_OUT_OF_MEMORY;
     v->owner = owner;
     for (size_t i = 0; i < XXWIDGETS_IMPORTS_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
         if (status != XXWIDGETS_OK)
             goto fail;
     }
+    /* One row: a long path keeps its file name, and '&' is shown as is. */
+    C(v, PATH)->keep_end = 1;
     /* Column headers provide the visible filters. Retain these controls for
      * the existing programmatic filtering API and control IDs. */
     status = xxwidgets_widget_set_visible(C(v, FILTER_LABEL), 0);
@@ -251,14 +255,15 @@ static xxwidgets_status update_visible_state(xxwidgets_imports *v)
     xxwidgets_status status;
     if (count == v->displayed_count)
         return XXWIDGETS_OK;
-    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " bytes | %zu / %zu imports", v->format, v->file_size, count, v->count);
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s | %zu / %zu %s", v->format, v->file_size, XXW_TR(v->owner->app, "bytes"), count, v->count,
+             xxwidgets_app_ngettext(v->owner->app, "import", "imports", v->count));
     status = xxwidgets_widget_set_text(C(v, SUMMARY), summary);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_enabled(C(v, COPY), count != 0);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_enabled(C(v, COPY_ALL), count != 0);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_text(C(v, STATUS), count ? "Select an import" : "No imports match");
+        status = xxwidgets_widget_set_text(C(v, STATUS), count ? XXW_TR(v->owner->app, "Select an import") : XXW_TR(v->owner->app, "No imports match"));
     if (status == XXWIDGETS_OK)
         v->displayed_count = count;
     return status;
@@ -394,7 +399,7 @@ xxwidgets_status xxwidgets_imports_handle_event(xxwidgets_imports *v, const xxwi
         xxwidgets_status status = xxwidget_importsviewer_get_selection(C(v, TABLE), &index, &r);
         if (status != XXWIDGETS_OK)
             return status;
-        describe(index == SIZE_MAX ? NULL : &r, details, sizeof(details));
+        describe(v->owner->app, index == SIZE_MAX ? NULL : &r, details, sizeof(details));
         return xxwidgets_widget_set_text(C(v, DETAILS), details);
     }
     if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, FILTER))
@@ -433,7 +438,7 @@ xxwidgets_status xxwidgets_imports_process(xxwidgets_imports *v)
         if (status == XXWIDGETS_OK)
             return status;
         (void)xxwidgets_widget_set_text(C(v, FILTER), v->filter ? v->filter : "");
-        return xxwidgets_widget_set_text(C(v, STATUS), "Cannot apply filter (maximum 256 bytes)");
+        return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot apply filter (maximum 256 bytes)"));
     }
     if (action == COPY || action == COPY_ALL) {
         size_t index = SIZE_MAX, required;
@@ -446,7 +451,7 @@ xxwidgets_status xxwidgets_imports_process(xxwidgets_imports *v)
         }
         status = xxwidgets_imports_export_text(v, index, NULL, 0, &required);
         if (status != XXWIDGETS_OK)
-            return xxwidgets_widget_set_text(C(v, STATUS), "Cannot copy that many imports");
+            return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot copy that many imports"));
         text = malloc(required);
         if (!text)
             return XXWIDGETS_OUT_OF_MEMORY;
@@ -454,7 +459,8 @@ xxwidgets_status xxwidgets_imports_process(xxwidgets_imports *v)
         if (status == XXWIDGETS_OK)
             status = xxwidgets_clipboard_set_text(v->owner, text);
         free(text);
-        return xxwidgets_widget_set_text(C(v, STATUS), status == XXWIDGETS_OK ? "Copied" : "Clipboard unavailable");
+        return xxwidgets_widget_set_text(C(v, STATUS),
+                                         status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
     }
     return status;
 }

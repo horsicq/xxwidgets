@@ -44,7 +44,10 @@ extern "C" {
  * event:    optional; input on the page's controls during event dispatch.
  *           Record work and return; do not open dialogs here.
  * process:  optional; runs after every poll, outside dispatch. Nested modals
- *           owned by the dialog window (choosers) may be opened here.
+ *           owned by the dialog window (choosers) may be opened here. A
+ *           failure is the page's action failing, not the dialog's: the
+ *           dialog selects the page, shows a message for the status in its
+ *           message line and stays open with every edit.
  * reset:    the Default button: fill the form with defaults. Edits the form only.
  * validate: optional; OK checks every page before any page is applied.
  *           Return 0 and write a NUL-terminated message to reject.
@@ -81,7 +84,9 @@ XXWIDGETS_API xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *
  * writes the form into the values; apply them to the application after the
  * dialog returns accepted. Default restores each form's documented defaults. */
 
-/* Fonts form: four roles with family, size, style, Choose and a live preview. */
+/* Fonts form: six roles with family, size, style, Choose and a live preview.
+ * Choose is disabled without a native chooser (xxwidgets_font_choose_available);
+ * the HexView page's "Choose font" likewise, and it asks for the Hex role. */
 XXWIDGETS_API xxwidgets_status xxwidgets_options_page_fonts(xxwidgets_options_page *page, const char *title, xxwidgets_font_options *options);
 
 typedef struct xxwidgets_optimization_page_values {
@@ -99,7 +104,9 @@ XXWIDGETS_API xxwidgets_status xxwidgets_options_page_hex(xxwidgets_options_page
 
 /* OK calls callbacks.apply with the edited folders (empty = default), which
  * loads them; a failure keeps the dialog open with its message. Default
- * empties all three folders. paths are borrowed until the dialog returns. */
+ * empties the main and custom folders. paths[1], the deprecated extra folder,
+ * is ignored and apply receives "" for it. paths are borrowed until the
+ * dialog returns. */
 typedef struct xxwidgets_database_paths_page_values {
     const char *paths[3];
     xxwidgets_database_paths_callbacks callbacks;

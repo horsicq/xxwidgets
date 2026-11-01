@@ -143,8 +143,8 @@ size_t xxwidgets_hexview_column_width(const xxwidgets_widget *w, size_t column)
     if (!column)
         return w->hex_display.radix == 10 ? 22 : 19;
     if (column == 2)
-        return w->hex_columns + 2;
-    return (w->hex_columns / unit_size(w->hex_display.mode)) * (unit_width(w->hex_display.mode) + 1) + 2;
+        return w->hex_columns + 3;
+    return (w->hex_columns / unit_size(w->hex_display.mode)) * (unit_width(w->hex_display.mode) + 1) + 3;
 }
 const char *xxwidgets_hexview_title(const xxwidgets_widget *w, size_t column)
 {

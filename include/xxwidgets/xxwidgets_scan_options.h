@@ -42,6 +42,7 @@ typedef enum xxwidgets_scan_options_control_id {
     XXWIDGETS_SCAN_OPTIONS_AGGRESSIVE,
     XXWIDGETS_SCAN_OPTIONS_HIDE_UNKNOWN,
     XXWIDGETS_SCAN_OPTIONS_FORMAT,
+    /* Deprecated: not created any more, so widget_control returns NULL. */
     XXWIDGETS_SCAN_OPTIONS_DATABASE_EXTRA,
     XXWIDGETS_SCAN_OPTIONS_DATABASE_CUSTOM,
     XXWIDGETS_SCAN_OPTIONS_FLAGS_LABEL,
@@ -50,14 +51,17 @@ typedef enum xxwidgets_scan_options_control_id {
     XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT
 } xxwidgets_scan_options_control_id;
 
-/* Deep/Heuristic/Verbose and both optional databases are enabled initially.
- * Flags/databases use the XXWIDGETS_SCAN_* masks; other bits are invalid. */
+/* Deep/Heuristic/Verbose and the custom database are enabled initially.
+ * Flags/databases use the XXWIDGETS_SCAN_* masks; other bits are invalid.
+ * The deprecated XXWIDGETS_SCAN_DATABASE_EXTRA bit is accepted and ignored;
+ * the form never returns it. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_init(xxwidgets_scan_options *options);
 
-/* Embedded scan settings form with six flag checkboxes, two database choices,
- * and labels. Bounds use text cells and require at least 60 x 13. Children
- * belong to the owner WINDOW and use its app callback. Destroy this form before
- * its owner/app; borrowed controls must not be destroyed separately. */
+/* Embedded scan settings form with six flag checkboxes, the Custom database
+ * checkbox, and labels. Bounds use text cells and require at least 60 x 13.
+ * Children belong to the owner WINDOW and use its app callback. Destroy this
+ * form before its owner/app; borrowed controls must not be destroyed
+ * separately. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_options_widget **out_widget);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_options_widget_destroy(xxwidgets_scan_options_widget *widget);
 XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_options_widget_control(const xxwidgets_scan_options_widget *widget, xxwidgets_scan_options_control_id control);

@@ -77,8 +77,9 @@ xxwidgets_status xxwidgets_hexview_browser_create(xxwidgets_widget *owner, xxwid
     static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_EDIT,
         XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL, XXWIDGETS_COMBOBOX,
         XXWIDGETS_LABEL, XXWIDGETS_COMBOBOX, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_HEXVIEW, XXWIDGETS_LABEL};
-    static const char *const text[] = {"", "Read only", "Offset", "0x0", "Go", "Previous", "Next", "Refresh", "Encoding", "",
-        "Bytes", "", "Copy hex", "Copy text", "Save selection", "Hex bytes", "Choose a file"};
+    static const char *const text[] = {"", XXW_N_("Read only"), XXW_N_("Offset"), "0x0", XXW_N_("Go"), XXW_N_("Previous"), XXW_N_("Next"),
+        XXW_N_("Refresh"), XXW_N_("Encoding"), "", XXW_N_("Bytes"), "", XXW_N_("Copy hex"), XXW_N_("Copy text"), XXW_N_("Save selection"),
+        XXW_N_("Hex bytes"), XXW_N_("Choose a file")};
     static const char *const row_names[] = {"8", "16", "24", "32", "48", "64"};
     if (!out) return XXWIDGETS_INVALID_ARGUMENT;
     *out = NULL;
@@ -87,9 +88,11 @@ xxwidgets_status xxwidgets_hexview_browser_create(xxwidgets_widget *owner, xxwid
     v = calloc(1, sizeof(*v)); if (!v) return XXWIDGETS_OUT_OF_MEMORY;
     v->owner = owner;
     for (size_t i = 0; i < XXWIDGETS_HEX_BROWSER_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], text[i], (xxwidgets_rect){0,0,1,1}, &v->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, text[i]), (xxwidgets_rect){0,0,1,1}, &v->controls[i]);
         if (status != XXWIDGETS_OK) goto fail;
     }
+    /* One row: a long path keeps its file name, and '&' is shown as is. */
+    C(v, PATH)->keep_end = 1;
     status = xxwidgets_hexview_browser_set_rect(v, bounds);
     if (status == XXWIDGETS_OK) status = choices(C(v, ENCODING), encodings, 4);
     if (status == XXWIDGETS_OK) status = choices(C(v, ROWS), row_names, 6);
@@ -140,11 +143,14 @@ static xxwidgets_status location(xxwidgets_hexview_browser *v)
     snprintf(text, sizeof(text), "0x%" PRIX64, length ? offset : base);
     status = xxwidgets_widget_set_text(C(v, OFFSET), text);
     if (status != XXWIDGETS_OK) return status;
-    snprintf(text, sizeof(text), "%" PRIu64 " bytes | Read only", v->size);
+    snprintf(text, sizeof(text), "%" PRIu64 " %s | %s", v->size, XXW_TR(v->owner->app, "bytes"), XXW_TR(v->owner->app, "Read only"));
     status = xxwidgets_widget_set_text(C(v, SUMMARY), text);
     if (status != XXWIDGETS_OK) return status;
-    if (length) snprintf(text, sizeof(text), "Offset 0x%" PRIX64 " | Selection %" PRIu64 " bytes | Window 0x%" PRIX64, offset, length, base);
-    else snprintf(text, sizeof(text), "%s | Offset 0x%" PRIX64, v->size ? "End of file" : "Empty file", base);
+    if (length)
+        snprintf(text, sizeof(text), "%s 0x%" PRIX64 " | %s %" PRIu64 " %s | %s 0x%" PRIX64, XXW_TR(v->owner->app, "Offset"), offset,
+            XXW_TR(v->owner->app, "Selection"), length, xxwidgets_app_ngettext(v->owner->app, "byte", "bytes", length), XXW_TR(v->owner->app, "Window"), base);
+    else snprintf(text, sizeof(text), "%s | %s 0x%" PRIX64, v->size ? XXW_TR(v->owner->app, "End of file") : XXW_TR(v->owner->app, "Empty file"),
+        XXW_TR(v->owner->app, "Offset"), base);
     status = xxwidgets_widget_set_text(C(v, STATUS), text);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, PREVIOUS), base > 0);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, NEXT), base < v->size && v->size - base > XXWIDGETS_HEXVIEW_BROWSER_WINDOW);
@@ -159,14 +165,16 @@ xxwidgets_status xxwidgets_hexview_browser_set_device(xxwidgets_hexview_browser 
     char *texts[4] = {0}, *old[4];
     xxwidgets_widget *buttons[5];
     int enabled[5], wanted[5];
-    char summary[96];
+    char summary[192], selection[192];
     int64_t size;
     xxwidgets_status status = XXWIDGETS_OUT_OF_MEMORY;
     if (!v || !device || !path || !xxwidgets_valid_utf8(path) || (size = xx_io_total_size(device)) < 0) return XXWIDGETS_INVALID_ARGUMENT;
     fields[0] = C(v, PATH); fields[1] = C(v, SUMMARY); fields[2] = C(v, OFFSET); fields[3] = C(v, STATUS);
-    snprintf(summary, sizeof(summary), "%" PRIu64 " bytes | Read only", (uint64_t)size);
+    snprintf(summary, sizeof(summary), "%" PRIu64 " %s | %s", (uint64_t)size, XXW_TR(v->owner->app, "bytes"), XXW_TR(v->owner->app, "Read only"));
+    snprintf(selection, sizeof(selection), "%s 0x0 | %s 1 %s", XXW_TR(v->owner->app, "Offset"), XXW_TR(v->owner->app, "Selection"),
+        xxwidgets_app_ngettext(v->owner->app, "byte", "bytes", 1));
     texts[0] = xxwidgets_strdup(path); texts[1] = xxwidgets_strdup(summary); texts[2] = xxwidgets_strdup("0x0");
-    texts[3] = xxwidgets_strdup(size ? "Offset 0x0 | Selection 1 byte" : "Empty file");
+    texts[3] = xxwidgets_strdup(size ? selection : XXW_TR(v->owner->app, "Empty file"));
     for (size_t i = 0; i < 4; ++i) if (!texts[i]) goto finish;
     buttons[0] = C(v, PREVIOUS); buttons[1] = C(v, NEXT); buttons[2] = C(v, COPY_HEX); buttons[3] = C(v, COPY_TEXT); buttons[4] = C(v, DUMP);
     wanted[0] = 0; wanted[1] = (uint64_t)size > XXWIDGETS_HEXVIEW_BROWSER_WINDOW;
@@ -290,7 +298,7 @@ xxwidgets_status xxwidgets_hexview_browser_process(xxwidgets_hexview_browser *v)
     action = v->pending; v->pending = 0;
     if (!action) return XXWIDGETS_OK;
     if (action == ACTION_READ_ERROR)
-        return xxwidgets_widget_set_text(C(v, STATUS), "Cannot read this location; previous bytes retained. Try another offset or Refresh.");
+        return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot read this location; previous bytes retained. Try another offset or Refresh."));
     if (action == ACTION_GO) {
         char text[128];
         status = xxwidgets_widget_get_text(C(v, OFFSET), text, sizeof(text), NULL);
@@ -324,13 +332,14 @@ xxwidgets_status xxwidgets_hexview_browser_process(xxwidgets_hexview_browser *v)
     else if (action == ACTION_COPY) {
         status = xxwidgets_hexview_get_source_selection(C(v, HEX), &offset, &length);
         if (status == XXWIDGETS_OK && v->copy_format != XXWIDGETS_HEX_COPY_OFFSET && length > XXWIDGETS_HEXVIEW_BROWSER_COPY_LIMIT)
-            return xxwidgets_widget_set_text(C(v, STATUS), "Select at most 1 MiB to copy. Save selection can export larger ranges.");
+            return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Select at most 1 MiB to copy. Save selection can export larger ranges."));
         if (status == XXWIDGETS_OK) status = xxwidgets_hexview_set_copy_handler(C(v, HEX), NULL, NULL);
         if (status == XXWIDGETS_OK) status = xxwidgets_hexview_copy_selection(C(v, HEX), v->copy_format);
         (void)xxwidgets_hexview_set_copy_handler(C(v, HEX), copy_request, v);
-        if (status == XXWIDGETS_OK) return xxwidgets_widget_set_text(C(v, STATUS), "Copied");
+        if (status == XXWIDGETS_OK) return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Copied"));
     }
     if (status != XXWIDGETS_OK)
-        return xxwidgets_widget_set_text(C(v, STATUS), "Cannot complete action. Check the offset or file access; previous bytes retained on read failure.");
+        return xxwidgets_widget_set_text(C(v, STATUS),
+            XXW_TR(v->owner->app, "Cannot complete action. Check the offset or file access; previous bytes retained on read failure."));
     return status;
 }

@@ -29,8 +29,12 @@ static void hex_event(xxwidgets_app *app, const xxwidgets_event *event, void *us
         (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->close) ||
         (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) modal->done = 1;
     else if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window && modal->view) {
-        xxwidgets_rect bounds;
+        xxwidgets_rect bounds = {0};
         status = xxwidgets_widget_get_rect(modal->window, &bounds);
+        /* Backends may report less than the window minimum: lay out at the
+         * minimum and let the window clip, rather than fail the dialog. */
+        if (bounds.width < modal->window->min_columns) bounds.width = modal->window->min_columns;
+        if (bounds.height < modal->window->min_rows) bounds.height = modal->window->min_rows;
         if (status == XXWIDGETS_OK)
             status = xxwidgets_hexview_browser_set_rect(modal->view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 6});
         if (status == XXWIDGETS_OK)
@@ -62,21 +66,25 @@ xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, 
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     previous_default = app->modal_default; app->modal_default = NULL;
     previous_event = app->on_event; previous_user = app->user_data; enabled = owner->enabled;
+    /* Return focus to the owner's focused control, else its first one. */
     for (widget = app->widgets; widget; widget = widget->next)
-        if (widget->parent == owner && xxwidgets_focusable(widget)) { focus = widget; break; }
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            if (!focus) focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) { focus = widget; break; }
+        }
     app->on_event = hex_event; app->user_data = &modal;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 108, 32}, &modal.window);
+        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 128, 34}, &modal.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = modal.window;
-    status = xxwidgets_window_set_minimum_size(modal.window, 98, 26);
+    status = xxwidgets_window_set_minimum_size(modal.window, 110, 26);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_hexview_browser_create(modal.window, (xxwidgets_rect){1, 1, 106, 26}, &modal.view);
+        status = xxwidgets_hexview_browser_create(modal.window, (xxwidgets_rect){1, 1, 126, 28}, &modal.view);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_hexview_browser_set_device(modal.view, path, device);
     if (status == XXWIDGETS_OK && options) status = xxwidgets_hexview_browser_set_options(modal.view, options);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, "Close", (xxwidgets_rect){95, 29, 12, 2}, &modal.close);
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){114, 31, 12, 2}, &modal.close);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, sizeof(shortcuts) / sizeof(shortcuts[0]));
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_set_enabled(owner, 0);

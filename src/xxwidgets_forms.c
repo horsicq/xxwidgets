@@ -188,20 +188,20 @@ xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const cha
                 result.font.bold = result.font.italic = 0;
                 status = xxwidgets_hex_options_widget_set(form, &result);
             }
-            if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(error, "Monospace font, automatic size.");
+            if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "Monospace font, automatic size."));
             continue;
         }
         status = xxwidgets_hex_options_widget_get(form, &result);
         if (status == XXWIDGETS_INVALID_ARGUMENT || status == XXWIDGETS_BUFFER_TOO_SMALL) {
-            status = xxwidgets_widget_set_text(error, "Font family: up to 127 UTF-8 bytes. Size: 4..96, or 0 for automatic.");
+            status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "Font family: up to 127 UTF-8 bytes. Size: 4..96, or 0 for automatic."));
             continue;
         }
         if (status != XXWIDGETS_OK) continue;
         if (pending == 2) {
             int chosen = 0;
-            status = xxwidgets_font_choose_dialog(modal.window, XXWIDGETS_FONT_TABLE_VIEWS, &result.font, &chosen);
+            status = xxwidgets_font_choose_dialog(modal.window, XXWIDGETS_FONT_HEX_VIEWS, &result.font, &chosen);
             if (status == XXWIDGETS_UNAVAILABLE) {
-                status = xxwidgets_widget_set_text(error, "Edit the font family and point size above; 0 selects automatic size.");
+                status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "Edit the font family and point size above; 0 selects automatic size."));
                 if (status == XXWIDGETS_OK) status = xxwidgets_widget_focus(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_FONT_FAMILY));
             } else if (status == XXWIDGETS_OK && chosen) {
                 status = xxwidgets_hex_options_widget_set(form, &result);
@@ -298,7 +298,7 @@ xxwidgets_status xxwidgets_form_dialog(xxwidgets_widget *owner, const char *titl
                 xxwidgets_widget_get_text(controls[i], results[i], fields[i].capacity, NULL);
             if (status != XXWIDGETS_OK) break;
         }
-        if (status == XXWIDGETS_BUFFER_TOO_SMALL) status = xxwidgets_widget_set_text(error, "One of the values is too long. Shorten it and choose OK.");
+        if (status == XXWIDGETS_BUFFER_TOO_SMALL) status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "One of the values is too long. Shorten it and choose OK."));
         else if (status == XXWIDGETS_OK) { commit = 1; modal.done = 1; }
     }
     if (modal.app->quit) commit = 0;
@@ -341,13 +341,14 @@ xxwidgets_status xxwidgets_choice_dialog(xxwidgets_widget *owner, const char *ti
         status = xxwidgets_widget_set_value(modal.list, *selection == SIZE_MAX ? -1 : (int)*selection);
         if (status != XXWIDGETS_OK) goto finish;
     }
-    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, count ? "" : "No items.", (xxwidgets_rect){2, 18, 70, 1}, &error);
+    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, count ? "" : XXW_TR(modal.app, "No items."), (xxwidgets_rect){2, 18, 70, 1}, &error);
     if (status != XXWIDGETS_OK) goto finish;
     if (count) {
         status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "OK"), (xxwidgets_rect){48, 20, 10, 1}, &modal.ok);
         if (status != XXWIDGETS_OK) goto finish;
     }
-    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, count ? "Cancel" : "Close", (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
+    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"),
+        (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
     if (status != XXWIDGETS_OK) goto finish;
     status = modal_show(&modal, count ? modal.list : modal.cancel);
     while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
@@ -356,7 +357,7 @@ xxwidgets_status xxwidgets_choice_dialog(xxwidgets_widget *owner, const char *ti
         if (status != XXWIDGETS_OK || modal.done || modal.app->quit || !modal.pending) continue;
         modal.pending = 0;
         status = xxwidgets_treeview_get_selection(modal.list, &selected, &node);
-        if (status == XXWIDGETS_OK && selected >= count) status = xxwidgets_widget_set_text(error, "Select an item, then choose OK.");
+        if (status == XXWIDGETS_OK && selected >= count) status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "Select an item, then choose OK."));
         else if (status == XXWIDGETS_OK) { commit = 1; modal.done = 1; }
     }
     if (modal.app->quit) commit = 0;
@@ -385,8 +386,8 @@ xxwidgets_status xxwidgets_structure_dialog(xxwidgets_widget *owner, const char 
     if (status == XXWIDGETS_OK && count) status = xxwidgets_widget_set_value(modal.list, *selection == SIZE_MAX ? 0 : (int)*selection);
     if (status == XXWIDGETS_OK && count) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Select bytes"),
         (xxwidgets_rect){43, 20, 15, 1}, &modal.ok);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, count ? "Cancel" : "Close",
-        (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON,
+        count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"), (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
     if (status == XXWIDGETS_OK) status = modal_show(&modal, count ? modal.list : modal.cancel);
     while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
         xxwidgets_data_struct_field field;
@@ -438,8 +439,8 @@ xxwidgets_status xxwidgets_entropy_samples_dialog(xxwidgets_widget *owner, const
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Select block"),
             (xxwidgets_rect){43, 20, 15, 1}, &modal.ok);
     }
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, count ? "Cancel" : "Close",
-        (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON,
+        count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"), (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
     if (status == XXWIDGETS_OK) status = modal_show(&modal, count ? modal.list : modal.cancel);
     while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
         xxwidgets_tree_node node;

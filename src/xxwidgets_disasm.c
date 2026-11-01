@@ -78,7 +78,7 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
 {
     xxwidgets_debugger_instruction rows[XXWIDGETS_DISASM_MAX_ROWS];
     uint64_t end = p->offset;
-    char offset_text[32], summary[512], status_text[128];
+    char offset_text[32], summary[512], status_text[256];
     char *texts[3] = {0}, *old[3];
     xxwidgets_widget *labels[3] = {C(v, OFFSET), C(v, SUMMARY), C(v, STATUS)};
     xxwidgets_widget *buttons[3] = {C(v, BACK), C(v, NEXT), C(v, COPY)};
@@ -100,9 +100,10 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
     if (end != p->next_offset)
         return XXWIDGETS_INVALID_ARGUMENT;
     snprintf(offset_text, sizeof(offset_text), "0x%" PRIX64, p->offset);
-    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " bytes", v->description, p->file_size);
-    snprintf(status_text, sizeof(status_text), "%s | File offset 0x%" PRIX64 " | %zu rows", p->count ? "Linear disassembly" : "End of file",
-             p->offset, p->count);
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s", v->description, p->file_size, XXW_TR(v->owner->app, "bytes"));
+    snprintf(status_text, sizeof(status_text), "%s | %s 0x%" PRIX64 " | %zu %s",
+             p->count ? XXW_TR(v->owner->app, "Linear disassembly") : XXW_TR(v->owner->app, "End of file"), XXW_TR(v->owner->app, "File offset"),
+             p->offset, p->count, xxwidgets_app_ngettext(v->owner->app, "row", "rows", p->count));
     texts[0] = xxwidgets_strdup(offset_text);
     texts[1] = xxwidgets_strdup(summary);
     texts[2] = xxwidgets_strdup(status_text);
@@ -193,8 +194,19 @@ xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidg
                                            XXWIDGETS_BUTTON, XXWIDGETS_BUTTON,   XXWIDGETS_BUTTON, XXWIDGETS_BUTTON,
                                            XXWIDGETS_LABEL,  XXWIDGETS_COMBOBOX, XXWIDGETS_BUTTON, XXWIDGETS_DEBUGGER_DISASM,
                                            XXWIDGETS_LABEL};
-    static const char *const names[] = {"",        "",     "Offset", "0x0",      "Go",          "Back",         "Next",
-                                        "Refresh", "Mode", "",       "Copy row", "Disassembly", "Select a mode"};
+    static const char *const names[] = {"",
+                                        "",
+                                        XXW_N_("Offset"),
+                                        "0x0",
+                                        XXW_N_("Go"),
+                                        XXW_N_("Back"),
+                                        XXW_N_("Next"),
+                                        XXW_N_("Refresh"),
+                                        XXW_N_("Mode"),
+                                        "",
+                                        XXW_N_("Copy row"),
+                                        XXW_N_("Disassembly"),
+                                        XXW_N_("Select a mode")};
     xxwidgets_disasm_browser *v;
     xxwidgets_status status;
     if (!out)
@@ -230,10 +242,12 @@ xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidg
         return XXWIDGETS_OUT_OF_MEMORY;
     }
     for (size_t i = 0; i < XXWIDGETS_DISASM_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], names[i], (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
         if (status != XXWIDGETS_OK)
             goto fail;
     }
+    /* One row: a long path keeps its file name, and '&' is shown as is. */
+    C(v, PATH)->keep_end = 1;
     status = xxwidgets_disasm_browser_set_rect(v, bounds);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_text(C(v, PATH), s->path);
@@ -246,7 +260,7 @@ xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidg
     if (status == XXWIDGETS_OK)
         status = load_page(v, v->offset, v->mode, GO);
     if (status == XXWIDGETS_UNAVAILABLE) {
-        status = xxwidgets_widget_set_text(C(v, STATUS), "Choose an instruction mode for this file.");
+        status = xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(owner->app, "Choose an instruction mode for this file."));
         (void)xxwidgets_widget_set_enabled(C(v, NEXT), 0);
         (void)xxwidgets_widget_set_enabled(C(v, BACK), 0);
         (void)xxwidgets_widget_set_enabled(C(v, COPY), 0);
@@ -395,12 +409,13 @@ xxwidgets_status xxwidgets_disasm_browser_process(xxwidgets_disasm_browser *v)
         if (status == XXWIDGETS_OK && index != SIZE_MAX) {
             snprintf(text, sizeof(text), "0x%" PRIX64 "\t%s\t%s\t%s", row.address, row.bytes, row.instruction, row.comment);
             status = xxwidgets_clipboard_set_text(v->owner, text);
-            return xxwidgets_widget_set_text(C(v, STATUS), status == XXWIDGETS_OK ? "Copied" : "Clipboard unavailable");
+            return xxwidgets_widget_set_text(C(v, STATUS),
+                                             status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
         }
     }
     if (status != XXWIDGETS_OK)
         return xxwidgets_widget_set_text(C(v, STATUS), status == XXWIDGETS_UNAVAILABLE
-                                                           ? "Choose a supported instruction mode."
-                                                           : "Cannot read/decode that offset; previous page retained.");
+                                                           ? XXW_TR(v->owner->app, "Choose a supported instruction mode.")
+                                                           : XXW_TR(v->owner->app, "Cannot read/decode that offset; previous page retained."));
     return status;
 }

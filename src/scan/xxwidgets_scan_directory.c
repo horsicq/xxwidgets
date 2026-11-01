@@ -524,6 +524,8 @@ xxwidgets_status xxwidgets_scan_directory_set_options(xxwidgets_scan_directory *
     if (view->job)
         return XXWIDGETS_BUSY;
     view->options = *options;
+    /* The deprecated Extra bit is accepted and dropped, as the form does. */
+    view->options.databases &= XXWIDGETS_SCAN_DATABASE_CUSTOM;
     return XXWIDGETS_OK;
 }
 xxwidgets_status xxwidgets_scan_directory_get_options(const xxwidgets_scan_directory *view, xxwidgets_scan_options *options)

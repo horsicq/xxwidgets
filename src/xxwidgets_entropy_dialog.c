@@ -2,13 +2,29 @@
 #include "xxwidgets_internal.h"
 #include "xxwidgets/xxwidgets_entropy.h"
 #include <limits.h>
+#include <stdlib.h>
 
 typedef struct entropy_modal {
-    xxwidgets_widget *window, *close;
+    xxwidgets_widget *window, *close, *copy, *copied;
     xxwidgets_entropy *view;
     int done;
     xxwidgets_status failure;
 } entropy_modal;
+
+/* "Copy all": the current tab's visible table, as Save would write it. A
+ * failure is reported next to the button and keeps the dialog open. */
+static xxwidgets_status entropy_copy_all(entropy_modal *modal)
+{
+    xxwidgets_app *app = modal->window->app;
+    const char *message = XXW_TR(app, "Cannot copy");
+    size_t required = 0;
+    char *text = NULL;
+    if (xxwidgets_entropy_export_csv(modal->view, NULL, 0, &required) == XXWIDGETS_OK && required && (text = malloc(required)) != NULL &&
+        xxwidgets_entropy_export_csv(modal->view, text, required, NULL) == XXWIDGETS_OK)
+        message = xxwidgets_clipboard_set_text(modal->window, text) == XXWIDGETS_OK ? XXW_TR(app, "Copied") : XXW_TR(app, "Clipboard unavailable");
+    free(text);
+    return xxwidgets_widget_set_text(modal->copied, message);
+}
 
 static void entropy_event(xxwidgets_app *app, const xxwidgets_event *event, void *user)
 {
@@ -18,11 +34,20 @@ static void entropy_event(xxwidgets_app *app, const xxwidgets_event *event, void
     if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == modal->window) ||
         (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->close) ||
         (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) modal->done = 1;
-    else if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window && modal->view) {
-        xxwidgets_rect bounds;
+    else if (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->copy && modal->view) status = entropy_copy_all(modal);
+    else if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window && modal->view && modal->close) {
+        xxwidgets_rect bounds = {0};
         status = xxwidgets_widget_get_rect(modal->window, &bounds);
+        /* Backends may report less than the window minimum: lay out at the
+         * minimum and let the window clip, rather than fail the dialog. */
+        if (bounds.width < modal->window->min_columns) bounds.width = modal->window->min_columns;
+        if (bounds.height < modal->window->min_rows) bounds.height = modal->window->min_rows;
         if (status == XXWIDGETS_OK)
             status = xxwidgets_entropy_set_rect(modal->view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 6});
+        if (status == XXWIDGETS_OK)
+            status = xxwidgets_widget_set_rect(modal->copy, (xxwidgets_rect){1, bounds.height - 3, 14, 2});
+        if (status == XXWIDGETS_OK)
+            status = xxwidgets_widget_set_rect(modal->copied, (xxwidgets_rect){16, bounds.height - 3, bounds.width - 30, 2});
         if (status == XXWIDGETS_OK)
             status = xxwidgets_widget_set_rect(modal->close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
     } else if (modal->view) status = xxwidgets_entropy_handle_event(modal->view, event);
@@ -45,8 +70,12 @@ xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *t
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     previous_event = app->on_event; previous_user = app->user_data; enabled = owner->enabled;
+    /* Return focus to the owner's focused control, else its first one. */
     for (widget = app->widgets; widget; widget = widget->next)
-        if (widget->parent == owner && xxwidgets_focusable(widget)) { focus = widget; break; }
+        if (widget->parent == owner && xxwidgets_focusable(widget)) {
+            if (!focus) focus = widget;
+            if (xxwidgets_widget_has_focus(widget) == 1) { focus = widget; break; }
+        }
     app->on_event = entropy_event; app->user_data = &modal;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
         (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 100, 34}, &modal.window);
@@ -58,7 +87,11 @@ xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *t
     if (status == XXWIDGETS_OK)
         status = xxwidgets_entropy_set_statistics(modal.view, statistics);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, "Close", (xxwidgets_rect){87, 31, 12, 2}, &modal.close);
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Copy all"), (xxwidgets_rect){1, 31, 14, 2}, &modal.copy);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){16, 31, 70, 2}, &modal.copied);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){87, 31, 12, 2}, &modal.close);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, 1);
     if (status != XXWIDGETS_OK) goto finish;
     /* Export remains available to embedding hosts. This read-only modal has

@@ -265,19 +265,19 @@ static xxwidgets_status create_disk_window(disk_ui *ui, const char *title, const
     app->modal_window = ui->window;
 #define CREATE(member, kind, text) \
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, ui->window, kind, text, (xxwidgets_rect){0, 0, 1, 1}, &ui->member)
-    CREATE(destination_label, XXWIDGETS_LABEL, "Destination:");
+    CREATE(destination_label, XXWIDGETS_LABEL, XXW_TR(app, "Destination:"));
     CREATE(destination, XXWIDGETS_LABEL, destination);
-    CREATE(current_label, XXWIDGETS_LABEL, "Current file:");
+    CREATE(current_label, XXWIDGETS_LABEL, XXW_TR(app, "Current file:"));
     CREATE(current, XXWIDGETS_LABEL, "");
-    CREATE(files, XXWIDGETS_LABEL, "Files");
+    CREATE(files, XXWIDGETS_LABEL, XXW_TR(app, "Files"));
     CREATE(file_bar, XXWIDGETS_PROGRESS, "");
-    CREATE(bytes, XXWIDGETS_LABEL, "Bytes");
+    CREATE(bytes, XXWIDGETS_LABEL, XXW_TR(app, "Bytes"));
     CREATE(byte_bar, XXWIDGETS_PROGRESS, "");
     CREATE(elapsed, XXWIDGETS_LABEL, "");
     CREATE(speed, XXWIDGETS_LABEL, "");
     CREATE(remaining, XXWIDGETS_LABEL, "");
-    CREATE(status, XXWIDGETS_LABEL, "Writing to disk...");
-    CREATE(cancel, XXWIDGETS_BUTTON, "Cancel");
+    CREATE(status, XXWIDGETS_LABEL, XXW_TR(app, "Writing to disk..."));
+    CREATE(cancel, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"));
 #undef CREATE
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_minimum_size(ui->window, 90, 23);
     if (status == XXWIDGETS_OK) status = disk_layout(ui, 104, 23);
@@ -288,50 +288,53 @@ static xxwidgets_status render_disk(disk_ui *ui, const xxwidgets_disk_write_prog
 {
     char text[256], done[64], total[64], time[64], path[128];
     xxwidgets_status status;
+    const xxwidgets_app *app = ui->window->app;
+    /* Translated words, never translated formats: a catalog cannot break them. */
+    const char *undetermined = XXW_TR(app, "undetermined");
     size_t path_capacity = ui->window->rect.width > 22 ? (size_t)ui->window->rect.width - 21 : 4;
     if (path_capacity > sizeof(path)) path_capacity = sizeof(path);
     xxwidgets_process_status_tail(path, path_capacity, ui->destination_text);
     status = xxwidgets_widget_set_text(ui->destination, path);
     xxwidgets_process_status_tail(path, path_capacity, p->current_file);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->current, path);
-    if (p->files_total_known) snprintf(text, sizeof(text), "Files: %" PRIu64 " / %" PRIu64, p->files_done, p->files_total);
-    else snprintf(text, sizeof(text), "Files: %" PRIu64 " / undetermined", p->files_done);
+    if (p->files_total_known) snprintf(text, sizeof(text), "%s %" PRIu64 " / %" PRIu64, XXW_TR(app, "Files:"), p->files_done, p->files_total);
+    else snprintf(text, sizeof(text), "%s %" PRIu64 " / %s", XXW_TR(app, "Files:"), p->files_done, undetermined);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->files, text);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_value(
             ui->file_bar, !p->files_total_known && !ui->stop && !finished ? activity(elapsed) : percent(p->files_done, p->files_total, p->files_total_known, finished));
     size_text(done, sizeof(done), p->bytes_done);
     size_text(total, sizeof(total), p->bytes_total);
-    snprintf(text, sizeof(text), "Bytes: %s / %s", done, p->bytes_total_known ? total : "undetermined");
+    snprintf(text, sizeof(text), "%s %s / %s", XXW_TR(app, "Bytes:"), done, p->bytes_total_known ? total : undetermined);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->bytes, text);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_value(ui->byte_bar, !p->bytes_total_known && !ui->stop && !finished
                                                               ? activity(elapsed + 450)
                                                               : percent(p->bytes_done, p->bytes_total, p->bytes_total_known, finished));
     duration_text(time, sizeof(time), elapsed);
-    snprintf(text, sizeof(text), "Elapsed: %s", time);
+    snprintf(text, sizeof(text), "%s %s", XXW_TR(app, "Elapsed:"), time);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->elapsed, text);
     if (elapsed && p->bytes_done) {
         long double speed = (long double)p->bytes_done * 1000 / elapsed;
         uint64_t rate = speed >= (long double)UINT64_MAX ? UINT64_MAX : (uint64_t)speed;
         size_text(done, sizeof(done), rate);
-        snprintf(text, sizeof(text), "Speed: %s/s", done);
-    } else snprintf(text, sizeof(text), "Speed: --");
+        snprintf(text, sizeof(text), "%s %s/s", XXW_TR(app, "Speed:"), done);
+    } else snprintf(text, sizeof(text), "%s --", XXW_TR(app, "Speed:"));
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->speed, text);
     if (elapsed && p->bytes_done && p->bytes_total_known && p->bytes_done < p->bytes_total) {
         long double milliseconds = (long double)(p->bytes_total - p->bytes_done) * elapsed / p->bytes_done;
         duration_text(time, sizeof(time), milliseconds >= (long double)UINT64_MAX ? UINT64_MAX : (uint64_t)milliseconds);
-        snprintf(text, sizeof(text), "Remaining: %s", time);
-    } else snprintf(text, sizeof(text), "Remaining: %s", finished ? "00:00:00" : "--");
+        snprintf(text, sizeof(text), "%s %s", XXW_TR(app, "Remaining:"), time);
+    } else snprintf(text, sizeof(text), "%s %s", XXW_TR(app, "Remaining:"), finished ? "00:00:00" : "--");
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->remaining, text);
-    if (ui->stop) snprintf(text, sizeof(text), "Stopping safely...");
+    if (ui->stop) snprintf(text, sizeof(text), "%s", XXW_TR(app, "Stopping safely..."));
     else if (pd->last_error) {
         memcpy(text, pd->error_string, sizeof(pd->error_string));
         text[sizeof(pd->error_string)] = 0;
         while (text[0] && !xxwidgets_valid_utf8(text)) text[strlen(text) - 1] = 0;
         clean_controls(text);
     } else {
-        snprintf(text, sizeof(text), "Writing to disk...");
+        snprintf(text, sizeof(text), "%s", XXW_TR(app, "Writing to disk..."));
         for (size_t i = 0; i < XX_PD_LEVELS; ++i)
             if (pd->records[i].is_busy && pd->records[i].status[0]) {
                 memcpy(text, pd->records[i].status, sizeof(pd->records[i].status));
@@ -341,7 +344,7 @@ static xxwidgets_status render_disk(disk_ui *ui, const xxwidgets_disk_write_prog
             }
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->status, text);
-    if (ui->stop && status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->cancel, "Stopping...");
+    if (ui->stop && status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(ui->cancel, XXW_TR(app, "Stopping..."));
     if (ui->stop && status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(ui->cancel, 0);
     return status;
 }

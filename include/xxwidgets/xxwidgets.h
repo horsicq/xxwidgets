@@ -424,8 +424,18 @@ typedef struct xxwidgets_option {
 /* Common modal options form with checkboxes, OK and Cancel. The owner is
  * disabled while open. Values change only on OK; Cancel/close leaves them
  * unchanged and reports accepted == 0. Call on the UI thread outside input
- * callbacks/polling; reentrant calls return BUSY. Supports 0..16 options. */
+ * callbacks/polling; reentrant calls return BUSY. Supports 0..16 options.
+ * May be owned by the current modal window (a confirmation asked by a modal
+ * editor); that modal and its default button are restored on close. OK is
+ * the default button (Enter). */
 XXWIDGETS_API xxwidgets_status xxwidgets_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_option *options, size_t count, int *accepted);
+
+/* A question with two buttons: yes_label is the default (Enter), no_label is
+ * what Escape and closing the window answer. text holds up to 12 lines
+ * separated by '\n', each shown as one label (64 columns). *accepted is 1 for
+ * yes. The owner, modal and reentrancy rules are those of options_dialog. */
+XXWIDGETS_API xxwidgets_status xxwidgets_question_dialog(xxwidgets_widget *owner, const char *title, const char *text,
+                                                         const char *yes_label, const char *no_label, int *accepted);
 
 /* Include xxwidgets/xxwidgets_process.h for xxfclib's xx_pd_struct definition.
  * Called immediately, then between event polls (30 ms timeout). Keep it
@@ -438,7 +448,9 @@ typedef xxwidgets_status (*xxwidgets_process_update_fn)(void *user_data, int sto
 /* Modal progress for all five xx_pd_record slots. A bar and its status/count
  * label follow is_busy: a change shows once it has lasted 200 ms (the first
  * view shows the busy slots at once), so a slot that flashes by does not
- * resize the dialog; an idle slot still shown keeps its last text.
+ * resize the dialog; an idle slot still shown keeps its last text. While no
+ * slot is shown (a job still connecting or preparing), the first row reads
+ * "Working..." over a bar that moves, so the dialog never looks empty.
  * Percentages are clamped; total == 0 displays zero percent with an
  * unknown-total count.
  * The dialog is created only if unfinished after MORE than 1,000 ms, measured

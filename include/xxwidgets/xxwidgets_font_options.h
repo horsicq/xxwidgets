@@ -73,6 +73,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *o
 /* Native chooser for one role. UNAVAILABLE when a backend has no font chooser.
  * Cancellation is successful with accepted == 0 and leaves font untouched. */
 XXWIDGETS_API xxwidgets_status xxwidgets_font_choose_dialog(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted);
+/* Nonzero when the backend has a native font chooser (Win32, GTK; not Cocoa or
+ * the terminal), so a "Choose" button can be disabled up front instead of
+ * failing with UNAVAILABLE. NULL is 0. */
+XXWIDGETS_API int xxwidgets_font_choose_available(const xxwidgets_app *app);
 
 /* Embedded fonts form: per role a label, family and size edits, Bold and
  * Italic, a Choose button and a preview line drawn in the edited font.
@@ -102,7 +106,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_set(xxwidgets_font_
 XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_set_rect(xxwidgets_font_options_widget *widget, xxwidgets_rect bounds);
 /* Forward the owner's input events, then call process after polling. Choose
  * opens the native chooser (the owner must be the active modal window or no
- * modal may be open); edits refresh their row's preview once valid. */
+ * modal may be open); edits refresh their row's preview once valid. Without
+ * a chooser (xxwidgets_font_choose_available) the Choose buttons are disabled.
+ * A font the chooser refuses is reported on the row's preview line and leaves
+ * the edits alone; process still returns OK for it. */
 XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_handle_event(xxwidgets_font_options_widget *widget, const xxwidgets_event *event);
 XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_process(xxwidgets_font_options_widget *widget);
 

@@ -37,6 +37,11 @@
 /* Pixels left free between vertically adjacent cells (half above, half below
  * each control), so stacked entries and buttons do not touch. */
 #define GRID_ROW_GAP 2
+/* The copyable text dialog: rows around its text (one above, the button rows
+ * below), and the smallest size that keeps "Copy all" and Close apart. */
+#define ABOUT_TEXT_SPARE_ROWS 5
+#define ABOUT_TEXT_MIN_COLUMNS 40
+#define ABOUT_TEXT_MIN_ROWS 10
 
 /* Themes give buttons, entries and combos a min-height meant for box layouts
  * (30-34 px), taller than a text cell. Only that floor is dropped: each theme
@@ -97,6 +102,8 @@ typedef struct gtk_widget_state {
     uint64_t tree_content_revision;
     int tree_collapsing, tree_before_collapse;
     GtkWidget *about_text; /* Owned by the window's content container. */
+    int about_resizable;   /* WINDOW: the copyable text dialog, whose text follows the window size. */
+    int about_text_x;      /* WINDOW: left edge of the about text, in pixels. */
     PangoFontDescription *preview_font;
     GtkCssProvider *preview_css;
     PangoFontDescription *hex_font;
@@ -333,8 +340,11 @@ static xxwidgets_status gtk_preview_font(xxwidgets_widget *widget, xxwidgets_fon
 
 static xxwidgets_status gtk_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted)
 {
-    static const char *titles[] = {"Controls font", "Table views font", "Tree views font", "Text edits font"};
-    GtkWidget *dialog = gtk_font_chooser_dialog_new(titles[role], GTK_WINDOW(owner->native));
+    /* One title per role: a role without one falls back to a generic title. */
+    static const char *const titles[XXWIDGETS_FONT_ROLE_COUNT] = {XXW_N_("Controls font"), XXW_N_("Table views font"), XXW_N_("Tree views font"),
+                                                                  XXW_N_("Text edits font"), XXW_N_("Hex views font"), XXW_N_("Disasm views font")};
+    const char *title = (int)role >= 0 && (int)role < XXWIDGETS_FONT_ROLE_COUNT && titles[role] ? titles[role] : XXW_N_("Choose font");
+    GtkWidget *dialog = gtk_font_chooser_dialog_new(XXW_TR(owner->app, title), GTK_WINDOW(owner->native));
     PangoFontDescription *description = gtk_font_description(font);
     xxwidgets_status status = XXWIDGETS_OK;
     *accepted = 0;
@@ -532,6 +542,11 @@ static void window_update_minimum(xxwidgets_widget *window)
     } else if (window->has_minimum) {
         columns = window->min_columns;
         rows = window->min_rows;
+    } else if (state->about_resizable) {
+        /* Its buttons follow the bottom and right edges: the children's
+         * bounding box would grow with every resize. */
+        columns = ABOUT_TEXT_MIN_COLUMNS;
+        rows = ABOUT_TEXT_MIN_ROWS;
     } else {
         xxwidgets_widget *child;
         for (child = window->app->widgets; child; child = child->next)
@@ -668,6 +683,35 @@ static int measure_control_height(void)
     return height;
 }
 
+static void apply_geometry(xxwidgets_widget *widget, int x, int y, int width, int height);
+
+/* The copyable text dialog keeps its text between the top row and the button
+ * rows. Its buttons keep their distance from the bottom edge, those in the
+ * right half also from the right edge; a RESIZE handler may still move them. */
+static void about_text_layout(xxwidgets_widget *window, int old_columns, int old_rows)
+{
+    gtk_app_state *app = window->app->platform;
+    gtk_widget_state *state = window->platform;
+    GtkWidget *scroll = state->about_text ? gtk_widget_get_parent(state->about_text) : NULL;
+    int width = window->rect.width * app->cell_width - state->about_text_x - 2 * app->cell_width;
+    int height = (window->rect.height - ABOUT_TEXT_SPARE_ROWS) * app->cell_height;
+    xxwidgets_widget *child;
+    if (scroll) gtk_widget_set_size_request(scroll, width > 1 ? width : 1, height > 1 ? height : 1);
+    for (child = window->app->widgets; child; child = child->next) {
+        xxwidgets_rect rect;
+        int x, y, pixel_width, pixel_height;
+        if (child->parent != window || child->kind != XXWIDGETS_BUTTON || !child->platform) continue;
+        rect = child->rect;
+        rect.y += window->rect.height - old_rows;
+        if (2 * rect.x >= old_columns) rect.x += window->rect.width - old_columns;
+        if (rect.x < 0) rect.x = 0;
+        if (rect.y < 0) rect.y = 0;
+        if (rect_equal(rect, child->rect)) continue;
+        child->rect = rect;
+        if (pixel_rect(child, &x, &y, &pixel_width, &pixel_height)) apply_geometry(child, x, y, pixel_width, pixel_height);
+    }
+}
+
 static gboolean window_close(GtkWidget *native, GdkEvent *event, gpointer data)
 {
     xxwidgets_widget *widget = data;
@@ -683,9 +727,15 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
     xxwidgets_widget *widget = data;
     gtk_app_state *app_state = widget->app->platform;
     gtk_widget_state *state = widget->platform;
+    /* The event's size includes client-side decorations (the shadows and title
+     * bar GTK draws itself on Wayland or without a window manager); the
+     * window's size is its content alone. */
+    int content_width = event->width, content_height = event->height;
+    int width, height;
+    if (gtk_widget_get_mapped(native)) gtk_window_get_size(GTK_WINDOW(native), &content_width, &content_height);
     /* Round down: a layout for the rounded-up count would overhang the edge. */
-    int width = event->width / app_state->cell_width;
-    int height = (event->height - state->menu_height) / app_state->cell_height;
+    width = content_width / app_state->cell_width;
+    height = (content_height - state->menu_height) / app_state->cell_height;
     if ((event->width != state->frame_width || event->height != state->frame_height) && gtk_widget_get_mapped(native)) {
         /* A size change the toolkit caused (the first map, its minimum, a wider
          * grid) must not push the window off its monitor. Resizes and moves by
@@ -701,7 +751,7 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
         /* A window still short of the minimum it was given grows again, and
          * that size is ours too (a configure can report the size from before
          * the minimum); a few resizes at most, so later ones stay the user's. */
-        if (state->fit_position && state->fit_position < 4 && (event->width < state->min_width || event->height < state->min_height + state->menu_height)) ++state->fit_position;
+        if (state->fit_position && state->fit_position < 4 && (content_width < state->min_width || content_height < state->min_height + state->menu_height)) ++state->fit_position;
         else state->fit_position = 0;
     }
     state->frame_width = event->width;
@@ -720,13 +770,25 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
         }
     }
 #endif
+    /* Never report less than the minimum: dialogs pass the size on to views
+     * that reject anything smaller. Where the work area is smaller than the
+     * minimum (window_update_minimum), the layout's last cells are cut off. */
+    if (widget->has_minimum) {
+        if (width < widget->min_columns) width = widget->min_columns;
+        if (height < widget->min_rows) height = widget->min_rows;
+    } else if (state->about_resizable) {
+        if (width < ABOUT_TEXT_MIN_COLUMNS) width = ABOUT_TEXT_MIN_COLUMNS;
+        if (height < ABOUT_TEXT_MIN_ROWS) height = ABOUT_TEXT_MIN_ROWS;
+    }
     /* A fixed-size window keeps its own size in rect: a work-area clamp on a
      * small screen must not become the size it returns to on a larger one. */
     if (!widget->app->syncing && width > 0 && height > 0 && gtk_window_get_resizable(GTK_WINDOW(native)) &&
         (width != widget->rect.width || height != widget->rect.height)) {
+        int old_columns = widget->rect.width, old_rows = widget->rect.height;
         widget->rect.width = width;
         widget->rect.height = height;
         state->applied_rect = widget->rect;
+        if (state->about_resizable) about_text_layout(widget, old_columns, old_rows);
         xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
     }
     return FALSE;
@@ -2183,9 +2245,18 @@ static void gtk_plot_draw(void *user, int kind, double x, double y, double x2, d
     else if (kind == 1) { cairo_rectangle(cr,x,y,x2-x,y2-y); cairo_fill(cr); }
     else { cairo_select_font_face(cr,"monospace",CAIRO_FONT_SLANT_NORMAL,CAIRO_FONT_WEIGHT_NORMAL); cairo_set_font_size(cr,12); cairo_move_to(cr,x,y+12); cairo_show_text(cr,text); }
 }
+/* A theme whose text is lighter than mid grey is dark. Drawing areas have no
+ * background color of their own to compare with (theirs is transparent). */
+static int gtk_dark_theme(GtkWidget *native)
+{
+    GtkStyleContext *context = gtk_widget_get_style_context(native);
+    GdkRGBA color;
+    gtk_style_context_get_color(context, gtk_style_context_get_state(context), &color);
+    return 0.299 * color.red + 0.587 * color.green + 0.114 * color.blue > 0.5;
+}
 static gboolean gtk_canvas_paint(GtkWidget *native,cairo_t *cr,gpointer data) {
-    xxwidgets_widget *w=data;int width=gtk_widget_get_allocated_width(native),height=gtk_widget_get_allocated_height(native);
-    cairo_set_source_rgb(cr,0.92,0.92,0.92);cairo_paint(cr);if(w->kind==XXWIDGETS_SPLITTER){cairo_set_source_rgb(cr,0.55,0.55,0.55);cairo_paint(cr);return FALSE;}
+    xxwidgets_widget *w=data;int width=gtk_widget_get_allocated_width(native),height=gtk_widget_get_allocated_height(native),dark=gtk_dark_theme(native);
+    double grey=dark?0.20:0.92;cairo_set_source_rgb(cr,grey,grey,grey);cairo_paint(cr);if(w->kind==XXWIDGETS_SPLITTER){grey=dark?0.38:0.55;cairo_set_source_rgb(cr,grey,grey,grey);cairo_paint(cr);return FALSE;}
     if(!w->canvas_pixels||!w->canvas_width||!w->canvas_height)return FALSE;size_t n=(size_t)w->canvas_width*w->canvas_height;uint32_t *pixels=malloc(n*4);if(!pixels)return FALSE;
     for(size_t i=0;i<n;++i){uint32_t c=w->canvas_pixels[i];unsigned a=c&255,r=(c>>24),g=(c>>16)&255,b=(c>>8)&255;pixels[i]=(a<<24)|((r*a/255)<<16)|((g*a/255)<<8)|(b*a/255);}
     cairo_surface_t *surface=cairo_image_surface_create_for_data((unsigned char*)pixels,CAIRO_FORMAT_ARGB32,w->canvas_width,w->canvas_height,w->canvas_width*4);double x,y,rw,rh;xxwidgets_canvas_fit(w,width,height,&x,&y,&rw,&rh);
@@ -3258,14 +3329,24 @@ static int gtk_has_focus(const xxwidgets_widget *widget)
 static gboolean options_key(GtkWidget *native, GdkEventKey *key, gpointer user)
 {
     xxwidgets_widget *dialog = user;
-    (void)native;
     if (dialog->app->modal_window != dialog || !dialog->visible || !dialog->enabled || dialog->app->syncing) return FALSE;
     if (key->keyval == GDK_KEY_Escape) {
         xxwidgets_emit(dialog, XXWIDGETS_EVENT_CLOSE, 0);
         return TRUE;
     }
     if ((key->keyval == GDK_KEY_Return || key->keyval == GDK_KEY_KP_Enter) && dialog->app->modal_default) {
-        xxwidgets_emit(dialog->app->modal_default, XXWIDGETS_EVENT_CLICK, 0);
+        /* The window sees the key before its focus widget: a focused button
+         * of the dialog (Cancel) takes Enter, as on Win32 and Cocoa; else the
+         * default button does. */
+        GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(native));
+        xxwidgets_widget *button = dialog->app->modal_default, *candidate;
+        for (candidate = dialog->app->widgets; focus && candidate; candidate = candidate->next)
+            if (candidate->parent == dialog && candidate->kind == XXWIDGETS_BUTTON && candidate->native == (void *)focus &&
+                candidate->enabled && candidate->visible) {
+                button = candidate;
+                break;
+            }
+        xxwidgets_emit(button, XXWIDGETS_EVENT_CLICK, 0);
         return TRUE;
     }
     return FALSE;
@@ -3274,11 +3355,18 @@ static gboolean options_key(GtkWidget *native, GdkEventKey *key, gpointer user)
 static xxwidgets_status gtk_modal_owner(xxwidgets_widget *dialog, xxwidgets_widget *owner, int active)
 {
     GtkWindow *window = GTK_WINDOW(dialog->native);
-    xxwidgets_widget *widget;
+    xxwidgets_widget *widget, *default_button = NULL, *ok_button = NULL;
     gtk_window_set_transient_for(window, active ? GTK_WINDOW(owner->native) : NULL);
     /* GTK's modal flag blocks every application window. Shared enabled state
      * supplies owner-only blocking for WINDOW_MODAL; preserve legacy dialogs. */
     gtk_window_set_modal(window, active && dialog->modality != XXWIDGETS_WINDOW_MODAL);
+    /* A dialog type keeps it out of the task list and lets the window manager
+     * place and stack it as one. Every modal dialog gets it, also one created
+     * visible: GTK passes the type on to an already mapped window (X11 window
+     * managers follow the property). Only an unmapped one is set back, so a
+     * closing dialog is not retyped. */
+    if (active) gtk_window_set_type_hint(window, GDK_WINDOW_TYPE_HINT_DIALOG);
+    else if (!gtk_widget_get_mapped(GTK_WIDGET(window))) gtk_window_set_type_hint(window, GDK_WINDOW_TYPE_HINT_NORMAL);
     g_signal_handlers_disconnect_by_func(window, G_CALLBACK(options_key), dialog);
     if (active) {
         gtk_widget_state *state = dialog->platform;
@@ -3288,11 +3376,18 @@ static xxwidgets_status gtk_modal_owner(xxwidgets_widget *dialog, xxwidgets_widg
         state->fit_position = 1;
         state->frame_width = state->frame_height = 0;
         g_signal_connect(window, "key-press-event", G_CALLBACK(options_key), dialog);
+        /* The default button the dialog chose; else, for dialogs that set none,
+         * the first one captioned "OK" (also when the caption is translated). */
         for (widget = dialog->app->widgets; dialog->app->modal_window == dialog && widget; widget = widget->next)
-            if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON && (widget == dialog->app->modal_default || !strcmp(widget->text, "OK"))) {
-                gtk_widget_set_can_default(GTK_WIDGET(widget->native), TRUE);
-                gtk_widget_grab_default(GTK_WIDGET(widget->native));
+            if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON && widget->native) {
+                if (widget == dialog->app->modal_default) default_button = widget;
+                else if (!ok_button && (!strcmp(widget->text, "OK") || !strcmp(widget->text, XXW_TR(dialog->app, "OK")))) ok_button = widget;
             }
+        if (!default_button) default_button = ok_button;
+        if (default_button) {
+            gtk_widget_set_can_default(GTK_WIDGET(default_button->native), TRUE);
+            gtk_widget_grab_default(GTK_WIDGET(default_button->native));
+        }
         if (dialog->visible) gtk_window_present(window);
     }
     return XXWIDGETS_OK;
@@ -3305,7 +3400,14 @@ static xxwidgets_status gtk_about_content(xxwidgets_widget *window, const xxwidg
     int padding = 2 * app->cell_width, image_box = 12 * app->cell_width;
     int text_x = about->image ? image_box + 2 * padding : padding;
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL), *text = gtk_text_view_new();
-    gtk_window_set_resizable(GTK_WINDOW(window->native), FALSE);
+    /* About keeps its size. The copyable text dialog (xxwidgets_text_dialog,
+     * the only one without a program name) can be resized: its text follows
+     * the window in about_text_layout, held to its own minimum. */
+    int text_dialog = !about->image && !about->item_count && about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME] &&
+                      !about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME][0];
+    state->about_resizable = text_dialog;
+    state->about_text_x = text_x;
+    gtk_window_set_resizable(GTK_WINDOW(window->native), text_dialog);
     /* A fixed-size window takes its size from the content's request. */
     window_update_minimum(window);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(text), FALSE);
@@ -3435,9 +3537,11 @@ static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_
     GtkWidget *dialog;
     GtkFileChooser *chooser;
     xxwidgets_status status = XXWIDGETS_OK;
-    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title : (save ? "Save File" : "Open File"), GTK_WINDOW(owner->native),
-                                         save ? GTK_FILE_CHOOSER_ACTION_SAVE : GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", GTK_RESPONSE_CANCEL, save ? "_Save" : "_Open",
-                                         GTK_RESPONSE_ACCEPT, NULL);
+    /* The "_" marks each button's mnemonic; a translation places its own. */
+    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title : (save ? XXW_TR(owner->app, "Save File") : XXW_TR(owner->app, "Open File")),
+                                         GTK_WINDOW(owner->native), save ? GTK_FILE_CHOOSER_ACTION_SAVE : GTK_FILE_CHOOSER_ACTION_OPEN,
+                                         XXW_TR(owner->app, "_Cancel"), GTK_RESPONSE_CANCEL,
+                                         save ? XXW_TR(owner->app, "_Save") : XXW_TR(owner->app, "_Open"), GTK_RESPONSE_ACCEPT, NULL);
     if (!dialog) return XXWIDGETS_PLATFORM_ERROR;
     /* Destroying the window from outside during gtk_dialog_run must not free
      * the dialog under us. */

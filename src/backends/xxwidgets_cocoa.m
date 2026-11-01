@@ -43,6 +43,8 @@ typedef struct cocoa_widget_state {
     uint64_t tree_content_revision;
     int tree_collapsing, tree_before_collapse;
     NSTextView *about_text; /* Owned by the window's content view. */
+    int about_resizable;    /* WINDOW: the copyable text dialog, whose text follows the window size. */
+    int fit_pending;        /* WINDOW: AppKit resized it during a sync; report the size on the next poll. */
     NSFont *preview_font;
     NSFont *hex_font;
     NSFont *applied_font;
@@ -267,6 +269,117 @@ static xxwidgets_status cocoa_hexview_font(xxwidgets_widget *widget, const xxwid
 static int rect_equal(xxwidgets_rect a, xxwidgets_rect b)
 {
     return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+}
+
+/* The copyable text dialog (xxwidgets_text_dialog): the smallest size that
+ * keeps "Copy all" and Close apart and a few rows of text. */
+#define ABOUT_TEXT_MIN_COLUMNS 40
+#define ABOUT_TEXT_MIN_ROWS 10
+
+static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget);
+
+/* Largest content size, in whole cells, whose frame fits the visible part of
+ * the window's screen (without the menu bar and Dock); zero when unknown. */
+static NSSize cocoa_window_largest(xxwidgets_widget *widget)
+{
+    cocoa_app_state *app = widget->app->platform;
+    NSWindow *window = widget->native;
+    NSScreen *screen = [window screen] ? [window screen] : [NSScreen mainScreen];
+    NSRect available = screen ? [screen visibleFrame] : NSZeroRect, content;
+    if (NSWidth(available) <= 0 || NSHeight(available) <= 0) return NSZeroSize;
+    content = [window contentRectForFrameRect:available];
+    return NSMakeSize(MAX(0, floor(NSWidth(content) / app->cell_width)) * app->cell_width,
+                      MAX(0, floor(NSHeight(content) / app->cell_height)) * app->cell_height);
+}
+
+/* The minimum the application stored, else the text dialog's own; 0 for none. */
+static int cocoa_window_minimum_cells(const xxwidgets_widget *widget, int *columns, int *rows)
+{
+    const cocoa_widget_state *state = widget->platform;
+    *columns = *rows = 0;
+    if (widget->has_minimum) {
+        *columns = widget->min_columns;
+        *rows = widget->min_rows;
+        return 1;
+    }
+    if (state && state->about_resizable) {
+        *columns = ABOUT_TEXT_MIN_COLUMNS;
+        *rows = ABOUT_TEXT_MIN_ROWS;
+        return 1;
+    }
+    return 0;
+}
+
+/* AppKit holds user resizes to the minimum, and a smaller window grows to it,
+ * as on the other backends; but never beyond the screen: there the window
+ * keeps the screen's size and its layout's last cells are cut off. */
+static void cocoa_window_apply_minimum(xxwidgets_widget *widget)
+{
+    cocoa_app_state *app = widget->app->platform;
+    NSWindow *window = widget->native;
+    NSSize largest, minimum, current;
+    int columns, rows;
+    if (!cocoa_window_minimum_cells(widget, &columns, &rows)) return;
+    largest = cocoa_window_largest(widget);
+    minimum = NSMakeSize(columns * app->cell_width, rows * app->cell_height);
+    if (largest.width > 0 && minimum.width > largest.width) minimum.width = largest.width;
+    if (largest.height > 0 && minimum.height > largest.height) minimum.height = largest.height;
+    if (!NSEqualSizes([window contentMinSize], minimum)) [window setContentMinSize:minimum];
+    current = [[window contentView] frame].size;
+    if (current.width < minimum.width || current.height < minimum.height) {
+        NSRect frame = [window frame];
+        [window setContentSize:NSMakeSize(MAX(current.width, minimum.width), MAX(current.height, minimum.height))];
+        [window setFrameTopLeftPoint:NSMakePoint(NSMinX(frame), NSMaxY(frame))];
+    }
+}
+
+/* The copyable text dialog's text view follows the window through its
+ * autoresizing mask. Its buttons keep their distance from the bottom edge,
+ * those in the right half also from the right edge; a RESIZE handler may
+ * still move them. */
+static void cocoa_about_text_layout(xxwidgets_widget *window, int old_columns, int old_rows)
+{
+    xxwidgets_widget *child;
+    for (child = window->app->widgets; child; child = child->next) {
+        xxwidgets_rect rect;
+        if (child->parent != window || child->kind != XXWIDGETS_BUTTON || !child->platform) continue;
+        rect = child->rect;
+        rect.y += window->rect.height - old_rows;
+        if (2 * rect.x >= old_columns) rect.x += window->rect.width - old_columns;
+        if (rect.x < 0) rect.x = 0;
+        if (rect.y < 0) rect.y = 0;
+        if (rect_equal(rect, child->rect)) continue;
+        child->rect = rect;
+        ++window->app->syncing;
+        cocoa_sync_backend(child);
+        --window->app->syncing;
+    }
+}
+
+/* Takes the content size, in cells, as the window's rect: rounded to the
+ * nearest cell and never below the minimum (dialogs pass the size on to views
+ * that reject smaller ones). Emits RESIZE when it changed. */
+static void cocoa_window_resized(xxwidgets_widget *widget)
+{
+    cocoa_app_state *app_state = widget->app->platform;
+    cocoa_widget_state *state = widget->platform;
+    NSSize size = [[(NSWindow *)widget->native contentView] frame].size;
+    int width = (int)floor(size.width / app_state->cell_width + 0.5);
+    int height = (int)floor(size.height / app_state->cell_height + 0.5);
+    int min_columns, min_rows;
+    if (cocoa_window_minimum_cells(widget, &min_columns, &min_rows)) {
+        if (width < min_columns) width = min_columns;
+        if (height < min_rows) height = min_rows;
+    }
+    if (width > 0 && height > 0 &&
+        (width != widget->rect.width || height != widget->rect.height)) {
+        int old_columns = widget->rect.width, old_rows = widget->rect.height;
+        widget->rect.width = width;
+        widget->rect.height = height;
+        state->applied_rect = widget->rect;
+        if (state->about_resizable) cocoa_about_text_layout(widget, old_columns, old_rows);
+        xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+    }
 }
 
 static NSString *edit_text(NSTextField *field)
@@ -1698,19 +1811,15 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 
 - (void)windowDidResize:(NSNotification *)notification
 {
-    if (!widget || widget->app->syncing) return;
-    cocoa_app_state *app_state = widget->app->platform;
-    cocoa_widget_state *state = widget->platform;
-    NSSize size = [[(NSWindow *)[notification object] contentView] frame].size;
-    int width = (int)floor(size.width / app_state->cell_width + 0.5);
-    int height = (int)floor(size.height / app_state->cell_height + 0.5);
-    if (width > 0 && height > 0 &&
-        (width != widget->rect.width || height != widget->rect.height)) {
-        widget->rect.width = width;
-        widget->rect.height = height;
-        state->applied_rect = widget->rect;
-        xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+    (void)notification;
+    if (!widget || !widget->platform) return;
+    /* A size AppKit chose while the program changed the window (a screen
+     * clamp, a constrained frame) reaches the application on the next poll. */
+    if (widget->app->syncing) {
+        ((cocoa_widget_state *)widget->platform)->fit_pending = 1;
+        return;
     }
+    cocoa_window_resized(widget);
 }
 
 - (void)clicked:(id)sender
@@ -2262,6 +2371,15 @@ static xxwidgets_status cocoa_poll_backend(xxwidgets_app *app, int timeout_ms)
     @autoreleasepool {
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeout_ms / 1000.0];
         unsigned processed = 0;
+        /* Report sizes AppKit chose during a sync (windowDidResize). A fixed-size
+         * window keeps its own size in rect, as on GTK. Handlers cannot create
+         * or destroy widgets while polling, so the list stays valid. */
+        for (xxwidgets_widget *window = app->widgets; window && !app->quit; window = window->next) {
+            cocoa_widget_state *state = window->platform;
+            if (window->kind != XXWIDGETS_WINDOW || !state || !state->fit_pending || !window->native) continue;
+            state->fit_pending = 0;
+            if ([(NSWindow *)window->native styleMask] & NSWindowStyleMaskResizable) cocoa_window_resized(window);
+        }
         while (!app->quit && processed < 256) {
             NSDate *until = processed ? [NSDate distantPast] : deadline;
             NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny untilDate:until
@@ -2822,7 +2940,13 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         if (!state->has_rect || !rect_equal(state->applied_rect, widget->rect)) {
             if (widget->kind == XXWIDGETS_WINDOW) {
                 NSWindow *window = native;
-                [window setContentSize:frame.size];
+                /* Never larger than the screen's visible area, so a dialog's
+                 * buttons stay reachable; windowDidResize reports the fitted
+                 * size on the next poll and the application lays out for it. */
+                NSSize largest = cocoa_window_largest(widget), size = frame.size;
+                if (largest.width > 0 && size.width > largest.width) size.width = largest.width;
+                if (largest.height > 0 && size.height > largest.height) size.height = largest.height;
+                [window setContentSize:size];
                 NSScreen *screen = [window screen] ? [window screen] : [NSScreen mainScreen];
                 NSRect available = [screen visibleFrame];
                 [window setFrameTopLeftPoint:NSMakePoint(NSMinX(available) + frame.origin.x,
@@ -2838,6 +2962,7 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         switch (widget->kind) {
         case XXWIDGETS_WINDOW:
             [(NSWindow *)native setTitle:text];
+            cocoa_window_apply_minimum(widget);
             break;
         case XXWIDGETS_TREEVIEW: {
             xxwidgets_status status = cocoa_tree_sync(widget);
@@ -3167,11 +3292,23 @@ static xxwidgets_status cocoa_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
                 [[window parentWindow] removeChildWindow:window];
                 [parent addChildWindow:window ordered:NSWindowAbove];
             }
+            /* One Return key equivalent: the default button the dialog chose,
+             * else, for dialogs that set none, the first one captioned "OK"
+             * (also when the caption is translated). */
+            xxwidgets_widget *default_button = NULL, *ok_button = NULL;
             for (xxwidgets_widget *widget = dialog->app->widgets; dialog->app->modal_window == dialog && widget; widget = widget->next)
-                if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON) {
-                    if (widget == dialog->app->modal_default || !strcmp(widget->text, "OK"))
-                        [(NSButton *)widget->native setKeyEquivalent:@"\r"];
-                    if (!strcmp(widget->text, "Cancel")) [(NSButton *)widget->native setKeyEquivalent:@"\033"];
+                if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON && widget->native) {
+                    if (widget == dialog->app->modal_default) default_button = widget;
+                    else if (!ok_button && (!strcmp(widget->text, "OK") || !strcmp(widget->text, XXW_TR(dialog->app, "OK")))) ok_button = widget;
+                    if (!strcmp(widget->text, "Cancel") || !strcmp(widget->text, XXW_TR(dialog->app, "Cancel")))
+                        [(NSButton *)widget->native setKeyEquivalent:@"\033"];
+                }
+            if (!default_button) default_button = ok_button;
+            for (xxwidgets_widget *widget = dialog->app->widgets; dialog->app->modal_window == dialog && widget; widget = widget->next)
+                if (widget->parent == dialog && widget->kind == XXWIDGETS_BUTTON && widget->native) {
+                    NSButton *button = widget->native;
+                    if (widget == default_button) [button setKeyEquivalent:@"\r"];
+                    else if ([[button keyEquivalent] isEqualToString:@"\r"]) [button setKeyEquivalent:@""];
                 }
             if (dialog->visible) [window makeKeyAndOrderFront:nil];
             else [window orderOut:nil];
@@ -3194,11 +3331,21 @@ static xxwidgets_status cocoa_about_content(xxwidgets_widget *window,
         CGFloat padding = 2 * app->cell_width, image_box = 12 * app->cell_width;
         CGFloat text_x = about->image ? image_box + 2 * padding : padding;
         CGFloat width = NSWidth([content bounds]) - text_x - padding;
-        [native setStyleMask:[native styleMask] & ~(NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable)];
+        /* About keeps its size. The copyable text dialog (xxwidgets_text_dialog,
+         * the only one without a program name) can be resized: its text follows
+         * the window, its buttons follow in cocoa_about_text_layout. */
+        int text_dialog = !about->image && !about->item_count && about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME] &&
+            !about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME][0];
+        NSWindowStyleMask removed = text_dialog ? NSWindowStyleMaskMiniaturizable :
+            (NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable);
+        [native setStyleMask:[native styleMask] & ~removed];
         NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:
             NSMakeRect(text_x, app->cell_height, width, 17 * app->cell_height)];
         NSTextView *text = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, width, 17 * app->cell_height)];
         if (!scroll || !text) { [scroll release]; [text release]; return XXWIDGETS_OUT_OF_MEMORY; }
+        /* The content view is flipped: fixed margins all round keep the text
+         * one row below the top and above the button rows at the bottom. */
+        if (text_dialog) [scroll setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
         [scroll setHasVerticalScroller:YES]; [scroll setHasHorizontalScroller:NO];
         [scroll setAutohidesScrollers:YES];
         [text setEditable:NO]; [text setSelectable:YES]; [text setRichText:NO];
@@ -3210,7 +3357,9 @@ static xxwidgets_status cocoa_about_content(xxwidgets_widget *window,
         [[text textContainer] setWidthTracksTextView:YES];
         [scroll setDocumentView:text]; [content addSubview:scroll];
         ((cocoa_widget_state *)window->platform)->about_text = text;
+        ((cocoa_widget_state *)window->platform)->about_resizable = text_dialog;
         [text release]; [scroll release];
+        if (text_dialog) cocoa_window_apply_minimum(window);
         if (about->image) {
             NSBitmapImageRep *pixels = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
                 pixelsWide:about->image_width pixelsHigh:about->image_height bitsPerSample:8

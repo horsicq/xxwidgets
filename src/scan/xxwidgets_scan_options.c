@@ -30,6 +30,16 @@ struct xxwidgets_scan_options_widget {
     xxwidgets_widget *controls[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT];
 };
 
+/* The checkboxes: the six flags (check i is flag bit i), then Custom for the
+ * CUSTOM bit. The deprecated Extra checkbox is not created; its control stays
+ * NULL and the EXTRA bit is accepted and ignored. */
+enum { CHECK_COUNT = 7 };
+
+static xxwidgets_scan_options_control_id check_control(size_t check)
+{
+    return check < 6 ? (xxwidgets_scan_options_control_id)check : XXWIDGETS_SCAN_OPTIONS_DATABASE_CUSTOM;
+}
+
 static int valid_options(const xxwidgets_scan_options *options)
 {
     return options && !(options->flags & ~63u) && !(options->databases & ~3u);
@@ -45,10 +55,12 @@ static void option_rects(xxwidgets_rect bounds, xxwidgets_rect *rects)
     int first = (bounds.width - 2) / 2, second = bounds.width - first - 2;
     size_t i;
     for (i = 0; i < 6; ++i) rects[i] = (xxwidgets_rect){bounds.x, bounds.y + 1 + (int)i * 2, first, 1};
-    for (i = 6; i < 8; ++i) rects[i] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 1 + (int)(i - 6) * 2, second, 1};
+    /* Custom takes the first database row; Extra (not created) shares it. */
+    rects[XXWIDGETS_SCAN_OPTIONS_DATABASE_EXTRA] = rects[XXWIDGETS_SCAN_OPTIONS_DATABASE_CUSTOM] =
+        (xxwidgets_rect){bounds.x + first + 2, bounds.y + 1, second, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_FLAGS_LABEL] = (xxwidgets_rect){bounds.x, bounds.y, first, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_DATABASES_LABEL] = (xxwidgets_rect){bounds.x + first + 2, bounds.y, second, 1};
-    rects[XXWIDGETS_SCAN_OPTIONS_MAIN_DATABASE_LABEL] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 6, second, 2};
+    rects[XXWIDGETS_SCAN_OPTIONS_MAIN_DATABASE_LABEL] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 3, second, 2};
 }
 
 static void recover_control(xxwidgets_widget *control)
@@ -62,7 +74,7 @@ xxwidgets_status xxwidgets_scan_options_init(xxwidgets_scan_options *options)
 {
     if (!options) return XXWIDGETS_INVALID_ARGUMENT;
     options->flags = XXWIDGETS_SCAN_DEEP | XXWIDGETS_SCAN_HEURISTIC | XXWIDGETS_SCAN_VERBOSE;
-    options->databases = XXWIDGETS_SCAN_DATABASE_EXTRA | XXWIDGETS_SCAN_DATABASE_CUSTOM;
+    options->databases = XXWIDGETS_SCAN_DATABASE_CUSTOM;
     return XXWIDGETS_OK;
 }
 
@@ -76,13 +88,13 @@ xxwidgets_status xxwidgets_scan_options_widget_get(const xxwidgets_scan_options_
     xxwidgets_scan_options result = {0};
     size_t i;
     if (!widget || !options) return XXWIDGETS_INVALID_ARGUMENT;
-    for (i = 0; i < 8; ++i) {
+    for (i = 0; i < CHECK_COUNT; ++i) {
         int value;
-        xxwidgets_status status = xxwidgets_widget_get_value(widget->controls[i], &value);
+        xxwidgets_status status = xxwidgets_widget_get_value(widget->controls[check_control(i)], &value);
         if (status != XXWIDGETS_OK) return status;
         if (value) {
             if (i < 6) result.flags |= 1u << i;
-            else result.databases |= 1u << (i - 6);
+            else result.databases |= XXWIDGETS_SCAN_DATABASE_CUSTOM;
         }
     }
     *options = result;
@@ -91,18 +103,17 @@ xxwidgets_status xxwidgets_scan_options_widget_get(const xxwidgets_scan_options_
 
 xxwidgets_status xxwidgets_scan_options_widget_set(xxwidgets_scan_options_widget *widget, const xxwidgets_scan_options *options)
 {
-    int previous[8];
+    int previous[CHECK_COUNT];
     size_t i;
     if (!widget || !valid_options(options)) return XXWIDGETS_INVALID_ARGUMENT;
-    for (i = 0; i < 8; ++i) previous[i] = widget->controls[i]->value;
-    for (i = 0; i < 8; ++i) {
-        unsigned int mask = i < 6 ? options->flags : options->databases;
-        int value = (int)((mask >> (i < 6 ? i : i - 6)) & 1u);
-        xxwidgets_status status = xxwidgets_widget_set_value(widget->controls[i], value);
+    for (i = 0; i < CHECK_COUNT; ++i) previous[i] = widget->controls[check_control(i)]->value;
+    for (i = 0; i < CHECK_COUNT; ++i) {
+        int value = i < 6 ? (int)((options->flags >> i) & 1u) : (options->databases & XXWIDGETS_SCAN_DATABASE_CUSTOM) != 0;
+        xxwidgets_status status = xxwidgets_widget_set_value(widget->controls[check_control(i)], value);
         if (status != XXWIDGETS_OK) {
             size_t j;
-            for (j = 0; j < i; ++j) widget->controls[j]->value = previous[j];
-            for (j = 0; j < i; ++j) recover_control(widget->controls[j]);
+            for (j = 0; j < i; ++j) widget->controls[check_control(j)]->value = previous[j];
+            for (j = 0; j < i; ++j) recover_control(widget->controls[check_control(j)]);
             return status;
         }
     }
@@ -113,7 +124,7 @@ xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner, x
 {
     static const char *const labels[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT] = {
         XXW_N_("Deep scan"),      XXW_N_("Heuristic scan"),  XXW_N_("Verbose results"), XXW_N_("Aggressive scan"), XXW_N_("Hide unknown results"),        XXW_N_("Format text report"),
-        XXW_N_("Extra database"), XXW_N_("Custom database"), XXW_N_("Scan flags"),      XXW_N_("Databases"),       XXW_N_("Main database is always used")};
+        "",                       XXW_N_("Custom database"), XXW_N_("Scan flags"),      XXW_N_("Databases"),       XXW_N_("Main database is always used")};
     xxwidgets_scan_options_widget *widget;
     xxwidgets_scan_options defaults;
     xxwidgets_rect rects[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT];
@@ -128,6 +139,7 @@ xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner, x
     widget->owner = owner;
     option_rects(bounds, rects);
     for (i = 0; i < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT; ++i) {
+        if (i == XXWIDGETS_SCAN_OPTIONS_DATABASE_EXTRA) continue; /* Deprecated; see CHECK_COUNT. */
         status = xxwidgets_widget_create(owner->app, owner, i < 8 ? XXWIDGETS_CHECKBOX : XXWIDGETS_LABEL, XXW_TR(owner->app, labels[i]), rects[i], &widget->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
     }
@@ -163,13 +175,15 @@ xxwidgets_status xxwidgets_scan_options_widget_set_rect(xxwidgets_scan_options_w
     size_t i;
     if (!widget || !valid_bounds(bounds)) return XXWIDGETS_INVALID_ARGUMENT;
     option_rects(bounds, rects);
-    for (i = 0; i < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT; ++i) previous[i] = widget->controls[i]->rect;
+    for (i = 0; i < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT; ++i) previous[i] = widget->controls[i] ? widget->controls[i]->rect : rects[i];
     for (i = 0; i < XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT; ++i) {
-        xxwidgets_status status = xxwidgets_widget_set_rect(widget->controls[i], rects[i]);
+        xxwidgets_status status;
+        if (!widget->controls[i]) continue;
+        status = xxwidgets_widget_set_rect(widget->controls[i], rects[i]);
         if (status != XXWIDGETS_OK) {
             size_t j;
-            for (j = 0; j < i; ++j) widget->controls[j]->rect = previous[j];
-            for (j = 0; j < i; ++j) recover_control(widget->controls[j]);
+            for (j = 0; j < i; ++j) if (widget->controls[j]) widget->controls[j]->rect = previous[j];
+            for (j = 0; j < i; ++j) if (widget->controls[j]) recover_control(widget->controls[j]);
             return status;
         }
     }
@@ -197,7 +211,7 @@ static void scan_options_event(xxwidgets_app *app, const xxwidgets_event *event,
 xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_scan_options *options, int *accepted)
 {
     xxwidgets_scan_options_widget *form = NULL;
-    xxwidgets_widget *previous_focus = NULL, *control;
+    xxwidgets_widget *previous_focus = NULL, *control, *previous_modal, *previous_default;
     xxwidgets_scan_options selected = {0};
     xxwidgets_event_fn previous_event;
     void *previous_user;
@@ -209,14 +223,21 @@ xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner, const ch
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !accepted || !valid_options(options) || owner->rect.x > INT_MAX - 66 || owner->rect.y > INT_MAX - 21)
         return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
+    /* The modal window itself may own it (the Scan directory dialog). */
+    if (app->dispatch_depth || app->polling || app->syncing || (app->modal_window && app->modal_window != owner) || app->quit) return XXWIDGETS_BUSY;
     previous_event = app->on_event;
     previous_user = app->user_data;
+    previous_modal = app->modal_window;
+    previous_default = app->modal_default;
     owner_enabled = owner->enabled;
+    /* Focus goes back to the control that had it (Options...), else the first. */
     for (control = app->widgets; control; control = control->next)
         if (control->parent == owner && xxwidgets_focusable(control)) {
-            previous_focus = control;
-            break;
+            if (!previous_focus) previous_focus = control;
+            if (xxwidgets_widget_has_focus(control) == 1) {
+                previous_focus = control;
+                break;
+            }
         }
     app->on_event = scan_options_event;
     app->user_data = &state;
@@ -231,6 +252,8 @@ xxwidgets_status xxwidgets_scan_options_dialog(xxwidgets_widget *owner, const ch
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), (xxwidgets_rect){50, 15, 12, 2}, &state.cancel);
     if (status != XXWIDGETS_OK) goto finish;
+    /* Enter is OK even when a catalog translates its caption. */
+    app->modal_default = state.ok;
     status = xxwidgets_widget_set_enabled(owner, 0);
     if (status != XXWIDGETS_OK) goto finish;
     owner_disabled = 1;
@@ -258,7 +281,8 @@ finish:
         cleanup = xxwidgets_widget_destroy(state.window);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    app->modal_window = NULL;
+    app->modal_window = previous_modal;
+    app->modal_default = previous_default;
     app->on_event = previous_event;
     app->user_data = previous_user;
     if (previous_focus) xxwidgets_widget_focus(previous_focus);

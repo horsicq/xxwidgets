@@ -174,7 +174,22 @@ static xxwidgets_status create_slot(options_state *state, options_slot *slot, xx
 
 static void set_error(options_state *state, const char *text)
 {
-    (void)xxwidgets_widget_set_text(state->error, text && text[0] && xxwidgets_valid_utf8(text) ? text : "");
+    if (!text || !text[0] || !xxwidgets_valid_utf8(text)) text = "";
+    /* A page failing on every pass must not redraw the line every pass. */
+    if (state->error->text && !strcmp(state->error->text, text)) return;
+    (void)xxwidgets_widget_set_text(state->error, text);
+}
+
+/* A page action that failed (a link that cannot open, a font the chooser
+ * refused) is reported on that page; the dialog and every edit stay. */
+static xxwidgets_status action_failed(options_state *state, size_t index, xxwidgets_status failure)
+{
+    xxwidgets_app *app = state->window->app;
+    set_error(state, failure == XXWIDGETS_UNAVAILABLE        ? XXW_TR(app, "This action is not available here.")
+                     : failure == XXWIDGETS_INVALID_ARGUMENT ? XXW_TR(app, "This action was refused; check the values here.")
+                     : failure == XXWIDGETS_BUSY             ? XXW_TR(app, "Close the other window first, then try again.")
+                                                             : XXW_TR(app, "This action failed; nothing was changed."));
+    return select_page(state, index);
 }
 
 static xxwidgets_status reset_pages(options_state *state)
@@ -273,8 +288,10 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     for (i = 0; i < count && status == XXWIDGETS_OK; ++i) status = xxwidgets_listbox_add(state.list, pages[i].title);
     for (i = 0; i < count && status == XXWIDGETS_OK; ++i)
         status = create_slot(&state, &state.slots[i], (xxwidgets_rect){list_width + 4, 1, page_width, page_height});
+    /* Two rows, up to the buttons: a message that names a path wraps on Win32
+     * (GTK and Cocoa keep one ellipsized line; GTK's tooltip shows it all). */
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){list_width + 4, page_height + 1, page_width, 1}, &state.error);
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){list_width + 4, page_height + 1, page_width, 2}, &state.error);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Default"), (xxwidgets_rect){2, button_y, 12, 2}, &state.defaults);
     if (status == XXWIDGETS_OK)
@@ -301,7 +318,10 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
             status = select_page(&state, selected);
         }
         for (i = 0; i < count && status == XXWIDGETS_OK; ++i)
-            if (pages[i].process) status = pages[i].process(state.slots[i].state);
+            if (pages[i].process) {
+                xxwidgets_status action = pages[i].process(state.slots[i].state);
+                if (action != XXWIDGETS_OK) status = action_failed(&state, i, action);
+            }
         if (status == XXWIDGETS_OK && state.pending_defaults) {
             state.pending_defaults = 0;
             status = reset_pages(&state);
@@ -438,6 +458,7 @@ xxwidgets_status xxwidgets_options_page_fonts(xxwidgets_options_page *page, cons
 typedef struct optimization_page {
     xxwidgets_optimization_options_widget *form;
     xxwidgets_optimization_page_values *values;
+    xxwidgets_app *app;
 } optimization_page;
 
 static xxwidgets_status optimization_page_create(xxwidgets_widget *dialog, xxwidgets_rect bounds, void *user, void **out)
@@ -446,6 +467,7 @@ static xxwidgets_status optimization_page_create(xxwidgets_widget *dialog, xxwid
     xxwidgets_status status;
     if (!page) return XXWIDGETS_OUT_OF_MEMORY;
     page->values = (xxwidgets_optimization_page_values *)user;
+    page->app = dialog->app;
     status = xxwidgets_optimization_options_widget_create(dialog, bounds, &page->values->capabilities, &page->form);
     if (status == XXWIDGETS_OK) status = xxwidgets_optimization_options_widget_set(page->form, &page->values->options);
     if (status != XXWIDGETS_OK) {
@@ -468,7 +490,7 @@ static int optimization_page_apply(void *state, char *error, size_t capacity)
 {
     optimization_page *page = (optimization_page *)state;
     if (xxwidgets_optimization_options_widget_get(page->form, &page->values->options) == XXWIDGETS_OK) return 1;
-    copy_error(error, capacity, "Cannot read the optimization settings.");
+    copy_error(error, capacity, XXW_TR(page->app, "Cannot read the optimization settings."));
     return 0;
 }
 
@@ -504,6 +526,12 @@ typedef struct hex_page {
     int pending_choose;
 } hex_page;
 
+static const char *hex_page_note(const xxwidgets_app *app)
+{
+    return app->backend == XXWIDGETS_BACKEND_TUI ? XXW_TR(app, "TUI uses the terminal font; this preference is saved for GUI.")
+                                                 : XXW_TR(app, "Applies to Hex views opened after OK.");
+}
+
 static xxwidgets_status hex_page_create(xxwidgets_widget *dialog, xxwidgets_rect bounds, void *user, void **out)
 {
     hex_page *page = (hex_page *)calloc(1, sizeof(*page));
@@ -518,11 +546,11 @@ static xxwidgets_status hex_page_create(xxwidgets_widget *dialog, xxwidgets_rect
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, dialog, XXWIDGETS_BUTTON, XXW_TR(app, "Choose font"), (xxwidgets_rect){bounds.x + 15, bounds.y + 6, 16, 1},
                                          &page->choose);
+    /* No chooser (Cocoa, terminal): the family and size edits are the way. */
+    if (status == XXWIDGETS_OK && !xxwidgets_font_choose_available(app)) status = xxwidgets_widget_set_enabled(page->choose, 0);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, dialog, XXWIDGETS_LABEL,
-                                         XXW_TR(app, app->backend == XXWIDGETS_BACKEND_TUI ? "TUI uses the terminal font; this preference is saved for GUI."
-                                                                                         : "Applies to Hex views opened after OK."),
-                                         (xxwidgets_rect){bounds.x, bounds.y + 8, bounds.width, 1}, &page->note);
+        status = xxwidgets_widget_create(app, dialog, XXWIDGETS_LABEL, hex_page_note(app), (xxwidgets_rect){bounds.x, bounds.y + 8, bounds.width, 1},
+                                         &page->note);
     if (status != XXWIDGETS_OK) {
         if (page->note) (void)xxwidgets_widget_destroy(page->note);
         if (page->choose) (void)xxwidgets_widget_destroy(page->choose);
@@ -551,9 +579,17 @@ static xxwidgets_status hex_page_process(void *state)
     /* An invalid edit leaves nothing to start the chooser from. */
     if (xxwidgets_hex_options_widget_get(page->form, &options) != XXWIDGETS_OK)
         return xxwidgets_widget_focus(xxwidgets_hex_options_widget_control(page->form, XXWIDGETS_HEX_OPTIONS_FONT_SIZE));
-    status = xxwidgets_font_choose_dialog(page->choose->parent, XXWIDGETS_FONT_TABLE_VIEWS, &options.font, &chosen);
+    /* The Hex role: GTK titles its chooser by role. */
+    status = xxwidgets_font_choose_dialog(page->choose->parent, XXWIDGETS_FONT_HEX_VIEWS, &options.font, &chosen);
     if (status == XXWIDGETS_UNAVAILABLE) return xxwidgets_widget_focus(xxwidgets_hex_options_widget_control(page->form, XXWIDGETS_HEX_OPTIONS_FONT_FAMILY));
-    if (status == XXWIDGETS_OK && chosen) status = xxwidgets_hex_options_widget_set(page->form, &options);
+    if (status == XXWIDGETS_OK && chosen) {
+        status = xxwidgets_hex_options_widget_set(page->form, &options);
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(page->note, hex_page_note(page->choose->app));
+    } else if (status != XXWIDGETS_OK && status != XXWIDGETS_OUT_OF_MEMORY) {
+        /* A refused font keeps the dialog and the edits: say so on the page. */
+        status = xxwidgets_widget_set_text(page->note, XXW_TR(page->choose->app, "That font cannot be used. Pick 4..96 pt or edit above."));
+        if (status == XXWIDGETS_OK) (void)xxwidgets_widget_focus(xxwidgets_hex_options_widget_control(page->form, XXWIDGETS_HEX_OPTIONS_FONT_FAMILY));
+    }
     return status;
 }
 
@@ -651,9 +687,11 @@ static xxwidgets_status database_page_process(void *state)
     return xxwidgets_database_paths_widget_process(((database_page *)state)->form);
 }
 
+/* Slots 0 (main) and 2 (custom); slot 1, the deprecated extra folder, is not
+ * shown and apply receives "" for it. */
 static xxwidgets_status database_page_reset(void *state)
 {
-    const char *const empty[3] = {"", "", ""};
+    const char *const empty[3] = {"", NULL, ""};
     return xxwidgets_database_paths_widget_set(((database_page *)state)->form, empty);
 }
 
@@ -661,7 +699,7 @@ static int database_page_validate(void *state, char *error, size_t capacity)
 {
     database_page *page = (database_page *)state;
     size_t i, size;
-    for (i = 0; i < 3; ++i)
+    for (i = 0; i < 3; i += 2)
         if (xxwidgets_database_paths_widget_get(page->form, i, NULL, 0, &size) != XXWIDGETS_OK) {
             copy_error(error, capacity, XXW_TR(page->app, "Enter a valid UTF-8 path shorter than 16384 bytes."));
             return 0;
@@ -675,13 +713,13 @@ static int database_page_apply(void *state, char *error, size_t capacity)
     char *paths[3] = {0};
     int applied = 0;
     size_t i, size;
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < 3; i += 2) {
         if (xxwidgets_database_paths_widget_get(page->form, i, NULL, 0, &size) != XXWIDGETS_OK || !(paths[i] = (char *)malloc(size)) ||
             xxwidgets_database_paths_widget_get(page->form, i, paths[i], size, NULL) != XXWIDGETS_OK)
             break;
     }
-    if (i == 3) {
-        const char *const borrowed[3] = {paths[0], paths[1], paths[2]};
+    if (i >= 3) {
+        const char *const borrowed[3] = {paths[0], "", paths[2]};
         if (error && capacity) error[0] = 0;
         applied = page->values->callbacks.apply ? page->values->callbacks.apply(borrowed, error, capacity, page->values->user) : 1;
         if (!applied && error && capacity && !error[0])
@@ -703,7 +741,7 @@ xxwidgets_status xxwidgets_options_page_database_paths(xxwidgets_options_page *p
 {
     size_t i;
     if (!page || !title || !values) return XXWIDGETS_INVALID_ARGUMENT;
-    for (i = 0; i < 3; ++i)
+    for (i = 0; i < 3; i += 2)
         if (values->paths[i] && !xxwidgets_valid_utf8(values->paths[i])) return XXWIDGETS_INVALID_ARGUMENT;
     memset(page, 0, sizeof(*page));
     page->title = title;

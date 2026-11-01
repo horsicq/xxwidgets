@@ -145,8 +145,11 @@ Include `<xxwidgets/xxwidgets_scan_panel.h>` for the complete reusable scan UI.
 `xxwidgets_scan_panel_create(owner, bounds, &panel)` creates a labeled file-type
 combo box, Flags and Databases checkbox combo boxes, Scan and Report push
 buttons, and a TreeView.
-The main database is always used; optional databases and the six scan flags
-are exposed as bitmasks. Setters synchronize the controls without input events.
+The main database is always used; the custom database and the six scan flags
+are exposed as bitmasks (`XXWIDGETS_SCAN_DATABASE_CUSTOM` is `1u << 1`). The
+deprecated `XXWIDGETS_SCAN_DATABASE_EXTRA` bit is accepted and ignored by the
+setters and never returned. Setters synchronize the controls without input
+events.
 `xxwidgets_scan_panel_set_results` takes the detected format as its root label
 and copies each detection into one `Type: Name (Version) [Info]` child row.
 Empty version/info fields are omitted. `xxwidgets_scan_result_color` delegates
@@ -178,7 +181,7 @@ Destroy the panel before its owner/app; do not destroy its children separately.
 `xxwidgets_scan_panel_demo --native` or `--tui` demonstrates the complete UI.
 Include `<xxwidgets/xxwidgets_scan_options.h>` for an embedded scan-settings
 form and `xxwidgets_scan_options_dialog`. Both expose the same six scan flags
-and two optional databases as the scan panel. The modal form copies values
+and the custom database as the scan panel. The modal form copies values
 back only after OK; Cancel, Escape, and closing preserve the input settings.
 
 Include `<xxwidgets/xxwidgets_font_options.h>` for font preferences for controls,
@@ -186,8 +189,13 @@ tables, trees, and text edits. `xxwidgets_font_options_dialog` offers editable
 family, point size, styles, previews, and native Choose buttons where supported.
 Apply accepted values with `xxwidgets_app_set_font_options`; the library owns
 native font resources and applies the choices to current and future controls,
-including report text. Font changes preserve explicit control bounds. The TUI
-stores preferences while the terminal controls their appearance.
+including report text. Control bounds stay in text cells, and the Windows and
+GTK backends size the cells by the Controls font, so windows and their controls
+grow with a larger font. On Windows the cells stop growing where a 120 x 35-cell
+dialog would no longer fit the primary work area (a larger font is clipped
+there), and a window a larger font moved or held to the work area gets its size
+and place back when the font shrinks again. The TUI stores preferences while
+the terminal controls their appearance.
 
 Include `<xxwidgets/xxwidgets_optimization_options.h>` for embedded or modal
 optimization settings. General and file buffer sizes use xxwidgets comboboxes
@@ -1559,8 +1567,10 @@ native snapshot; the widget retains metadata only.
 ## Database paths dialog
 
 The shared `xxwidgets_database_paths_dialog` in
-`xxwidgets/xxwidgets_database_paths.h` supplies editable main/extra/custom UTF-8
-folder paths, Browse, Defaults, OK and Cancel. The host provides an optional
+`xxwidgets/xxwidgets_database_paths.h` supplies editable main/custom UTF-8
+folder paths, Browse, Defaults, OK and Cancel. The path arrays keep three
+slots for compatibility: slot 1, the deprecated extra folder, is not shown, is
+ignored on input and always reads as "". The host provides an optional
 folder picker and a transactional apply callback, keeping database parsing out
 of the widget library. Failed applies show the host's error and allow retry;
 Cancel never invokes apply. Paths are bounded to 16383 UTF-8 bytes each. The GTK

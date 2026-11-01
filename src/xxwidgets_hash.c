@@ -50,7 +50,7 @@ xxwidgets_status xxwidgets_hash_create(xxwidgets_widget *owner, xxwidgets_rect b
     xxwidgets_status status;
     static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_TREEVIEW, XXWIDGETS_LABEL,
         XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
-    static const char *const text[] = {"", "", "Hashes", "", "Copy selected", "Copy all", "Select a hash"};
+    static const char *const text[] = {"", "", XXW_N_("Hashes"), "", XXW_N_("Copy selected"), XXW_N_("Copy all"), XXW_N_("Select a hash")};
     if (!out) return XXWIDGETS_INVALID_ARGUMENT;
     *out = NULL;
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds)) return XXWIDGETS_INVALID_ARGUMENT;
@@ -59,9 +59,11 @@ xxwidgets_status xxwidgets_hash_create(xxwidgets_widget *owner, xxwidgets_rect b
     if (!v) return XXWIDGETS_OUT_OF_MEMORY;
     v->owner = owner;
     for (size_t i = 0; i < XXWIDGETS_HASH_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], text[i], (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, text[i]), (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
         if (status != XXWIDGETS_OK) goto fail;
     }
+    /* One row: a long path keeps its file name, and '&' is shown as is. */
+    CONTROL(v, PATH)->keep_end = 1;
     status = xxwidgets_hash_set_rect(v, bounds);
     if (status != XXWIDGETS_OK) goto fail;
     status = xxwidgets_hash_set_data(v, "", 0, NULL, 0);
@@ -108,7 +110,8 @@ xxwidgets_status xxwidgets_hash_set_data(xxwidgets_hash *v, const char *path, ui
     }
     new_path = xxwidgets_strdup(path); summary = malloc(128); copy = count ? calloc(count, sizeof(*copy)) : NULL;
     if (!new_path || !summary || (count && !copy)) goto finish;
-    snprintf(summary, 128, "%" PRIu64 " bytes | %zu hashes | Whole file", size, count);
+    snprintf(summary, 128, "%" PRIu64 " %s | %zu %s | %s", size, XXW_TR(v->owner->app, "bytes"), count,
+        xxwidgets_app_ngettext(v->owner->app, "hash", "hashes", count), XXW_TR(v->owner->app, "Whole file"));
     for (size_t i = 0; i < count; ++i) {
         size_t capacity = strlen(entries[i].algorithm) + strlen(entries[i].value) + 12;
         copy[i].algorithm = xxwidgets_strdup(entries[i].algorithm); copy[i].value = xxwidgets_strdup(entries[i].value);
@@ -136,7 +139,7 @@ xxwidgets_status xxwidgets_hash_set_data(xxwidgets_hash *v, const char *path, ui
     free_entries(v->entries, v->count); free(v->path); free(v->summary);
     v->entries = copy; v->count = count; v->path = new_path; v->summary = summary;
     copy = NULL; new_path = summary = NULL;
-    (void)xxwidgets_widget_set_text(CONTROL(v, STATUS), count ? "Select a hash" : "No hashes");
+    (void)xxwidgets_widget_set_text(CONTROL(v, STATUS), count ? XXW_TR(v->owner->app, "Select a hash") : XXW_TR(v->owner->app, "No hashes"));
 finish:
     for (size_t i = 0; i < count; ++i) free(rows[i]);
     free_entries(copy, copy ? count : 0); free(new_path); free(summary);
@@ -182,7 +185,8 @@ xxwidgets_status xxwidgets_hash_handle_event(xxwidgets_hash *v, const xxwidgets_
             if (status == XXWIDGETS_OK) status = xxwidgets_clipboard_set_text(v->owner, text);
             free(text);
         }
-        return xxwidgets_widget_set_text(CONTROL(v, STATUS), status == XXWIDGETS_OK ? "Copied" : "Clipboard unavailable");
+        return xxwidgets_widget_set_text(CONTROL(v, STATUS),
+            status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
     }
     return XXWIDGETS_OK;
 }

@@ -376,59 +376,59 @@ xxwidgets_status xxwidgets_memory_map_create(xxwidgets_widget *owner, xxwidgets_
                 break;
             case XXWIDGETS_MEMORY_MAP_COPY:
                 kind = XXWIDGETS_BUTTON;
-                text = "Copy row";
+                text = XXW_N_("Copy row");
                 break;
             case XXWIDGETS_MEMORY_MAP_COPY_ALL:
                 kind = XXWIDGETS_BUTTON;
-                text = "Copy all";
+                text = XXW_N_("Copy all");
                 break;
             case XXWIDGETS_MEMORY_MAP_RELOAD:
                 kind = XXWIDGETS_BUTTON;
-                text = "Reload";
+                text = XXW_N_("Reload");
                 break;
             case XXWIDGETS_MEMORY_MAP_DUMP_ALL:
                 kind = XXWIDGETS_BUTTON;
-                text = "Dump all";
+                text = XXW_N_("Dump all");
                 break;
             case XXWIDGETS_MEMORY_MAP_DUMP:
                 kind = XXWIDGETS_BUTTON;
-                text = "Dump region";
+                text = XXW_N_("Dump region");
                 break;
             case XXWIDGETS_MEMORY_MAP_SAVE:
                 kind = XXWIDGETS_BUTTON;
-                text = "Save";
+                text = XXW_N_("Save");
                 break;
             case XXWIDGETS_MEMORY_MAP_FORMAT:
             case XXWIDGETS_MEMORY_MAP_MODE: kind = XXWIDGETS_COMBOBOX; break;
             case XXWIDGETS_MEMORY_MAP_SHOW_ALL:
                 kind = XXWIDGETS_CHECKBOX;
-                text = "Show all";
+                text = XXW_N_("Show all");
                 break;
             case XXWIDGETS_MEMORY_MAP_READONLY:
                 kind = XXWIDGETS_CHECKBOX;
-                text = "Readonly";
+                text = XXW_N_("Readonly");
                 break;
             case XXWIDGETS_MEMORY_MAP_RADIO_OFFSET:
                 kind = XXWIDGETS_CHECKBOX;
-                text = "File offset";
+                text = XXW_N_("File offset");
                 break;
             case XXWIDGETS_MEMORY_MAP_RADIO_ADDRESS:
                 kind = XXWIDGETS_CHECKBOX;
-                text = "Virtual address";
+                text = XXW_N_("Virtual address");
                 break;
             case XXWIDGETS_MEMORY_MAP_RADIO_RVA:
                 kind = XXWIDGETS_CHECKBOX;
-                text = "Relative virtual address";
+                text = XXW_N_("Relative virtual address");
                 break;
-            case XXWIDGETS_MEMORY_MAP_BITNESS_LABEL: text = "Mode"; break;
-            case XXWIDGETS_MEMORY_MAP_ENDIAN_LABEL: text = "Endianness"; break;
-            case XXWIDGETS_MEMORY_MAP_ARCH_LABEL: text = "Architecture"; break;
-            case XXWIDGETS_MEMORY_MAP_HEX_LABEL: text = "Hex"; break;
-            case XXWIDGETS_MEMORY_MAP_NO_DATA: text = "No file data at this location"; break;
+            case XXWIDGETS_MEMORY_MAP_BITNESS_LABEL: text = XXW_N_("Mode"); break;
+            case XXWIDGETS_MEMORY_MAP_ENDIAN_LABEL: text = XXW_N_("Endianness"); break;
+            case XXWIDGETS_MEMORY_MAP_ARCH_LABEL: text = XXW_N_("Architecture"); break;
+            case XXWIDGETS_MEMORY_MAP_HEX_LABEL: text = XXW_N_("Hex"); break;
+            case XXWIDGETS_MEMORY_MAP_NO_DATA: text = XXW_N_("No file data at this location"); break;
             case XXWIDGETS_MEMORY_MAP_HEX: kind = XXWIDGETS_HEXVIEW; break;
             case XXWIDGETS_MEMORY_MAP_TABLE:
                 kind = XXWIDGETS_MEMORY_MAP;
-                text = "Memory Map";
+                text = XXW_N_("Memory Map");
                 break;
             case XXWIDGETS_MEMORY_MAP_VERTICAL_SPLITTER:
             case XXWIDGETS_MEMORY_MAP_HORIZONTAL_SPLITTER: kind = XXWIDGETS_SPLITTER; break;
@@ -801,7 +801,7 @@ xxwidgets_status xxwidgets_memory_map_handle_event(xxwidgets_memory_map *v, cons
         else if (e->widget == C(v, FIND_RVA)) v->pending = SEARCH_RVA;
     }
     if (e->type == XXWIDGETS_EVENT_READ_ERROR && e->widget == C(v, HEX))
-        return xxwidgets_widget_set_text(C(v, STATUS), "Cannot read file data; reload or choose another region.");
+        return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot read file data; reload or choose another region."));
     return XXWIDGETS_OK;
 }
 xxwidgets_status xxwidgets_memory_map_process(xxwidgets_memory_map *v)
@@ -834,7 +834,8 @@ xxwidgets_status xxwidgets_memory_map_process(xxwidgets_memory_map *v)
     } else if (action == RELOAD || action == FORMAT || action == MODE) s = reload_map(v, action);
     else if (action >= SEARCH_OFFSET && action <= SEARCH_RVA) s = search_value(v, action - SEARCH_OFFSET);
     else if (action == SAVE || action == DUMP) {
-        s = xxwidgets_file_dialog(v->owner, XXWIDGETS_FILE_DIALOG_SAVE, action == SAVE ? "Save Memory Map" : "Dump region",
+        s = xxwidgets_file_dialog(v->owner, XXWIDGETS_FILE_DIALOG_SAVE,
+                                  action == SAVE ? XXW_TR(v->owner->app, "Save Memory Map") : XXW_TR(v->owner->app, "Dump region"),
                                   action == SAVE ? "Memory map.txt" : "region.bin", &path, &accepted);
         if (s == XXWIDGETS_OK && accepted) {
             if (action == SAVE) s = xxwidgets_memory_map_save(v, path);
