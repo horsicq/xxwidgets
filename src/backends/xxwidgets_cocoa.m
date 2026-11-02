@@ -2779,6 +2779,10 @@ static void cocoa_size_table(xxwidgets_widget *widget)
         for (NSTableColumn *column in [table tableColumns]) column_width += [column width];
         frame.size.width = MAX(content.width, column_width);
         [table setFrame:frame];
+        /* A small read-only text table (for example Shortcuts) has only its
+         * model columns. Let the last one take the viewport remainder instead
+         * of leaving a header-shaped blank area that looks like a column. */
+        if (widget->kind == XXWIDGETS_TABLE) [table sizeLastColumnToFit];
         return;
     }
     /* Tree mark columns stay at the right: the text column takes the rest. */

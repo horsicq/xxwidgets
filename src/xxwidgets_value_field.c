@@ -207,9 +207,12 @@ xxwidgets_status xxwidgets_value_field_get_preferred_size(xxwidgets_value_field 
         if (value_sample && text_value(field)) {
             /* Samples are hex numbers that show bold when nonzero. */
             int bold = value->bold;
-            value->bold = 1;
-            status = xxwidgets_widget_measure_text(value, value_sample, &w, &h);
-            value->bold = bold;
+            status = bold ? XXWIDGETS_OK : xxwidgets_widget_set_bold(value, 1);
+            if (status == XXWIDGETS_OK) status = xxwidgets_widget_measure_text(value, value_sample, &w, &h);
+            if (!bold) {
+                xxwidgets_status restore = xxwidgets_widget_set_bold(value, 0);
+                if (status == XXWIDGETS_OK) status = restore;
+            }
         } else
             status = xxwidgets_widget_get_preferred_size(value, &w, &h);
         if (status != XXWIDGETS_OK) return status;

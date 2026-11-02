@@ -252,15 +252,19 @@ xxwidgets_status xxwidgets_file_header_set_file_size(xxwidgets_file_header *head
 xxwidgets_status xxwidgets_file_header_set_address(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint64_t value,
                                                    unsigned int bits)
 {
+    xxwidgets_status status;
     if (!header || !advanced_field((size_t)field) || (bits != 8 && bits != 16 && bits != 32 && bits != 64)) return XXWIDGETS_INVALID_ARGUMENT;
-    return xxwidgets_value_field_set_hex(header->fields[field], value, bits / 4);
+    status = xxwidgets_value_field_set_hex(header->fields[field], value, bits / 4);
+    return status == XXWIDGETS_OK && header->has_bounds ? xxwidgets_file_header_set_bounds(header, header->bounds) : status;
 }
 
 xxwidgets_status xxwidgets_file_header_set_address_seg_off(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint16_t segment,
                                                            uint16_t offset)
 {
+    xxwidgets_status status;
     if (!header || !advanced_field((size_t)field)) return XXWIDGETS_INVALID_ARGUMENT;
-    return xxwidgets_value_field_set_seg_off(header->fields[field], segment, offset);
+    status = xxwidgets_value_field_set_seg_off(header->fields[field], segment, offset);
+    return status == XXWIDGETS_OK && header->has_bounds ? xxwidgets_file_header_set_bounds(header, header->bounds) : status;
 }
 
 xxwidgets_status xxwidgets_file_header_set_advanced(xxwidgets_file_header *header, int advanced)
