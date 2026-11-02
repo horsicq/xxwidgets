@@ -319,6 +319,9 @@ xxwidgets_status xxwidgets_die_main_panel_create(xxwidgets_widget *window, unsig
         status = xxwidgets_scan_panel_create(window, cells, &panel->scan);
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_scan_panel_set_options(panel->scan, scan_options(panel));
+    /* B7: DIE's result tree shows expander arrows without connecting lines. */
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_treeview_set_style(xxwidgets_scan_panel_control(panel->scan, XXWIDGETS_SCAN_PANEL_RESULTS), XXWIDGETS_TREE_ARROWS);
     if (status == XXWIDGETS_OK) status = xxwidgets_side_panel_create(window, side_items, XXWIDGETS_DIE_SIDE_COUNT, &panel->side);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_side_panel_set_item_visible(panel->side, XXWIDGETS_DIE_SIDE_UPDATE,
