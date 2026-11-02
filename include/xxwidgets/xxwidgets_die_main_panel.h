@@ -25,17 +25,14 @@
 #include "xxwidgets/xxwidgets.h"
 #include "xxwidgets/xxwidgets_file_header.h"
 #include "xxwidgets/xxwidgets_file_name_bar.h"
+#include "xxwidgets/xxwidgets_button_grid.h"
+#include "xxwidgets/xxwidgets_format_panel.h"
 #include "xxwidgets/xxwidgets_scan_panel.h"
 #include "xxwidgets/xxwidgets_side_panel.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* Parts that arrive in Phase 2 (xxwidgets_button_grid.h,
- * xxwidgets_format_panel.h declare their typedefs). */
-struct xxwidgets_button_grid;
-struct xxwidgets_format_panel;
 
 /* The whole content of the Detect It Easy main window, in its Simple and
  * Advanced views, laid out in measured units:
@@ -169,11 +166,11 @@ XXWIDGETS_API int xxwidgets_die_main_panel_handle_event(xxwidgets_die_main_panel
 /* Re-applies every caption, label and tooltip from the current catalog and
  * lays out again. */
 XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_retranslate(xxwidgets_die_main_panel *panel);
-/* Parts, borrowed. tools and format_panel are NULL until Phase 2. */
+/* Parts, borrowed. */
 XXWIDGETS_API xxwidgets_file_name_bar *xxwidgets_die_main_panel_file_name_bar(const xxwidgets_die_main_panel *panel);
 XXWIDGETS_API xxwidgets_file_header *xxwidgets_die_main_panel_file_header(const xxwidgets_die_main_panel *panel);
-XXWIDGETS_API struct xxwidgets_button_grid *xxwidgets_die_main_panel_tools(const xxwidgets_die_main_panel *panel);
-XXWIDGETS_API struct xxwidgets_format_panel *xxwidgets_die_main_panel_format_panel(const xxwidgets_die_main_panel *panel);
+XXWIDGETS_API xxwidgets_button_grid *xxwidgets_die_main_panel_tools(const xxwidgets_die_main_panel *panel);
+XXWIDGETS_API xxwidgets_format_panel *xxwidgets_die_main_panel_format_panel(const xxwidgets_die_main_panel *panel);
 XXWIDGETS_API xxwidgets_scan_panel *xxwidgets_die_main_panel_scan_panel(const xxwidgets_die_main_panel *panel);
 XXWIDGETS_API xxwidgets_side_panel *xxwidgets_die_main_panel_side_panel(const xxwidgets_die_main_panel *panel);
 

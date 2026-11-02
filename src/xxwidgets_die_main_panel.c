@@ -19,11 +19,8 @@
  * SOFTWARE.
  */
 
-/* The Detect It Easy main window content: file name bar, file header, the
- * scan panel in its main-window options, and the right column, laid out in
- * measured units (cells on the TUI and the test mock). Phase 2 adds the tools
- * grid and the type area between the header and the engine row; the view
- * machinery below already shows, hides and sizes for them. */
+/* The Detect It Easy main window content, including the Advanced tools and
+ * per-format rows, laid out in measured units. */
 
 #include "xxwidgets_components_internal.h"
 #include "xxwidgets/xxwidgets_combobox.h"
@@ -45,6 +42,22 @@ static const xxwidgets_side_panel_item side_items[XXWIDGETS_DIE_SIDE_COUNT] = {
     {XXWIDGETS_DIE_SIDE_OPTIONS, XXWIDGETS_BUTTON, XXW_N_("Options"), XXWIDGETS_ICON_OPTION, 1},
     {XXWIDGETS_DIE_SIDE_ABOUT, XXWIDGETS_BUTTON, XXW_N_("About"), XXWIDGETS_ICON_INFO, 1},
     {XXWIDGETS_DIE_SIDE_EXIT, XXWIDGETS_BUTTON, XXW_N_("Exit"), XXWIDGETS_ICON_EXIT, 1}};
+
+static const xxwidgets_button_grid_item tool_items[XXWIDGETS_DIE_TOOL_COUNT] = {
+    {XXWIDGETS_DIE_TOOL_FILE_INFO, XXW_N_("File info"), XXWIDGETS_ICON_INFO, NULL},
+    {XXWIDGETS_DIE_TOOL_MEMORY_MAP, XXW_N_("Memory map"), XXWIDGETS_ICON_MEMORY_MAP, NULL},
+    {XXWIDGETS_DIE_TOOL_DISASM, XXW_N_("Disasm"), XXWIDGETS_ICON_DISASM, NULL},
+    {XXWIDGETS_DIE_TOOL_HEX, XXW_N_("Hex"), XXWIDGETS_ICON_BINARY, NULL},
+    {XXWIDGETS_DIE_TOOL_STRINGS, XXW_N_("Strings"), XXWIDGETS_ICON_STRING, NULL},
+    {XXWIDGETS_DIE_TOOL_SIGNATURES, XXW_N_("Signatures"), XXWIDGETS_ICON_SIGNATURE, NULL},
+    {XXWIDGETS_DIE_TOOL_VIRUSTOTAL, XXW_N_("VirusTotal"), XXWIDGETS_ICON_VIRUSTOTAL, NULL},
+    {XXWIDGETS_DIE_TOOL_MIME, XXW_N_("MIME"), XXWIDGETS_ICON_MIME, NULL},
+    {XXWIDGETS_DIE_TOOL_VISUALIZATION, XXW_N_("Visualization"), XXWIDGETS_ICON_IMAGE, NULL},
+    {XXWIDGETS_DIE_TOOL_SEARCH, XXW_N_("Search"), XXWIDGETS_ICON_SEARCH, NULL},
+    {XXWIDGETS_DIE_TOOL_HASH, XXW_N_("Hash"), XXWIDGETS_ICON_HASH, NULL},
+    {XXWIDGETS_DIE_TOOL_ENTROPY, XXW_N_("Entropy"), XXWIDGETS_ICON_ENTROPY, NULL},
+    {XXWIDGETS_DIE_TOOL_EXTRACTOR, XXW_N_("Extractor"), XXWIDGETS_ICON_EXTRACT, NULL},
+    {XXWIDGETS_DIE_TOOL_YARA, XXW_N_("YARA"), XXWIDGETS_ICON_YARA, NULL}};
 
 /* Scan panel controls of the engine row and the scan bar: disabled while no
  * file is loaded. The result tree (row F) stays as it is. */
@@ -82,8 +95,8 @@ struct xxwidgets_die_main_panel {
     int loaded;
     xxwidgets_file_name_bar *bar;
     xxwidgets_file_header *header;
-    struct xxwidgets_button_grid *tools;         /* Phase 2 (row C) */
-    struct xxwidgets_format_panel *format_panel; /* Phase 2 (row D) */
+    xxwidgets_button_grid *tools;
+    xxwidgets_format_panel *format_panel;
     xxwidgets_scan_panel *scan;
     xxwidgets_side_panel *side;
 };
@@ -93,8 +106,8 @@ typedef struct die_parts {
     xxwidgets_metrics metrics;
     int bar_height, bar_minimum;
     int header_width, header_height;
-    int tools_width, tools_height;   /* 0 until Phase 2 (and in the Simple view) */
-    int format_width, format_height; /* 0 until Phase 2 (and in the Simple view) */
+    int tools_width, tools_height;
+    int format_width, format_height;
     int scan_width, scan_height;
     int side_width, side_height;
     int minimum_width, minimum_height;
@@ -136,11 +149,13 @@ static xxwidgets_status compute_parts(const xxwidgets_die_main_panel *panel, int
     if (status == XXWIDGETS_OK) status = xxwidgets_file_name_bar_get_minimum_width(panel->bar, &parts->bar_minimum);
     if (status == XXWIDGETS_OK) status = xxwidgets_file_header_view_size(panel->header, advanced, 1, &parts->header_width, &unused);
     if (status == XXWIDGETS_OK) status = xxwidgets_file_header_view_size(panel->header, advanced, 0, &unused, &parts->header_height);
+    if (status == XXWIDGETS_OK && advanced)
+        status = xxwidgets_button_grid_get_minimum_size(panel->tools, &parts->tools_width, &parts->tools_height);
+    if (status == XXWIDGETS_OK && advanced)
+        status = xxwidgets_format_panel_get_minimum_size(panel->format_panel, &parts->format_width, &parts->format_height);
     if (status == XXWIDGETS_OK) status = xxwidgets_scan_panel_get_minimum_size(panel->scan, &parts->scan_width, &parts->scan_height);
     if (status == XXWIDGETS_OK) status = side_size(panel, &parts->metrics, advanced, &parts->side_width, &parts->side_height);
     if (status != XXWIDGETS_OK) return status;
-    /* Phase 2: with advanced, tools_* and format_* come from the button grid
-     * and the format panel (the type area's height is its tallest page). */
     left_width = xxwidgets_component_max(parts->header_width, parts->scan_width);
     left_width = xxwidgets_component_max(left_width, xxwidgets_component_max(parts->tools_width, parts->format_width));
     left_height = parts->header_height + parts->metrics.spacing + parts->scan_height;
@@ -178,10 +193,14 @@ xxwidgets_status xxwidgets_die_main_panel_get_default_size(const xxwidgets_die_m
 {
     die_parts parts;
     xxwidgets_status status;
+    int scan_width = 0, header_width = 0, unused = 0, preferred;
     if (!panel || (advanced != 0 && advanced != 1) || !width || !height) return XXWIDGETS_INVALID_ARGUMENT;
     status = compute_parts(panel, advanced, &parts);
+    if (status == XXWIDGETS_OK) status = xxwidgets_scan_panel_get_preferred_size(panel->scan, &scan_width, &unused);
+    if (status == XXWIDGETS_OK) status = xxwidgets_file_header_view_size(panel->header, advanced, 0, &header_width, &unused);
     if (status != XXWIDGETS_OK) return status;
-    *width = xxwidgets_component_max(parts.minimum_width, qt_window_units(&parts.metrics, 720));
+    preferred = 2 * parts.metrics.margin + xxwidgets_component_max(header_width, scan_width) + parts.metrics.spacing + parts.side_width;
+    *width = xxwidgets_component_max(xxwidgets_component_max(parts.minimum_width, preferred), qt_window_units(&parts.metrics, 720));
     *height = xxwidgets_component_max(parts.minimum_height, qt_window_units(&parts.metrics, 500));
     return XXWIDGETS_OK;
 }
@@ -214,10 +233,16 @@ xxwidgets_status xxwidgets_die_main_panel_layout(xxwidgets_die_main_panel *panel
     status = xxwidgets_file_header_set_bounds(panel->header, xxwidgets_layout_rect(margin, top, left_width, parts.header_height));
     if (status != XXWIDGETS_OK) return status;
     y = top + parts.header_height + spacing;
-    /* Phase 2: rows C (tools, tools_height) and D (type area, format_height)
-     * are placed here in the Advanced view, each followed by spacing. */
-    if (parts.tools_height) y += parts.tools_height + spacing;
-    if (parts.format_height) y += parts.format_height + spacing;
+    if (parts.tools_height) {
+        status = xxwidgets_button_grid_set_bounds(panel->tools, xxwidgets_layout_rect(margin, y, left_width, parts.tools_height));
+        if (status != XXWIDGETS_OK) return status;
+        y += parts.tools_height + spacing;
+    }
+    if (parts.format_height) {
+        status = xxwidgets_format_panel_set_bounds(panel->format_panel, xxwidgets_layout_rect(margin, y, left_width, parts.format_height));
+        if (status != XXWIDGETS_OK) return status;
+        y += parts.format_height + spacing;
+    }
     /* Rows E, F and G: the tree takes every extra unit of height. */
     return xxwidgets_scan_panel_set_bounds(panel->scan, xxwidgets_layout_rect(margin, y, left_width, height - margin - y));
 }
@@ -234,7 +259,8 @@ static xxwidgets_status apply_view(xxwidgets_die_main_panel *panel, int advanced
     if (status == XXWIDGETS_OK)
         status = xxwidgets_side_panel_set_item_visible(panel->side, XXWIDGETS_DIE_SIDE_DEMANGLE,
                                                         side_item_shown(panel, advanced, XXWIDGETS_DIE_SIDE_DEMANGLE));
-    /* Phase 2: show / hide the tools grid and the format panel here. */
+    if (status == XXWIDGETS_OK) status = xxwidgets_button_grid_set_visible(panel->tools, advanced);
+    if (status == XXWIDGETS_OK) status = xxwidgets_format_panel_set_visible(panel->format_panel, advanced);
     if (status == XXWIDGETS_OK) status = xxwidgets_side_panel_set_checked(panel->side, XXWIDGETS_DIE_SIDE_ADVANCED, advanced);
     if (status == XXWIDGETS_OK) {
         panel->advanced = advanced;
@@ -278,8 +304,8 @@ xxwidgets_status xxwidgets_die_main_panel_set_loaded(xxwidgets_die_main_panel *p
     size_t i;
     if (!panel || (loaded != 0 && loaded != 1)) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_file_header_set_loaded(panel->header, loaded);
-    /* Phase 2: the tools grid and the format panel follow loaded too (their
-     * D items and unavailable tools stay disabled). */
+    if (status == XXWIDGETS_OK) status = xxwidgets_button_grid_set_enabled_all(panel->tools, loaded);
+    if (status == XXWIDGETS_OK) status = xxwidgets_format_panel_set_enabled_all(panel->format_panel, loaded);
     for (i = 0; status == XXWIDGETS_OK && i < sizeof(file_controls) / sizeof(file_controls[0]); ++i) {
         xxwidgets_widget *widget = xxwidgets_scan_panel_control(panel->scan, file_controls[i]);
         if (!widget) continue;
@@ -309,10 +335,28 @@ xxwidgets_status xxwidgets_die_main_panel_create(xxwidgets_widget *window, unsig
     panel->window = window;
     panel->flags = flags;
     panel->loaded = 1;
-    /* Creation order is the Tab order: A, B, (C, D: Phase 2), E-F-G, the
-     * right column. */
+    /* Creation order is the Tab order: A, B, C, D, E-F-G, right column. */
     status = xxwidgets_file_name_bar_create(window, 0, &panel->bar);
     if (status == XXWIDGETS_OK) status = xxwidgets_file_header_create(window, 0, &panel->header);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_button_grid_create(window, tool_items, XXWIDGETS_DIE_TOOL_COUNT, 7,
+                                              XXWIDGETS_BUTTON_GRID_FRAMED, &panel->tools);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_SIGNATURES,
+            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_MIME,
+            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_VISUALIZATION,
+            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_SEARCH,
+            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_YARA,
+            XXWIDGETS_GRID_ITEM_HIDDEN, NULL);
+    if (status == XXWIDGETS_OK) status = xxwidgets_format_panel_create(window, 0, &panel->format_panel);
     if (status == XXWIDGETS_OK) {
         /* The scan panel's cell bounds only matter until the first layout. */
         static const xxwidgets_rect cells = {0, 0, 44, 14};
@@ -355,6 +399,16 @@ xxwidgets_status xxwidgets_die_main_panel_destroy(xxwidgets_die_main_panel *pane
         if (status != XXWIDGETS_OK) return status;
         panel->scan = NULL;
     }
+    if (panel->format_panel) {
+        status = xxwidgets_format_panel_destroy(panel->format_panel);
+        if (status != XXWIDGETS_OK) return status;
+        panel->format_panel = NULL;
+    }
+    if (panel->tools) {
+        status = xxwidgets_button_grid_destroy(panel->tools);
+        if (status != XXWIDGETS_OK) return status;
+        panel->tools = NULL;
+    }
     if (panel->header) {
         status = xxwidgets_file_header_destroy(panel->header);
         if (status != XXWIDGETS_OK) return status;
@@ -379,6 +433,8 @@ xxwidgets_status xxwidgets_die_main_panel_retranslate(xxwidgets_die_main_panel *
     app = panel->window->app;
     status = xxwidgets_file_name_bar_retranslate(panel->bar);
     if (status == XXWIDGETS_OK) status = xxwidgets_file_header_retranslate(panel->header);
+    if (status == XXWIDGETS_OK) status = xxwidgets_button_grid_retranslate(panel->tools);
+    if (status == XXWIDGETS_OK) status = xxwidgets_format_panel_retranslate(panel->format_panel);
     if (status == XXWIDGETS_OK) status = xxwidgets_side_panel_retranslate(panel->side);
     for (i = 0; status == XXWIDGETS_OK && i < sizeof(scan_texts) / sizeof(scan_texts[0]); ++i)
         status = xxwidgets_widget_set_text(xxwidgets_scan_panel_control(panel->scan, scan_texts[i].id), XXW_TR(app, scan_texts[i].text));
@@ -462,10 +518,33 @@ int xxwidgets_die_main_panel_handle_event(xxwidgets_die_main_panel *panel, const
         if (out) *out = action;
         return 1;
     }
+    if (xxwidgets_button_grid_handle_event(panel->tools, event, &id)) {
+        if (id >= 0 && event->type == XXWIDGETS_EVENT_CLICK && xxwidgets_component_live(widget)) {
+            action.id = XXWIDGETS_DIE_ACTION_TOOL;
+            action.value = id;
+        }
+        if (out) *out = action;
+        return 1;
+    }
+    {
+        xxwidgets_format_item item;
+        int arrow = 0;
+        if (xxwidgets_format_panel_handle_event(panel->format_panel, event, &item, &arrow)) {
+            if (item < XXWIDGETS_FORMAT_ITEM_COUNT && event->type == XXWIDGETS_EVENT_CLICK && xxwidgets_component_live(widget)) {
+                action.id = arrow ? XXWIDGETS_DIE_ACTION_FORMAT_ARROW : XXWIDGETS_DIE_ACTION_FORMAT;
+                action.value = (int)item;
+            }
+            if (out) *out = action;
+            return 1;
+        }
+    }
     if (xxwidgets_side_panel_handle_event(panel->side, event, &id, &value)) {
         if (id == XXWIDGETS_DIE_SIDE_ADVANCED) {
             /* The view first, then the application stores the setting. */
-            (void)apply_view(panel, value ? 1 : 0);
+            /* A failed switch keeps the old view: the checkbox goes back to
+             * it, so it and panel->advanced never disagree. */
+            if (apply_view(panel, value ? 1 : 0) != XXWIDGETS_OK)
+                (void)xxwidgets_side_panel_set_checked(panel->side, XXWIDGETS_DIE_SIDE_ADVANCED, panel->advanced);
             action.id = XXWIDGETS_DIE_ACTION_ADVANCED_CHANGED;
             action.value = panel->advanced;
         } else
@@ -508,12 +587,12 @@ xxwidgets_file_header *xxwidgets_die_main_panel_file_header(const xxwidgets_die_
     return panel ? panel->header : NULL;
 }
 
-struct xxwidgets_button_grid *xxwidgets_die_main_panel_tools(const xxwidgets_die_main_panel *panel)
+xxwidgets_button_grid *xxwidgets_die_main_panel_tools(const xxwidgets_die_main_panel *panel)
 {
     return panel ? panel->tools : NULL;
 }
 
-struct xxwidgets_format_panel *xxwidgets_die_main_panel_format_panel(const xxwidgets_die_main_panel *panel)
+xxwidgets_format_panel *xxwidgets_die_main_panel_format_panel(const xxwidgets_die_main_panel *panel)
 {
     return panel ? panel->format_panel : NULL;
 }

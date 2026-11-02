@@ -216,6 +216,8 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_value_field.h
     include/xxwidgets/xxwidgets_file_name_bar.h
     include/xxwidgets/xxwidgets_file_header.h
+    include/xxwidgets/xxwidgets_button_grid.h
+    include/xxwidgets/xxwidgets_format_panel.h
     include/xxwidgets/xxwidgets_side_panel.h
     include/xxwidgets/xxwidgets_die_main_panel.h
     include/xxwidgets/xxwidgets_shortcuts_dialog.h
@@ -231,6 +233,8 @@ add_library(xxwidgets
     src/xxwidgets_value_field.c
     src/xxwidgets_file_name_bar.c
     src/xxwidgets_file_header.c
+    src/xxwidgets_button_grid.c
+    src/xxwidgets_format_panel.c
     src/xxwidgets_side_panel.c
     src/xxwidgets_die_main_panel.c
     src/xxwidgets_shortcuts_dialog.c
@@ -699,6 +703,14 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
                 add_test(NAME xxwidgets_frames_gtk
                     COMMAND "${XXWIDGETS_XVFB_RUN}" -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:xxwidgets_frames_gtk_tests>)
                 set_tests_properties(xxwidgets_frames_gtk PROPERTIES TIMEOUT 60)
+                add_executable(xxwidgets_die_main_panel_gtk_tests tests/test_die_main_panel_gtk.c)
+                target_include_directories(xxwidgets_die_main_panel_gtk_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+                target_link_libraries(xxwidgets_die_main_panel_gtk_tests PRIVATE xxwidgets::xxwidgets PkgConfig::XXWIDGETS_GTK3)
+                target_compile_features(xxwidgets_die_main_panel_gtk_tests PRIVATE c_std_99)
+                add_test(NAME xxwidgets_die_main_panel_gtk
+                    COMMAND "${CMAKE_COMMAND}" -E env --unset=DISPLAY --unset=WAYLAND_DISPLAY GDK_BACKEND=x11
+                        "${XXWIDGETS_XVFB_RUN}" -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:xxwidgets_die_main_panel_gtk_tests>)
+                set_tests_properties(xxwidgets_die_main_panel_gtk PROPERTIES TIMEOUT 60 LABELS "layout;components;gtk")
                 find_package(Python3 QUIET COMPONENTS Interpreter)
                 find_program(XXWIDGETS_XDOTOOL xdotool)
                 if(Python3_Interpreter_FOUND AND XXWIDGETS_XDOTOOL)
@@ -830,7 +842,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         set_tests_properties(xxwidgets_geometry PROPERTIES TIMEOUT 15 LABELS "layout;frames;icons")
         target_sources(xxwidgets_core_tests PRIVATE tests/test_main_components.c src/xxwidgets_value_field.c
             src/xxwidgets_file_name_bar.c src/xxwidgets_file_header.c src/xxwidgets_side_panel.c src/xxwidgets_shortcuts_dialog.c
-            tests/test_die_main_panel.c src/xxwidgets_die_main_panel.c)
+            src/xxwidgets_button_grid.c src/xxwidgets_format_panel.c tests/test_die_main_panel.c src/xxwidgets_die_main_panel.c)
         add_test(NAME xxwidgets_main_components COMMAND xxwidgets_core_tests --main-components-only)
         set_tests_properties(xxwidgets_main_components PROPERTIES TIMEOUT 15 LABELS "layout;components")
         add_test(NAME xxwidgets_die_main_panel COMMAND xxwidgets_core_tests --die-main-panel-only)
@@ -997,14 +1009,18 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             set_tests_properties(xxwidgets_optimization_options PROPERTIES TIMEOUT 30 RESOURCE_LOCK xxwidgets_macos_display)
         endif()
         if(WIN32)
-            add_executable(xxwidgets_tui_tests tests/test_tui_win32.c)
-            target_include_directories(xxwidgets_tui_tests PRIVATE "${XXWIDGETS_XXFCLIB_DIR}/include")
+            add_executable(xxwidgets_tui_tests tests/test_tui_win32.c tests/test_die_main_panel_tui.c)
+            target_include_directories(xxwidgets_tui_tests PRIVATE
+                "${XXWIDGETS_XXFCLIB_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src")
             target_compile_definitions(xxwidgets_tui_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+            target_compile_features(xxwidgets_tui_tests PRIVATE c_std_99)
             target_link_libraries(xxwidgets_tui_tests PRIVATE xxwidgets::xxwidgets user32)
             add_test(NAME xxwidgets_tui COMMAND xxwidgets_tui_tests)
             set_tests_properties(xxwidgets_tui PROPERTIES TIMEOUT 15)
             add_test(NAME xxwidgets_tui_data_struct COMMAND xxwidgets_tui_tests --data-struct-table)
             set_tests_properties(xxwidgets_tui_data_struct PROPERTIES TIMEOUT 15)
+            add_test(NAME xxwidgets_tui_die_main_panel COMMAND xxwidgets_tui_tests --die-main-panel)
+            set_tests_properties(xxwidgets_tui_die_main_panel PROPERTIES TIMEOUT 15 LABELS "layout;components;tui")
         endif()
     endif()
 endif()

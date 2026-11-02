@@ -75,7 +75,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_value_field_get_preferred_size(xxwidget
                                                                       int *height);
 /* The value as plain text, not bold. */
 XXWIDGETS_API xxwidgets_status xxwidgets_value_field_set_text(xxwidgets_value_field *field, const char *utf8);
-/* Upper-case hexadecimal zero-padded to digits (1..16: 2, 4, 8 or 16 for 8,
+/* Lower-case hexadecimal (as Qt DIE) zero-padded to digits (1..16: 2, 4, 8 or 16 for 8,
  * 16, 32 or 64 bits); a wider value shows all its digits. Bold when
  * value != 0. COMBO and BUTTONS fields: INVALID_ARGUMENT (also set_text,
  * set_seg_off). */

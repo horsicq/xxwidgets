@@ -360,6 +360,41 @@ xxwidgets_status xxwidgets_scan_panel_set_available_tags(xxwidgets_scan_panel *p
     return status;
 }
 
+static int tag_list_has(const char *list, const char *tag, size_t length)
+{
+    const char *at = list ? list : "";
+    while (*at) {
+        const char *end = strchr(at, ';');
+        size_t size = end ? (size_t)(end - at) : strlen(at);
+        if (size == length && !memcmp(at, tag, length)) return 1;
+        if (!end) break;
+        at = end + 1;
+    }
+    return 0;
+}
+
+xxwidgets_status xxwidgets_scan_panel_set_tag_filters(xxwidgets_scan_panel *panel, const char *include_tags, const char *exclude_tags)
+{
+    xxwidgets_widget *controls[2];
+    const char *lists[2];
+    size_t side, i;
+    if (!panel || (include_tags && !xxwidgets_valid_utf8(include_tags)) || (exclude_tags && !xxwidgets_valid_utf8(exclude_tags)))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    controls[0] = panel->controls[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS];
+    controls[1] = panel->controls[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS];
+    lists[0] = include_tags ? include_tags : ""; lists[1] = exclude_tags ? exclude_tags : "";
+    for (side = 0; side < 2; ++side) for (i = 0; i < xxwidgets_combobox_count(controls[side]); ++i) {
+        const xx_meta_string *record;
+        xxwidgets_status status = xxwidgets_combobox_get_record(controls[side], i, &record);
+        if (status != XXWIDGETS_OK || (record->var.type != XX_VAR_TYPE_STRING && record->var.type != XX_VAR_TYPE_STRING_VIEW))
+            return XXWIDGETS_INVALID_ARGUMENT;
+        status = xxwidgets_checkcombobox_set_checked(controls[side], i,
+            tag_list_has(lists[side], record->var.val.str.ptr, record->var.val.str.len));
+        if (status != XXWIDGETS_OK) return status;
+    }
+    return XXWIDGETS_OK;
+}
+
 static xxwidgets_status get_selected_tags(const xxwidgets_widget *widget, char *buffer, size_t capacity, size_t *required)
 {
     size_t i, length = 0, position = 0;
@@ -879,7 +914,7 @@ typedef struct scan_frame_plan {
     xxwidgets_rect controls[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT];
     int placed[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT];
     xxwidgets_rect engine_frame, info_frames[4], info_values[4], elapsed_value;
-    int minimum_width, minimum_height;
+    int minimum_width, minimum_height, preferred_width;
 } scan_frame_plan;
 
 static int font_units(const xxwidgets_metrics *metrics, int tenths)
@@ -987,7 +1022,13 @@ static xxwidgets_status scan_frame_layout(xxwidgets_scan_panel *panel, xxwidgets
     tree_minimum = 3 * m.control_height;
     plan->minimum_width = larger(top_minimum, larger(bar_minimum, row2_minimum));
     plan->minimum_height = box_height + tree_minimum + bar_height + 2 * m.spacing;
-    width = larger(units.width, plan->minimum_width);
+    /* Preferred: every box and bar item at its Qt width (the squeeze is for
+     * the minimum only). */
+    plan->preferred_width = larger(xxwidgets_layout_line_preferred(boxes, FRAME_BOXES, m.spacing),
+                                   larger(xxwidgets_layout_line_preferred(bar, BAR_ITEMS, m.spacing),
+                                          row2_minimum - bar[BAR_SCAN].minimum + bar[BAR_SCAN].preferred));
+    plan->preferred_width = larger(plan->preferred_width, plan->minimum_width);
+    width =larger(units.width, plan->minimum_width);
     height = larger(units.height, plan->minimum_height);
     /* Row E. */
     (void)xxwidgets_layout_line(boxes, FRAME_BOXES, units.x, width, m.spacing);
@@ -1109,6 +1150,18 @@ xxwidgets_status xxwidgets_scan_panel_get_minimum_size(xxwidgets_scan_panel *pan
     status = scan_frame_layout(panel, xxwidgets_layout_rect(0, 0, 1, 1), &plan);
     if (status != XXWIDGETS_OK) return status;
     *width = plan.minimum_width;
+    *height = plan.minimum_height;
+    return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_scan_panel_get_preferred_size(xxwidgets_scan_panel *panel, int *width, int *height)
+{
+    scan_frame_plan plan;
+    xxwidgets_status status;
+    if (!panel || !width || !height) return XXWIDGETS_INVALID_ARGUMENT;
+    status = scan_frame_layout(panel, xxwidgets_layout_rect(0, 0, 1, 1), &plan);
+    if (status != XXWIDGETS_OK) return status;
+    *width = plan.preferred_width;
     *height = plan.minimum_height;
     return XXWIDGETS_OK;
 }

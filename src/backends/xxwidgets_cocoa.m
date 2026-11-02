@@ -3554,6 +3554,9 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_BUTTON:
             [(NSButton *)native setTitle:text];
+            /* setTitle: resets an image-only button to NSImageOverlaps. */
+            if ([(NSButton *)native image])
+                [(NSButton *)native setImagePosition:(widget->icon_flags & XXWIDGETS_ICON_ONLY) ? NSImageOnly : NSImageLeft];
             /* An icon button keeps its text as its accessible name (B2), also
              * when it shows the icon alone. */
             [(NSButton *)native setAccessibilityLabel:widget->icon_rgba ? text : nil];
@@ -3713,6 +3716,14 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
             for (child = widget->app->widgets; child; child = child->next)
                 if (child->parent == widget) cocoa_enable_control(child);
             if (widget->visible && ![window isVisible]) {
+                /* orderOut: detaches a child window, so a modal dialog that was
+                 * attached while hidden (cocoa_modal_owner) attaches again here. */
+                xxwidgets_widget *owner = widget->modality_owner;
+                if (widget->modality != XXWIDGETS_MODELESS && owner && owner->native && owner->native != native &&
+                    [window parentWindow] != (NSWindow *)owner->native) {
+                    [[window parentWindow] removeChildWindow:window];
+                    [(NSWindow *)owner->native addChildWindow:window ordered:NSWindowAbove];
+                }
                 [window makeKeyAndOrderFront:nil];
                 [NSApp activateIgnoringOtherApps:YES];
             } else if (!widget->visible && [window isVisible]) [window orderOut:nil];
@@ -3771,6 +3782,12 @@ static xxwidgets_status cocoa_focus_backend(xxwidgets_widget *widget)
         [window makeKeyAndOrderFront:nil];
         if (widget->kind != XXWIDGETS_WINDOW && ![window makeFirstResponder:widget->native])
             return XXWIDGETS_PLATFORM_ERROR;
+        /* A selectable, non-editable NSTextField refuses first responder
+         * while makeFirstResponder: still returns YES; selectText: starts its
+         * field editor, which cocoa_has_focus accepts. */
+        if (widget->kind == XXWIDGETS_VALUE && [window firstResponder] != widget->native &&
+            ![(NSTextField *)widget->native currentEditor])
+            [(NSTextField *)widget->native selectText:nil];
         return XXWIDGETS_OK;
     }
 }

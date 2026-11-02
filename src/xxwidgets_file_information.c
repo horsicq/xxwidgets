@@ -291,7 +291,7 @@ static xxwidgets_status information_dialog(xxwidgets_widget *owner, const char *
     void *previous_user;
     xxwidgets_widget *focus = NULL, *widget;
     xxwidgets_status status, cleanup;
-    int enabled, disabled = 0, attached = 0;
+    int enabled, hidden, disabled = 0, attached = 0;
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}};
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) ||
         owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2) return XXWIDGETS_INVALID_ARGUMENT;
@@ -303,11 +303,14 @@ static xxwidgets_status information_dialog(xxwidgets_widget *owner, const char *
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
             if (!focus) focus = widget;
             if (xxwidgets_widget_has_focus(widget) == 1) { focus = widget; break; }
-        }
+    }
     modal.path = path; modal.file_type = file_type; modal.size = size; modal.items = items; modal.count = count;
     app->on_event = information_event; app->user_data = &modal;
+    hidden = app->create_hidden;
+    app->create_hidden = 1;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
         (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 154, 36}, &modal.window);
+    app->create_hidden = hidden;
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = modal.window;
     status = xxwidgets_window_set_minimum_size(modal.window, 120, 24);
@@ -330,10 +333,15 @@ static xxwidgets_status information_dialog(xxwidgets_widget *owner, const char *
     status = xxwidgets_window_set_modality(modal.window, owner, XXWIDGETS_WINDOW_MODAL);
     if (status != XXWIDGETS_OK) goto finish;
     attached = 1;
-    status = xxwidgets_widget_focus(xxwidgets_data_struct_view_control(modal.information->view, XXWIDGETS_DATA_STRUCT_VIEW_LIST));
+    if (!hidden) {
+        status = xxwidgets_widget_set_visible(modal.window, 1);
+        if (status == XXWIDGETS_OK)
+            status = xxwidgets_widget_focus(xxwidgets_data_struct_view_control(modal.information->view, XXWIDGETS_DATA_STRUCT_VIEW_LIST));
+    }
     while (status == XXWIDGETS_OK && !modal.done && !app->quit) status = xxwidgets_app_poll(app, 30);
     if (status == XXWIDGETS_OK) status = modal.failure;
 finish:
+    if (modal.window) { cleanup = xxwidgets_widget_set_visible(modal.window, 0); if (status == XXWIDGETS_OK) status = cleanup; }
     if (attached) { cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
     if (modal.information) { cleanup = xxwidgets_file_information_destroy(modal.information); if (status == XXWIDGETS_OK) status = cleanup; }
     if (modal.window) { cleanup = xxwidgets_widget_destroy(modal.window); if (status == XXWIDGETS_OK) status = cleanup; }

@@ -5936,7 +5936,7 @@ static xxwidgets_status win32_set_minimum_frame(xxwidgets_widget *window)
 {
     HWND handle = (HWND)window->native;
     RECT outer;
-    int width, height;
+    int width, height, x, y;
     if (!window->platform || !handle) return XXWIDGETS_PLATFORM_ERROR;
     if (!win32_minimum_frame(window, handle, &width, &height) || !GetWindowRect(handle, &outer)) return XXWIDGETS_OK;
     if (IsIconic(handle) || IsZoomed(handle)) {
@@ -5951,8 +5951,19 @@ static xxwidgets_status win32_set_minimum_frame(xxwidgets_widget *window)
         return XXWIDGETS_OK;
     }
     if (outer.right - outer.left >= width && outer.bottom - outer.top >= height) return XXWIDGETS_OK;
-    if (!SetWindowPos(handle, NULL, 0, 0, outer.right - outer.left > width ? outer.right - outer.left : width,
-                      outer.bottom - outer.top > height ? outer.bottom - outer.top : height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+    width = outer.right - outer.left > width ? outer.right - outer.left : width;
+    height = outer.bottom - outer.top > height ? outer.bottom - outer.top : height;
+    x = outer.left; y = outer.top;
+    {
+        MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
+        if (GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor)) {
+            if (x + width > monitor.rcWork.right) x = monitor.rcWork.right - width;
+            if (x < monitor.rcWork.left) x = monitor.rcWork.left;
+            if (y + height > monitor.rcWork.bottom) y = monitor.rcWork.bottom - height;
+            if (y < monitor.rcWork.top) y = monitor.rcWork.top;
+        }
+    }
+    if (!SetWindowPos(handle, NULL, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE))
         return XXWIDGETS_PLATFORM_ERROR;
     win32_window_resized(window, handle, 0);
     /* Its program lays it out again on the RESIZE, as after any size change. */

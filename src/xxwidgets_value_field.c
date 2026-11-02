@@ -250,7 +250,7 @@ xxwidgets_status xxwidgets_value_field_set_hex(xxwidgets_value_field *field, uin
     char text[24];
     if (digits < 1 || digits > 16) return XXWIDGETS_INVALID_ARGUMENT;
     /* At least digits digits; a wider value shows in full. */
-    snprintf(text, sizeof(text), "%0*llX", (int)digits, (unsigned long long)value);
+    snprintf(text, sizeof(text), "%0*llx", (int)digits, (unsigned long long)value);
     return set_value(field, text, value != 0);
 }
 

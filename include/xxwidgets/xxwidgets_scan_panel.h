@@ -115,6 +115,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_databases(const xxwidget
  * required includes the terminating NUL. A NULL buffer with zero capacity
  * queries the required size. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_available_tags(xxwidgets_scan_panel *panel, const char *tags);
+/* Checks the records named by the two semicolon-separated lists. Unknown
+ * names are ignored; NULL is empty. Call after set_available_tags. */
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_tag_filters(xxwidgets_scan_panel *panel, const char *include_tags,
+                                                                   const char *exclude_tags);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_include_tags(const xxwidgets_scan_panel *panel, char *buffer, size_t capacity, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_exclude_tags(const xxwidgets_scan_panel *panel, char *buffer, size_t capacity, size_t *required);
 
@@ -177,6 +181,9 @@ XXWIDGETS_API unsigned int xxwidgets_scan_panel_get_options(const xxwidgets_scan
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_bounds(xxwidgets_scan_panel *panel, xxwidgets_rect units);
 /* Smallest size of the frame-mode layout for the current options. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_minimum_size(xxwidgets_scan_panel *panel, int *width, int *height);
+/* Size at which every frame-mode control has its preferred (Qt) width; the
+ * height is the minimum height (the tree takes any extra). */
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_preferred_size(xxwidgets_scan_panel *panel, int *width, int *height);
 
 #ifdef __cplusplus
 }
