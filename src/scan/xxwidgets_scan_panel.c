@@ -888,7 +888,10 @@ static int font_units(const xxwidgets_metrics *metrics, int tenths)
     /* Measured units: back to Qt's pixels (a 7-pixel cell), scaled by the
      * control height like the other main-window components (exact Qt
      * pixels on WinAPI at 96 DPI, where H is 23). Cells keep the cell rule. */
-    if (!metrics->unit_is_cell && metrics->control_height > 0)
+    if (!metrics->unit_is_cell && metrics->label_height > 0)
+        /* By the text height (L is 15 where H is 23), as xxwidgets_component_qt. */
+        units = (((long long)tenths * 7 + 5) / 10 * metrics->label_height + 7) / 15;
+    else if (!metrics->unit_is_cell && metrics->control_height > 0)
         units = (((long long)tenths * 7 + 5) / 10 * metrics->control_height + 11) / 23;
     return units < 1 ? 1 : units > 32767 ? 32767 : (int)units;
 }

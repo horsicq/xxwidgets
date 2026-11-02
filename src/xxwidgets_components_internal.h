@@ -28,12 +28,16 @@
 #include "xxwidgets_internal.h"
 #include "xxwidgets_layout.h"
 
-/* A Qt Detect It Easy size (pixels at 96 DPI, where H is 23) in layout
- * units: scaled by this backend's control height, so the proportions match
- * Qt on every platform; in cells, about one cell per 8 Qt pixels. */
+/* A Qt Detect It Easy width (pixels at 96 DPI, where the caption height L
+ * is 15 and H is 23) in layout units: scaled by this backend's text height,
+ * so the proportions follow the font; a theme with taller controls (GTK's
+ * Adwaita H is about 34 for a 17 px line) does not widen the window. Without
+ * a label height, by the control height. In cells, about one cell per 8 Qt
+ * pixels. */
 static inline int xxwidgets_component_qt(const xxwidgets_metrics *metrics, int qt_pixels)
 {
     if (metrics->unit_is_cell) return (qt_pixels + 4) / 8 > 0 ? (qt_pixels + 4) / 8 : 1;
+    if (metrics->label_height > 0) return (int)(((long long)qt_pixels * metrics->label_height + 7) / 15);
     return (int)(((long long)qt_pixels * metrics->control_height + 11) / 23);
 }
 
