@@ -281,7 +281,7 @@ static void cocoa_widget_fonts(xxwidgets_widget *widget)
 }
 
 /* The cells grow with the Controls font only as far as a window this many
- * cells large still fits the main screen's visible area (as on Windows). */
+ * cells large still fits the primary screen's visible area (as on Windows). */
 #define COCOA_FIT_COLUMNS 120
 #define COCOA_FIT_ROWS 35
 
@@ -294,7 +294,9 @@ static void cocoa_widget_fonts(xxwidgets_widget *widget)
  * the dialog's buttons stay on the screen. */
 static void cocoa_cell_size(const cocoa_app_state *app, NSFont *font, CGFloat *width, CGFloat *height)
 {
-    NSScreen *screen = [NSScreen mainScreen];
+    /* The primary display (the one with the menu bar), as Windows and GTK use
+     * the primary monitor: not mainScreen, which follows the key window. */
+    NSScreen *screen = [[NSScreen screens] count] ? [[NSScreen screens] objectAtIndex:0] : nil;
     *width = app->base_cell_width;
     *height = app->base_cell_height;
     if (font) {
@@ -479,6 +481,14 @@ static void cocoa_window_resized(xxwidgets_widget *widget)
     int height = (int)floor(size.height / app_state->cell_height + 0.5);
     int min_columns, min_rows;
     if (cocoa_window_minimum_cells(widget, &min_columns, &min_rows)) {
+        /* Capped by the screen as cocoa_window_apply_minimum caps it: there
+         * the rect is the size the window really has, so a layout made for it
+         * stays inside the window. */
+        NSSize largest = cocoa_window_largest(widget);
+        if (largest.width > 0 && min_columns * app_state->cell_width > largest.width)
+            min_columns = (int)floor(largest.width / app_state->cell_width);
+        if (largest.height > 0 && min_rows * app_state->cell_height > largest.height)
+            min_rows = (int)floor(largest.height / app_state->cell_height);
         if (width < min_columns) width = min_columns;
         if (height < min_rows) height = min_rows;
     }
@@ -514,7 +524,11 @@ static void cocoa_cells_relayout(xxwidgets_app *app)
             continue;
         }
         window = widget->native;
-        if (!([window styleMask] & NSWindowStyleMaskFullScreen)) {
+        if (!([window styleMask] & NSWindowStyleMaskFullScreen) && [window isZoomed]) {
+            /* A zoomed window keeps its frame, as a maximized one does on
+             * Windows and GTK; its rect follows from its size in the new cells. */
+            cocoa_window_resized(widget);
+        } else if (!([window styleMask] & NSWindowStyleMaskFullScreen)) {
             NSRect before = [window frame], after;
             NSSize largest = cocoa_window_largest(widget);
             NSSize size = NSMakeSize(widget->rect.width * app_state->cell_width, widget->rect.height * app_state->cell_height);
@@ -2910,7 +2924,7 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
                 /* In the application's language, as Windows' backend text. */
                 XXWidgetsHexOverview *overview = ((XXWidgetsHexScroll *)scroll)->overview;
                 [overview setAccessibilityLabel:menu_title(widget->app, XXW_N_("File overview"))];
-                [overview setToolTip:menu_title(widget->app, XXW_N_("File overview — click or drag to navigate"))];
+                [overview setToolTip:menu_title(widget->app, XXW_N_("File overview: click or drag to go to a file offset"))];
             }
             [scroll setBorderType:NSBezelBorder];
             [scroll setHasVerticalScroller:YES];
@@ -3664,14 +3678,32 @@ static xxwidgets_status cocoa_choose_file(xxwidgets_widget *owner, xxwidgets_fil
     @autoreleasepool {
         BOOL folder = mode == XXWIDGETS_FILE_DIALOG_FOLDER;
         NSSavePanel *panel = mode == XXWIDGETS_FILE_DIALOG_SAVE ? [NSSavePanel savePanel] : [NSOpenPanel openPanel];
+        NSString *name = nil;
+        if (initial && *initial) {
+            name = [NSString stringWithUTF8String:initial];
+            if (!name) return XXWIDGETS_INVALID_ARGUMENT;
+            /* Without "MacOS/.." steps, which the panel does not follow. */
+            if ([name isAbsolutePath]) name = [name stringByStandardizingPath];
+        }
         if (mode != XXWIDGETS_FILE_DIALOG_SAVE) {
             /* OPEN takes files, FOLDER folders (a new one can be made there).
-             * Both browse inside packages, as folders: an .app's executable
-             * or a bundle's Resources can be chosen. */
+             * FOLDER browses inside packages, as folders, so a bundle's
+             * Resources can be chosen. OPEN does so only when it starts inside
+             * a package (an .app's executable, its bundled files); elsewhere
+             * an .app or a .bundle stays one item, as before. */
+            BOOL inside_package = NO;
+            if (!folder && [name isAbsolutePath]) {
+                NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+                NSString *step = name;
+                while (!inside_package && [step length] > 1) {
+                    if ([workspace isFilePackageAtPath:step]) inside_package = YES;
+                    step = [step stringByDeletingLastPathComponent];
+                }
+            }
             [(NSOpenPanel *)panel setCanChooseFiles:!folder];
             [(NSOpenPanel *)panel setCanChooseDirectories:folder];
             [(NSOpenPanel *)panel setAllowsMultipleSelection:NO];
-            [panel setTreatsFilePackagesAsDirectories:YES];
+            [panel setTreatsFilePackagesAsDirectories:folder || inside_package];
             if (folder) [panel setCanCreateDirectories:YES];
         }
         if (title) {
@@ -3679,9 +3711,7 @@ static xxwidgets_status cocoa_choose_file(xxwidgets_widget *owner, xxwidgets_fil
             NSString *caption = [NSString stringWithUTF8String:title];
             if (caption) { [panel setTitle:caption]; [panel setMessage:caption]; }
         }
-        if (initial && *initial) {
-            NSString *name = [NSString stringWithUTF8String:initial];
-            if (!name) return XXWIDGETS_INVALID_ARGUMENT;
+        if (name) {
             BOOL directory = NO;
             if ([[NSFileManager defaultManager] fileExistsAtPath:name isDirectory:&directory] && directory)
                 [panel setDirectoryURL:[NSURL fileURLWithPath:name isDirectory:YES]];
@@ -3788,5 +3818,7 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
     cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
     cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font, cocoa_window_menu, NULL, cocoa_translation_changed,
-    cocoa_set_tooltip
+    cocoa_set_tooltip,
+    NULL /* metrics */, NULL /* measure */, NULL /* place */, NULL /* native_frame */, NULL /* minimum_frame */,
+    NULL /* supports_kind */, NULL /* set_icon */, NULL /* begin_update */, NULL /* end_update */
 };

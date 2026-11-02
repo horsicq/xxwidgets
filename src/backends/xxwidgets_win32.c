@@ -1213,8 +1213,8 @@ static xxwidgets_status win32_utf8_path(const wchar_t *wide, char **path)
 }
 
 /* FOLDER mode: the Vista folder picker (IFileOpenDialog, FOS_PICKFOLDERS),
- * starting in initial or its nearest existing parent; SHBrowseForFolderW where
- * COM cannot create that dialog. initial is backslashed, or NULL. */
+ * starting in initial or its nearest existing parent; SHBrowseForFolderW on an
+ * MTA thread or where COM cannot create that dialog. initial is backslashed, or NULL. */
 static xxwidgets_status win32_choose_folder(HWND owner, const wchar_t *caption, wchar_t *initial, char **path, int *accepted)
 {
     HRESULT initialized = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -1231,7 +1231,9 @@ static xxwidgets_status win32_choose_folder(HWND owner, const wchar_t *caption, 
             } else *cut = 0;
         }
     }
-    if (SUCCEEDED(CoCreateInstance(&win32_clsid_file_open_dialog, NULL, CLSCTX_INPROC_SERVER, &win32_iid_file_open_dialog, (void **)&dialog))) {
+    /* Only on an STA thread: on an MTA thread (RPC_E_CHANGED_MODE) the dialog
+     * is created but Show never returns, while SHBrowseForFolderW still works. */
+    if (SUCCEEDED(initialized) && SUCCEEDED(CoCreateInstance(&win32_clsid_file_open_dialog, NULL, CLSCTX_INPROC_SERVER, &win32_iid_file_open_dialog, (void **)&dialog))) {
         FILEOPENDIALOGOPTIONS options = 0;
         IShellItem *item = NULL;
         HRESULT shown;
@@ -5507,4 +5509,13 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_hexview_page_rows, win32_paste_text, win32_hexview_font, win32_window_menu,
                                                     win32_about_rich_content,
                                                     NULL, /* translation_changed */
-                                                    win32_set_tooltip};
+                                                    win32_set_tooltip,
+                                                    NULL, /* metrics */
+                                                    NULL, /* measure */
+                                                    NULL, /* place */
+                                                    NULL, /* native_frame */
+                                                    NULL, /* minimum_frame */
+                                                    NULL, /* supports_kind */
+                                                    NULL, /* set_icon */
+                                                    NULL, /* begin_update */
+                                                    NULL /* end_update */};

@@ -212,8 +212,21 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_context_options.h
     include/xxwidgets/xxwidgets_optimization_options.h
     include/xxwidgets/xxwidgets_options_pages.h
+    include/xxwidgets/xxwidgets_icons.h
+    include/xxwidgets/xxwidgets_value_field.h
+    include/xxwidgets/xxwidgets_file_name_bar.h
+    include/xxwidgets/xxwidgets_file_header.h
+    include/xxwidgets/xxwidgets_side_panel.h
+    include/xxwidgets/xxwidgets_die_main_panel.h
+    include/xxwidgets/xxwidgets_shortcuts_dialog.h
     src/xxwidgets_internal.h
     src/xxwidgets.c
+    src/xxwidgets_frames.c
+    src/xxwidgets_layout.h
+    src/xxwidgets_layout.c
+    src/xxwidgets_icons_internal.h
+    src/xxwidgets_icons.c
+    src/xxwidgets_icons_data.c
     src/xxwidgets_translation.c
     src/xxwidgets_edit.c
     src/xxwidgets_window.c
@@ -696,7 +709,12 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             tests/test_core.c
             tests/test_translation.c
             tests/test_hex_resize.c
+            tests/test_geometry.c
             src/xxwidgets.c
+            src/xxwidgets_frames.c
+            src/xxwidgets_layout.c
+            src/xxwidgets_icons.c
+            src/xxwidgets_icons_data.c
             src/xxwidgets_modality.c
             src/xxwidgets_translation.c
             src/xxwidgets_edit.c
@@ -794,6 +812,8 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         set_tests_properties(xxwidgets_extractor PROPERTIES TIMEOUT 15 LABELS "extractor;worker;io")
         add_test(NAME xxwidgets_window_modality COMMAND xxwidgets_core_tests --window-modality-only)
         set_tests_properties(xxwidgets_window_modality PROPERTIES TIMEOUT 15 LABELS "window;modality")
+        add_test(NAME xxwidgets_geometry COMMAND xxwidgets_core_tests --geometry-only)
+        set_tests_properties(xxwidgets_geometry PROPERTIES TIMEOUT 15 LABELS "layout;frames;icons")
         add_test(NAME xxwidgets_core COMMAND xxwidgets_core_tests)
         set_tests_properties(xxwidgets_core xxwidgets_scan_directory PROPERTIES
             RESOURCE_LOCK xxwidgets_scan_directory_fixture)

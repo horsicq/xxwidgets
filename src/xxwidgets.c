@@ -87,7 +87,7 @@ int xxwidgets_focusable(const xxwidgets_widget *widget)
 {
     return widget && widget->visible && widget->enabled && widget->parent && widget->parent->visible && widget->parent->enabled &&
            (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER || widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_list_kind(widget) ||
-            xxwidgets_combo_kind(widget));
+            xxwidgets_combo_kind(widget) || widget->kind == XXWIDGETS_VALUE);
 }
 
 xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget)
@@ -297,10 +297,11 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     xxwidgets_status status;
     if (!out_widget) return XXWIDGETS_INVALID_ARGUMENT;
     *out_widget = NULL;
-    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_TABLE || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
+    if (!app || kind < XXWIDGETS_WINDOW || kind > XXWIDGETS_GROUP || !valid_rect(rect, kind == XXWIDGETS_WINDOW) || !valid_utf8(text ? text : "") ||
         (kind == XXWIDGETS_WINDOW ? parent != NULL : (!parent || parent->app != app || parent->kind != XXWIDGETS_WINDOW)))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (app->dispatch_depth || app->polling) return XXWIDGETS_BUSY;
+    if (!xxwidgets_app_supports_kind(app, kind)) return XXWIDGETS_UNAVAILABLE;
     widget = (xxwidgets_widget *)calloc(1, sizeof(*widget));
     if (!widget) return XXWIDGETS_OUT_OF_MEMORY;
     widget->text = xxwidgets_strdup(text ? text : "");
@@ -316,6 +317,7 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     widget->requested_enabled = 1;
     widget->enabled = kind == XXWIDGETS_WINDOW ? xxwidgets_modality_enabled(widget) : 1;
     widget->value = (xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget)) ? -1 : 0;
+    widget->alignment = kind == XXWIDGETS_VALUE ? XXWIDGETS_ALIGN_CENTER : XXWIDGETS_ALIGN_LEFT;
     if (kind == XXWIDGETS_HEXVIEW) xxwidgets_hexview_init(widget);
     if (kind == XXWIDGETS_SCANRESULTS || kind == XXWIDGET_SYSTEMPROCESSESVIEWER) xxwidgets_scanresults_init(widget);
     if (kind == XXWIDGETS_DATA_STRUCT_TABLE) xxwidgets_data_struct_table_init(widget);
@@ -391,6 +393,7 @@ xxwidgets_status xxwidgets_widget_destroy(xxwidgets_widget *widget)
     xxwidgets_shortcuts_dispose(widget);
     xxwidgets_menu_dispose(widget);
     xxwidgets_hexview_dispose(widget);
+    xxwidgets_frames_dispose(widget);
     free(widget->text);
     free(widget);
     return XXWIDGETS_OK;
@@ -501,7 +504,14 @@ static xxwidgets_status set_flag(xxwidgets_widget *widget, int *flag, int value)
 
 xxwidgets_status xxwidgets_widget_set_visible(xxwidgets_widget *widget, int visible)
 {
-    return widget ? set_flag(widget, &widget->visible, visible) : XXWIDGETS_INVALID_ARGUMENT;
+    xxwidgets_status status;
+    int focused;
+    if (!widget) return XXWIDGETS_INVALID_ARGUMENT;
+    /* Hiding the focused control hands the focus on (see begin_update). */
+    focused = !visible && widget->visible && widget->kind != XXWIDGETS_WINDOW && xxwidgets_widget_has_focus(widget) == 1;
+    status = set_flag(widget, &widget->visible, visible);
+    if (status == XXWIDGETS_OK && focused) xxwidgets_focus_after_hide(widget);
+    return status;
 }
 xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *widget, int enabled)
 {

@@ -311,6 +311,7 @@ static void fonts_attach(xxwidgets_widget *widget)
 }
 
 static void cells_follow_font(xxwidgets_app *app);
+static gboolean grid_fit(gpointer data);
 
 static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options)
 {
@@ -932,6 +933,10 @@ static void cells_follow_font(xxwidgets_app *app)
         window_update_minimum(widget);
         native->resize_pending = 1;
     }
+    /* The proportion above is a first guess: a button's padding is pixels,
+     * not a share of the font. Measure the buttons again in the new font, as
+     * at start, before the RESIZE below (grid_fit only widens, within its cap). */
+    if (state->fitted && !state->fit_source) state->fit_source = g_idle_add_full(G_PRIORITY_HIGH_IDLE, grid_fit, app, NULL);
     if (!state->resize_source) state->resize_source = g_idle_add(cells_resized, app);
 }
 
@@ -3379,18 +3384,29 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_LABEL: {
             PangoEllipsizeMode mode = widget->keep_end ? PANGO_ELLIPSIZE_MIDDLE : PANGO_ELLIPSIZE_END;
-            /* A label more than one row tall wraps its text from the top, as
-             * on Win32, one line per row; only its last line is cut short. */
+            /* A label more than one row tall wraps its text, as on Win32, one
+             * line per row; only its last line is cut short. Text that needs
+             * more than one line fills the rows from the top; one line stays
+             * centred in them, level with the buttons beside it, which keep
+             * their height centred in two rows (as on Cocoa). */
             gboolean wrap = widget->rect.height > 1;
             int lines = wrap ? (widget->rect.height < 1000 ? widget->rect.height : 1000) : -1;
+            float yalign = 0.5f;
             if (gtk_label_get_ellipsize(GTK_LABEL(native)) != mode) gtk_label_set_ellipsize(GTK_LABEL(native), mode);
             if (!gtk_label_get_line_wrap(GTK_LABEL(native)) != !wrap) {
                 gtk_label_set_line_wrap_mode(GTK_LABEL(native), PANGO_WRAP_WORD_CHAR);
                 gtk_label_set_line_wrap(GTK_LABEL(native), wrap);
-                gtk_label_set_yalign(GTK_LABEL(native), wrap ? 0.0f : 0.5f);
             }
             if (gtk_label_get_lines(GTK_LABEL(native)) != lines) gtk_label_set_lines(GTK_LABEL(native), lines);
             if (strcmp(gtk_label_get_text(GTK_LABEL(native)), widget->text)) gtk_label_set_text(GTK_LABEL(native), widget->text);
+            if (wrap && widget->text[0]) {
+                PangoLayout *one_line = gtk_widget_create_pango_layout(native, widget->text);
+                int text_width = 0;
+                pango_layout_get_pixel_size(one_line, &text_width, NULL);
+                g_object_unref(one_line);
+                if (text_width > width || strchr(widget->text, '\n')) yalign = 0.0f;
+            }
+            if (gtk_label_get_yalign(GTK_LABEL(native)) != yalign) gtk_label_set_yalign(GTK_LABEL(native), yalign);
             break;
         }
         case XXWIDGETS_COMBOBOX:
@@ -3988,4 +4004,7 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_has_focus,
                                                     gtk_accept_file_drops,
                                                     gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu, NULL /* about_rich_content */,
-                                                    NULL /* translation_changed */, gtk_set_tooltip};
+                                                    NULL /* translation_changed */, gtk_set_tooltip,
+                                                    NULL /* metrics */, NULL /* measure */, NULL /* place */, NULL /* native_frame */,
+                                                    NULL /* minimum_frame */, NULL /* supports_kind */, NULL /* set_icon */,
+                                                    NULL /* begin_update */, NULL /* end_update */};

@@ -443,6 +443,7 @@ const char *xxwidgets_combobox_caption(xxwidgets_widget *widget)
 {
     size_t i, count = 0, first = 0;
     if (widget->kind == XXWIDGETS_COMBOBOX) return widget->value >= 0 && (size_t)widget->value < widget->item_count ? widget->items[widget->value] : widget->text;
+    if (widget->fixed_caption) return widget->fixed_caption; /* xxwidgets_checkcombobox_set_fixed_caption */
     for (i = 0; i < widget->item_count; ++i)
         if (xxwidgets_checkcombobox_checked(widget, i)) {
             if (!count) first = i;

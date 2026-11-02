@@ -24,8 +24,21 @@
 #include "xxwidgets/xxwidgets_combobox.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <wchar.h>
+
+/* The buffer size choices after Default: 1 KiB doubling to 1 GiB, or to
+ * 64 MiB where a size_t has 32 bits, since every open file and decoder takes
+ * a buffer this large in a 2 GiB address space (xxfclib's 32-bit memory
+ * budget, XX_DEFAULT_FILE_MEMORY_LIMIT). */
+#if !defined(SIZE_MAX)
+#error SIZE_MAX (stdint.h) is needed to choose the buffer sizes offered
+#elif SIZE_MAX > 0xFFFFFFFFu
+#define SIZE_CHOICES 21
+#else
+#define SIZE_CHOICES 17
+#endif
 
 typedef enum optimization_layout {
     OPTIMIZATION_LAYOUT_MIXED,
@@ -192,14 +205,14 @@ xxwidgets_status xxwidgets_optimization_options_widget_get(const xxwidgets_optim
 
 static xxwidgets_status set_size(xxwidgets_widget *control, size_t size)
 {
-    xx_meta_string records[23] = {0};
-    xx_str_w_s labels[23] = {0};
-    wchar_t names[23][48];
-    size_t i, count = 22;
+    xx_meta_string records[SIZE_CHOICES + 2] = {0};
+    xx_str_w_s labels[SIZE_CHOICES + 2] = {0};
+    wchar_t names[SIZE_CHOICES + 2][48];
+    size_t i, count = SIZE_CHOICES + 1;
     int selected = size ? -1 : 0;
     xxwidgets_status status;
     wmemcpy(names[0], L"Default (64 KiB)", 17);
-    for (i = 1; i < 22; ++i) {
+    for (i = 1; i <= SIZE_CHOICES; ++i) {
         size_t bytes = (size_t)1024 << (i - 1);
         records[i].var.val.u64 = (uint64_t)bytes;
         if (bytes >= (size_t)1024 * 1024 * 1024) swprintf(names[i], 48, L"%zu GiB", bytes / ((size_t)1024 * 1024 * 1024));
@@ -208,10 +221,10 @@ static xxwidgets_status set_size(xxwidgets_widget *control, size_t size)
         if (size == bytes) selected = (int)i;
     }
     if (selected < 0) {
-        swprintf(names[22], 48, L"%zu bytes (custom)", size);
-        records[22].var.val.u64 = (uint64_t)size;
-        selected = 22;
-        count = 23;
+        swprintf(names[SIZE_CHOICES + 1], 48, L"%zu bytes (custom)", size);
+        records[SIZE_CHOICES + 1].var.val.u64 = (uint64_t)size;
+        selected = SIZE_CHOICES + 1;
+        count = SIZE_CHOICES + 2;
     }
     for (i = 0; i < count; ++i) {
         labels[i].data = names[i];

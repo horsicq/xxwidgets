@@ -81,6 +81,38 @@ typedef struct xxwidgets_backend_ops {
     void (*translation_changed)(xxwidgets_app *app);
     /* Optional hover tooltip; text is valid UTF-8, or NULL to remove it. */
     xxwidgets_status (*set_tooltip)(xxwidgets_widget *widget, const char *text);
+    /* Measured placement, all optional. A backend implements metrics and
+     * place together (with measure, native_frame and minimum_frame); with
+     * metrics->unit_is_cell 0 the core then keeps frames in its units and
+     * never converts them to rect. Without place, or when metrics reports
+     * cells, the core sets rect = frame and calls place (if any) or sync.
+     *   metrics: fill every field (called with the struct zeroed).
+     *   measure: natural size in units; text NULL means widget->text, else
+     *     the size as if text were the text (combo boxes: as if their widest
+     *     record were text). Called with app->syncing raised.
+     *   place: apply widget->frame (widget->has_frame is 1). A WINDOW: resize
+     *     the client area to frame.width x frame.height. Called while syncing;
+     *     a later sync must keep the frame (has_frame) rather than rect.
+     *   native_frame: the real geometry in units relative to the window's
+     *     client area; a WINDOW: {0, 0, client width, client height}.
+     *   minimum_frame: apply window->min_frame_width/height (0: no limit),
+     *     growing a smaller window, never shrinking it. */
+    xxwidgets_status (*metrics)(xxwidgets_app *app, xxwidgets_metrics *metrics);
+    xxwidgets_status (*measure)(xxwidgets_widget *widget, const char *text, int *width, int *height);
+    xxwidgets_status (*place)(xxwidgets_widget *widget);
+    xxwidgets_status (*native_frame)(const xxwidgets_widget *widget, xxwidgets_rect *frame);
+    xxwidgets_status (*minimum_frame)(xxwidgets_widget *window);
+    /* Optional kinds beyond XXWIDGETS_TABLE (VALUE, GROUP): nonzero when
+     * create supports the kind. NULL: none of them. */
+    int (*supports_kind)(xxwidgets_kind kind);
+    /* Optional: apply widget->icon_* (a BUTTON; icon_rgba NULL removes it).
+     * NULL: the icon is only stored. Alignment, bold and tree style have no
+     * op: they are widget fields applied by sync. */
+    xxwidgets_status (*set_icon)(xxwidgets_widget *button);
+    /* Optional batch repaint of a window (WM_SETREDRAW): begin when the
+     * update depth goes 0 -> 1, end (repaint once) when it returns to 0. */
+    xxwidgets_status (*begin_update)(xxwidgets_widget *window);
+    xxwidgets_status (*end_update)(xxwidgets_widget *window);
 } xxwidgets_backend_ops;
 
 #define XXWIDGETS_ABOUT_ITEMS_MAX 64
@@ -261,7 +293,33 @@ struct xxwidgets_widget {
     void *user_data;
     void *native;
     void *platform; /* Optional backend-specific auxiliary state. */
+    /* Measured placement (xxwidgets_widget_set_frame): frame in layout units,
+     * has_frame once set. Backends with place lay such a widget out by frame,
+     * never by rect, and skip it in cell relayouts. */
+    xxwidgets_rect frame;
+    int has_frame;
+    /* WINDOW: xxwidgets_window_set_minimum_frame, in units; 0 = no limit. */
+    int min_frame_width, min_frame_height;
+    /* WINDOW: begin_update nesting depth. */
+    int update_depth;
+    /* BUTTON icon: owned compact copy (stride icon_width * 4), or NULL. */
+    unsigned char *icon_rgba;
+    unsigned int icon_width, icon_height, icon_flags;
+    /* LABEL / VALUE presentation, applied by sync. */
+    xxwidgets_alignment alignment;
+    int bold;
+    /* TREEVIEW: XXWIDGETS_TREE_* style bits, applied by sync. */
+    unsigned int tree_style;
+    /* CHECKCOMBOBOX: owned caption shown instead of the summary, or NULL. */
+    char *fixed_caption;
 };
+
+/* Measured placement helpers (xxwidgets_frames.c). frames_native: the
+ * backend places frames in its own units (not cells). */
+int xxwidgets_frames_native(const xxwidgets_app *app);
+void xxwidgets_frames_dispose(xxwidgets_widget *widget);
+/* Core focus rule: called after widget was hidden while it had the focus. */
+void xxwidgets_focus_after_hide(xxwidgets_widget *widget);
 
 void xxwidgets_canvas_dispose(xxwidgets_widget *);
 void xxwidgets_canvas_fit(const xxwidgets_widget *,double,double,double *,double *,double *,double *);

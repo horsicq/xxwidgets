@@ -39,7 +39,11 @@ appearance, keyboard behavior, accessibility, and input methods.
 - UTF-8 text, visibility, enablement, focus, application/widget user data
 - Click, change, list selection, close, resize, activation, and context-menu request events
 - Native file drag-and-drop on Windows, macOS and GTK, including drops over child controls
-- Native Open/Save file choosers on Windows, macOS and GTK
+- Native Open/Save file and folder choosers on Windows, macOS and GTK
+  (`xxwidgets_file_dialog` with `XXWIDGETS_FILE_DIALOG_OPEN`, `_SAVE` or
+  `_FOLDER`; FOLDER returns the chosen folder's UTF-8 path)
+- Hover tooltips on any widget with `xxwidgets_widget_set_tooltip` (WinAPI,
+  GTK and AppKit; the TUI accepts and ignores them)
 - Entropy/byte analysis with region tables, curves, histograms and CSV/SVG export
 - Hash browser with copied digest rows, selection and clipboard support
 - A shared demo that runs with either native controls or TUI
@@ -189,17 +193,19 @@ tables, trees, and text edits. `xxwidgets_font_options_dialog` offers editable
 family, point size, styles, previews, and native Choose buttons where supported.
 Apply accepted values with `xxwidgets_app_set_font_options`; the library owns
 native font resources and applies the choices to current and future controls,
-including report text. Control bounds stay in text cells, and the Windows and
-GTK backends size the cells by the Controls font, so windows and their controls
-grow with a larger font. On Windows the cells stop growing where a 120 x 35-cell
-dialog would no longer fit the primary work area (a larger font is clipped
-there), and a window a larger font moved or held to the work area gets its size
-and place back when the font shrinks again. The TUI stores preferences while
-the terminal controls their appearance.
+including report text. Control bounds stay in text cells, and the Windows, GTK
+and AppKit backends size the cells by the Controls font, so windows and their
+controls grow with a larger font, and every window is laid out again and gets
+RESIZE. The cells stop growing where a 120 x 35-cell dialog would no longer fit
+the primary work area (on macOS the main screen's visible area; a larger font
+is clipped there). Only on Windows does a window that a larger font moved or
+held to the work area get its size and place back when the font shrinks again.
+The TUI stores preferences while the terminal controls their appearance.
 
 Include `<xxwidgets/xxwidgets_optimization_options.h>` for embedded or modal
 optimization settings. General and file buffer sizes use xxwidgets comboboxes
-with byte values: Default, then powers of two from 1 KiB through 1 GiB. Custom
+with byte values: Default, then powers of two from 1 KiB through 1 GiB (64 MiB
+where a size_t has 32 bits). Custom
 existing sizes round-trip without being replaced by a preset. Get/set APIs
 expose both sizes and the Use SSE2/Use SSE4.2/Use AVX2/Use AES/Use SHA/
 Use VPCLMULQDQ/Use Arm NEON/Use Arm CRC32/Use Arm AES/SHA/Use Arm Dot Product
@@ -227,10 +233,16 @@ Push buttons are also available independently as `XXWIDGETS_BUTTON`, with
 caption, visibility, enablement, focus, and `XXWIDGETS_EVENT_CLICK` support on
 every backend; `xxwidgets_button_demo` demonstrates them.
 
+`xxwidgets_widget_set_tooltip(widget, text)` sets a hover tooltip; NULL or ""
+removes it. Backends without tooltips (TUI) return OK and ignore it. WinAPI
+returns `XXWIDGETS_PLATFORM_ERROR` when the widget has no native control yet or
+its window's tooltip control cannot be created.
+
 `xxwidgets_text_dialog(owner, title, text)` shows a scrollable, selectable text
 report with **Close** and **Copy all** on native desktops. Copy places the entire
 UTF-8 report on the system clipboard and changes the button to **Copied**; a
-clipboard failure is displayed on the button. Terminal backends show a scrolling
+clipboard failure is displayed on the button. Either label changes back to
+**Copy all** after 1.5 s on every native backend. Terminal backends show a scrolling
 list with Close. Call outside an event callback, with the same modal rules as the
 options and About dialogs.
 
@@ -450,8 +462,9 @@ down, so a layout for that size never overhangs the window edge).
 A window that re-lays out its controls on RESIZE should pass its layout's
 smallest grid to `xxwidgets_window_set_minimum_size(window, columns, rows)`.
 Without that call GTK keeps a window at least as large as its controls'
-rects; backends with no such limit (WinAPI, AppKit, TUI today) accept and
-ignore it. GTK also shrinks a window that would not fit its monitor's work
+rects. WinAPI and AppKit hold the window to the minimum, but never beyond the
+work area or screen, where the layout's last cells are cut off; the TUI
+accepts and ignores it. GTK also shrinks a window that would not fit its monitor's work
 area, and the following RESIZE reports the size it got. GTK sizes a cell from
 the font and from its one-row controls: buttons, entries and combo boxes keep
 their theme but drop its minimum height, and a cell is as tall as the tallest

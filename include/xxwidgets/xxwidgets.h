@@ -103,7 +103,15 @@ typedef enum xxwidgets_kind {
     XXWIDGETS_MEMORY_MAP,
     /* Text cells under column titles, a filter in each column: see
      * xxwidgets_table_create. */
-    XXWIDGETS_TABLE
+    XXWIDGETS_TABLE,
+    /* Read-only text in a sunken box: focusable and selectable, centred by
+     * default (xxwidgets_widget_set_alignment / set_bold). A value shown
+     * under a caption. See xxwidgets_app_supports_kind. */
+    XXWIDGETS_VALUE,
+    /* A frame drawn around other controls. It takes no input or focus and
+     * stays below its siblings; its text is an optional title (usually "").
+     * See xxwidgets_app_supports_kind. */
+    XXWIDGETS_GROUP
 } xxwidgets_kind;
 
 typedef enum xxwidgets_event_type {
@@ -246,7 +254,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_window_set_minimum_size(xxwidgets_widge
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_visible(xxwidgets_widget *widget, int visible);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *widget, int enabled);
 /* Hover tooltip in UTF-8; NULL or "" removes it. Backends without tooltips
- * accept and ignore it (OK). */
+ * accept and ignore it (OK). WinAPI returns XXWIDGETS_PLATFORM_ERROR when the
+ * widget has no native control yet or the tooltip control cannot be created. */
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_tooltip(xxwidgets_widget *widget, const char *text);
 /* Immediate modality without showing the window or starting an event loop.
  * WINDOW_MODAL blocks owner; APPLICATION_MODAL blocks every other application
@@ -977,6 +986,116 @@ XXWIDGETS_API const char *xxwidgets_archivebrowser_column_title(const xxwidgets_
 XXWIDGETS_API const char *xxwidgets_archivebrowser_cell(const xxwidgets_widget *widget, size_t row, xxwidgets_archive_column column);
 
 XXWIDGETS_API void xxwidgets_app_set_create_hidden(xxwidgets_app* app, int hidden);
+
+/* Measured placement. Layout units are pixels at the system DPI on WinAPI,
+ * logical pixels on GTK, points on AppKit and text cells on the terminal. A
+ * backend without measured placement reports unit_is_cell, and frames then
+ * become cell rects (1 unit = 1 cell), so a layout written in units works on
+ * every backend. Cell rects (widget_create / set_rect) keep working: a
+ * control is laid out by its frame only once set_frame was called for it,
+ * and from then on cell relayouts of its window leave it where it is. */
+typedef struct xxwidgets_metrics {
+    int unit_is_cell;   /* 1: one unit is one text cell */
+    int cell_width;     /* one text cell of the control font, in units */
+    int cell_height;
+    int control_height; /* H: natural height of a one-line button, edit, combo or value */
+    int label_height;   /* L: height of a one-line caption label */
+    int spacing;        /* S: between neighbouring controls */
+    int margin;         /* M: between the window edge and the outer controls */
+    int small_icon;     /* side of a button icon; 0 when buttons show no icons */
+    int frame_inset;    /* frame edge to the control it holds (a captioned box) */
+    int panel_inset;    /* frame edge to a column or grid of buttons */
+    int caption_gap;    /* bottom of a caption to the top of its frame */
+} xxwidgets_metrics;
+/* Without measured placement: unit_is_cell 1, cells 1 x 1, H, L, S and M 1,
+ * no icons, insets and caption gap 0. */
+XXWIDGETS_API xxwidgets_status xxwidgets_app_get_metrics(const xxwidgets_app *app, xxwidgets_metrics *metrics);
+/* Natural size in units of a control with its current text: a combo box fits
+ * its widest record, an icon button its icon and text. measure_text sizes
+ * the control as if text were its text (a sample such as "0000000000000000"
+ * in its current bold state). Lists, tables, trees and views report their
+ * current size. Windows: INVALID_ARGUMENT. Emits no events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_preferred_size(xxwidgets_widget *widget, int *width, int *height);
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_measure_text(xxwidgets_widget *widget, const char *text, int *width, int *height);
+/* Places a control at a frame in units relative to its window's client area:
+ * x, y 0..32767, width and height 1..32767. Controls keep the height they are
+ * given, so a BUTTON may be taller than H (a tall button). For a WINDOW the
+ * frame sizes the client area; its x and y are ignored. Emits no events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_frame(xxwidgets_widget *widget, xxwidgets_rect frame);
+/* The last frame given to set_frame (a window: {0, 0, client size}). Without
+ * one, the cell rect converted to units. */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_frame(const xxwidgets_widget *widget, xxwidgets_rect *frame);
+/* 1 once set_frame placed the widget, else 0. */
+XXWIDGETS_API int xxwidgets_widget_has_frame(const xxwidgets_widget *widget);
+/* The geometry the platform actually gave the control, in units relative to
+ * its window's client area (for checks such as smoke tests). A window: x and
+ * y 0 and its current client size. */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_native_frame(const xxwidgets_widget *widget, xxwidgets_rect *frame);
+/* Current client area of a window in units; it follows user resizes, which
+ * are reported as RESIZE. */
+XXWIDGETS_API xxwidgets_status xxwidgets_window_get_client_size(const xxwidgets_widget *window, int *width, int *height);
+/* Smallest client area in units the user can resize a window to (0: no limit
+ * in that direction). A window that is smaller grows to it at once; one that
+ * is larger is never shrunk. Replaces a cell minimum (window_set_minimum_size). */
+XXWIDGETS_API xxwidgets_status xxwidgets_window_set_minimum_frame(xxwidgets_widget *window, int width, int height);
+XXWIDGETS_API xxwidgets_status xxwidgets_window_get_minimum_frame(const xxwidgets_widget *window, int *width, int *height);
+
+/* 1 when the backend can create this kind. Every backend creates the kinds
+ * up to XXWIDGETS_TABLE; VALUE and GROUP are optional, and widget_create
+ * returns UNAVAILABLE for them on a backend without them (use a LABEL, or no
+ * frame, instead). */
+XXWIDGETS_API int xxwidgets_app_supports_kind(const xxwidgets_app *app, xxwidgets_kind kind);
+
+/* Button icons: top-down, straight-alpha RGBA8 pixels. */
+typedef struct xxwidgets_icon {
+    const unsigned char *rgba;
+    unsigned int width, height;
+    size_t stride; /* bytes per row */
+} xxwidgets_icon;
+enum {
+    /* Shows the icon alone. The text stays the button's accessible name; set
+     * it as the tooltip too. */
+    XXWIDGETS_ICON_ONLY = 1u << 0
+};
+/* Shown left of the text, at small_icon units. Pixels are copied; width and
+ * height 1..256, stride at least width * 4. NULL/0/0/0 removes the icon.
+ * BUTTON only. Backends without icons store it and show the text: the call
+ * still succeeds. The built-in set is in xxwidgets/xxwidgets_icons.h. */
+XXWIDGETS_API xxwidgets_status xxwidgets_button_set_icon(xxwidgets_widget *button, const void *rgba, unsigned int width, unsigned int height,
+                                                       size_t stride, unsigned int flags);
+/* The stored copy, borrowed until the icon changes: rgba NULL when none. */
+XXWIDGETS_API xxwidgets_status xxwidgets_button_get_icon(const xxwidgets_widget *button, xxwidgets_icon *icon, unsigned int *flags);
+
+typedef enum xxwidgets_alignment {
+    XXWIDGETS_ALIGN_LEFT = 0,
+    XXWIDGETS_ALIGN_CENTER,
+    XXWIDGETS_ALIGN_RIGHT
+} xxwidgets_alignment;
+/* Horizontal text alignment of a LABEL (default LEFT) or VALUE (default CENTER). */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_alignment(xxwidgets_widget *widget, xxwidgets_alignment alignment);
+XXWIDGETS_API xxwidgets_alignment xxwidgets_widget_alignment(const xxwidgets_widget *widget);
+/* Bold text for a LABEL or VALUE; bold must be 0 or 1. */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_bold(xxwidgets_widget *widget, int bold);
+XXWIDGETS_API int xxwidgets_widget_bold(const xxwidgets_widget *widget);
+
+/* Batch changes to a window's controls (show/hide, frames) with one repaint at
+ * the end. Calls nest; the outermost end_update repaints. Every begin_update
+ * needs its end_update. Hiding the focused control moves the focus to the next
+ * focusable control of its window in creation order, whether or not inside
+ * an update. */
+XXWIDGETS_API xxwidgets_status xxwidgets_window_begin_update(xxwidgets_widget *window);
+XXWIDGETS_API xxwidgets_status xxwidgets_window_end_update(xxwidgets_widget *window);
+
+/* TREEVIEW presentation. ARROWS: expand arrows without connecting lines,
+ * where the platform draws lines by default (WinAPI). Default 0. */
+enum { XXWIDGETS_TREE_ARROWS = 1u << 0 };
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_style(xxwidgets_widget *tree, unsigned int style);
+XXWIDGETS_API unsigned int xxwidgets_treeview_style(const xxwidgets_widget *tree);
+
+/* A CHECKCOMBOBOX that always shows caption (copied UTF-8, e.g. "Flags")
+ * instead of a summary of its checks; NULL or "" restores the summary.
+ * Emits no events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_checkcombobox_set_fixed_caption(xxwidgets_widget *widget, const char *caption);
 
 #ifdef __cplusplus
 }

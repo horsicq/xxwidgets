@@ -102,7 +102,8 @@ XXWIDGETS_API xxwidgets_widget *xxwidgets_optimization_options_widget_control(co
                                                                               xxwidgets_optimization_options_control_id control);
 XXWIDGETS_API xxwidgets_status xxwidgets_optimization_options_widget_get(const xxwidgets_optimization_options_widget *widget, xxwidgets_optimization_options *options);
 /* Buffer records contain UINT64 byte counts representing size_t values.
- * Choices include powers of two from 1 KiB through 1 GiB. Any other nonzero
+ * Choices include powers of two from 1 KiB through 1 GiB (64 MiB where a
+ * size_t has 32 bits). Any other nonzero
  * size is preserved by a copied custom record. Zero means Default (64 KiB)
  * and round-trips as zero; resolving that default belongs to the host.
  * Setters copy values atomically and emit no input events. */

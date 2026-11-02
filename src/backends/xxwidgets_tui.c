@@ -767,7 +767,17 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
     long long col, row;
     char label[32];
     if (!widget->visible || clip.left >= clip.right || clip.top >= clip.bottom) return;
-    if ((widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_CHECKBOX || widget->kind == XXWIDGETS_COMBOBOX || widget->kind == XXWIDGETS_CHECKCOMBOBOX) &&
+    if (widget->kind == XXWIDGETS_GROUP) {
+        /* A border only: the controls inside are drawn over the interior. */
+        tui_box(state, clip, x, y, widget->rect.width, widget->rect.height, style == TUI_FOCUS ? TUI_NORMAL : style);
+        if (widget->text[0] && widget->rect.width > 4) {
+            tui_clip title = {x + 2, y, bounds.right - 2, y + 1};
+            tui_text(state, tui_intersect(clip, title), x + 2, y, widget->text, style == TUI_FOCUS ? TUI_NORMAL : style, TUI_TEXT_ELLIPSIS);
+        }
+        return;
+    }
+    if ((widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_CHECKBOX || widget->kind == XXWIDGETS_COMBOBOX || widget->kind == XXWIDGETS_CHECKCOMBOBOX ||
+         widget->kind == XXWIDGETS_VALUE) &&
         clip.bottom > y + 1)
         clip.bottom = y + 1;
     if ((widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) && style == TUI_FOCUS)
@@ -800,6 +810,17 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
             tui_text(state, clip, x, y, widget->value ? "[x] " : "[ ] ", style, 0);
             tui_text(state, clip, x + 4, y, widget->text, style, TUI_TEXT_ELLIPSIS);
             break;
+        case XXWIDGETS_VALUE: {
+            /* "[ value ]", aligned inside the brackets; bold has no cell form. */
+            long long inner = widget->rect.width > 2 ? widget->rect.width - 2 : 0, cells = tui_label_cells(widget->text), start = x + 1;
+            tui_put(state, clip, x, y, '[', style);
+            tui_put(state, clip, bounds.right - 1, y, ']', style);
+            if (cells < inner) start += widget->alignment == XXWIDGETS_ALIGN_CENTER ? (inner - cells) / 2 : widget->alignment == XXWIDGETS_ALIGN_RIGHT ? inner - cells : 0;
+            bounds.left = x + 1;
+            bounds.right--;
+            tui_text(state, tui_intersect(clip, bounds), start, y, widget->text, style, TUI_TEXT_ELLIPSIS);
+            break;
+        }
         case XXWIDGETS_COMBOBOX:
         case XXWIDGETS_CHECKCOMBOBOX:
             tui_put(state, clip, x, y, '[', style);
@@ -1187,8 +1208,11 @@ static void tui_window(xxwidgets_app *app, xxwidgets_widget *window)
     tui_fill(state, outer, TUI_NORMAL);
     tui_box(state, screen, x, y, (long long)window->rect.width + 2, (long long)window->rect.height + 2, window->enabled ? TUI_TITLE : TUI_DISABLED);
     tui_text(state, tui_intersect(title, screen), x + 2, y, window->text, window->enabled ? TUI_TITLE : TUI_DISABLED, 0);
+    /* Frames (GROUP) first: they stay below their sibling controls. */
     for (widget = app->widgets; widget; widget = widget->next)
-        if (widget->parent == window) tui_control(state, widget, client);
+        if (widget->parent == window && widget->kind == XXWIDGETS_GROUP) tui_control(state, widget, client);
+    for (widget = app->widgets; widget; widget = widget->next)
+        if (widget->parent == window && widget->kind != XXWIDGETS_GROUP) tui_control(state, widget, client);
 }
 
 #ifndef _WIN32
@@ -2686,6 +2710,17 @@ static size_t tui_hexview_page_rows(const xxwidgets_widget *widget)
     return clip.left < clip.right && clip.bottom > top ? (size_t)(clip.bottom - top) : 1;
 }
 
-const xxwidgets_backend_ops xxwidgets_tui_ops = {"tui",    tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,   tui_sync,
+/* VALUE is drawn "[ text ]", GROUP as a border below its siblings. */
+static int tui_supports_kind(xxwidgets_kind kind)
+{
+    return kind == XXWIDGETS_VALUE || kind == XXWIDGETS_GROUP;
+}
+
+const xxwidgets_backend_ops xxwidgets_tui_ops = {"tui",   tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,   tui_sync,
                                                  tui_read, tui_read, tui_focus,    NULL,     NULL,       tui_copy_text, tui_apply_fonts,
-                                                 NULL,     NULL,     NULL,         NULL,     NULL,       tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL, NULL, NULL};
+                                                 NULL,     NULL,     NULL,         NULL,     NULL,       tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL, NULL, NULL,
+                                                 NULL /* translation_changed */, NULL /* set_tooltip */,
+                                                 /* Cells: the core lays frames out as rects (no metrics, measure,
+                                                  * place, native_frame or minimum_frame). */
+                                                 NULL, NULL, NULL, NULL, NULL, tui_supports_kind, NULL /* set_icon: text only */,
+                                                 NULL /* begin_update */, NULL /* end_update */};
