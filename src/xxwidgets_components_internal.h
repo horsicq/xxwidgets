@@ -58,6 +58,11 @@ static inline int xxwidgets_component_busy(const xxwidgets_app *app)
     return app->dispatch_depth || app->polling || app->syncing;
 }
 
+struct xxwidgets_file_header;
+/* xxwidgets_file_header.c: the row's size in either view, whatever the
+ * current one (xxwidgets_die_main_panel sizes both views). */
+xxwidgets_status xxwidgets_file_header_view_size(struct xxwidgets_file_header *header, int advanced, int minimum, int *width, int *height);
+
 static inline int xxwidgets_component_max(int a, int b)
 {
     return a > b ? a : b;

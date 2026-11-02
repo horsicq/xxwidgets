@@ -232,6 +232,7 @@ add_library(xxwidgets
     src/xxwidgets_file_name_bar.c
     src/xxwidgets_file_header.c
     src/xxwidgets_side_panel.c
+    src/xxwidgets_die_main_panel.c
     src/xxwidgets_shortcuts_dialog.c
     src/xxwidgets_translation.c
     src/xxwidgets_edit.c
@@ -828,9 +829,12 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         add_test(NAME xxwidgets_geometry COMMAND xxwidgets_core_tests --geometry-only)
         set_tests_properties(xxwidgets_geometry PROPERTIES TIMEOUT 15 LABELS "layout;frames;icons")
         target_sources(xxwidgets_core_tests PRIVATE tests/test_main_components.c src/xxwidgets_value_field.c
-            src/xxwidgets_file_name_bar.c src/xxwidgets_file_header.c src/xxwidgets_side_panel.c src/xxwidgets_shortcuts_dialog.c)
+            src/xxwidgets_file_name_bar.c src/xxwidgets_file_header.c src/xxwidgets_side_panel.c src/xxwidgets_shortcuts_dialog.c
+            tests/test_die_main_panel.c src/xxwidgets_die_main_panel.c)
         add_test(NAME xxwidgets_main_components COMMAND xxwidgets_core_tests --main-components-only)
         set_tests_properties(xxwidgets_main_components PROPERTIES TIMEOUT 15 LABELS "layout;components")
+        add_test(NAME xxwidgets_die_main_panel COMMAND xxwidgets_core_tests --die-main-panel-only)
+        set_tests_properties(xxwidgets_die_main_panel PROPERTIES TIMEOUT 15 LABELS "layout;components")
         add_test(NAME xxwidgets_core COMMAND xxwidgets_core_tests)
         set_tests_properties(xxwidgets_core xxwidgets_scan_directory PROPERTIES
             RESOURCE_LOCK xxwidgets_scan_directory_fixture)

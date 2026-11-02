@@ -5724,12 +5724,16 @@ static xxwidgets_status win32_metrics(xxwidgets_app *app, xxwidgets_metrics *met
     TEXTMETRICW text;
     HDC dc;
     HGDIOBJ previous;
-    int dpi = win32_dpi(), height = 0, icon = GetSystemMetrics(SM_CXSMICON);
+    int dpi = win32_dpi(), height = 0, edit_height = 0, icon = GetSystemMetrics(SM_CXSMICON);
     if (!state) return XXWIDGETS_PLATFORM_ERROR;
     dc = GetDC(NULL);
     if (dc) {
         previous = SelectObject(dc, state->role_fonts[XXWIDGETS_FONT_CONTROLS] ? state->role_fonts[XXWIDGETS_FONT_CONTROLS] : state->font);
         if (GetTextMetricsW(dc, &text)) height = text.tmHeight;
+        /* Edits share the row height H but may have their own, larger font
+         * (XXWIDGETS_FONT_TEXT_EDITS): H must hold its line too. */
+        if (state->role_fonts[XXWIDGETS_FONT_TEXT_EDITS] && SelectObject(dc, state->role_fonts[XXWIDGETS_FONT_TEXT_EDITS]) &&
+            GetTextMetricsW(dc, &text)) edit_height = text.tmHeight + text.tmExternalLeading;
         if (previous && previous != HGDI_ERROR) SelectObject(dc, previous);
         ReleaseDC(NULL, dc);
     }
@@ -5738,7 +5742,7 @@ static xxwidgets_status win32_metrics(xxwidgets_app *app, xxwidgets_metrics *met
     metrics->cell_width = state->cell_width;
     metrics->cell_height = state->cell_height;
     /* Segoe UI 9 at 96 DPI: a 15 px line, Qt's 23 px fields and 15 px captions. */
-    metrics->control_height = height + 8;
+    metrics->control_height = (edit_height > height ? edit_height : height) + 8;
     metrics->label_height = height;
     metrics->spacing = win32_scaled(6, dpi);
     metrics->margin = win32_scaled(9, dpi);

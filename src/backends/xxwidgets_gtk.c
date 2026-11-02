@@ -68,6 +68,11 @@ static const char GRID_CSS[] = "." GRID_CLASS " > button." CELL_CLASS
                                " > box > button.combo { min-height: 0; }\n"
                                "." GRID_CLASS " > button." CELL_CLASS
                                " { padding-left: 4px; padding-right: 4px; }\n"
+                               /* An icon-only button (gtk_set_icon) fits Qt's 24 px
+                                * Recent files button: themes give image buttons a
+                                * min-width that would override its frame. */
+                               "." GRID_CLASS " > button." CELL_CLASS ".image-button"
+                               " { min-width: 0; padding-left: 3px; padding-right: 3px; }\n"
                                "." GRID_CLASS " > combobox." CELL_CLASS " > box > button.combo { padding-top: 0; padding-bottom: 0; }\n";
 
 typedef struct gtk_app_state {
@@ -652,22 +657,26 @@ static void window_update_minimum(xxwidgets_widget *window)
     gtk_widget_set_size_request(state->content, (int)width, (int)height);
 }
 
+/* The first label inside a button's child, at most depth containers down. */
+static GtkWidget *nested_label(GtkWidget *widget, int depth)
+{
+    GList *children, *child;
+    GtkWidget *found = NULL;
+    if (!widget || GTK_IS_LABEL(widget)) return widget;
+    if (depth <= 0 || !GTK_IS_CONTAINER(widget)) return NULL;
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (child = children; child && !found; child = child->next) found = nested_label(child->data, depth - 1);
+    g_list_free(children);
+    return found;
+}
+
 static GtkLabel *control_label(GtkWidget *native)
 {
     GtkWidget *label = GTK_IS_LABEL(native) ? native : GTK_IS_BIN(native) ? gtk_bin_get_child(GTK_BIN(native)) : NULL;
-    /* A button with an image (gtk_button_set_image) holds a box with the
-     * image and the label; an icon-only one has no label at all. */
-    while (label && GTK_IS_BIN(label) && !GTK_IS_LABEL(label)) label = gtk_bin_get_child(GTK_BIN(label));
-    if (label && GTK_IS_BOX(label)) {
-        GList *children = gtk_container_get_children(GTK_CONTAINER(label)), *child;
-        label = NULL;
-        for (child = children; child; child = child->next)
-            if (GTK_IS_LABEL(child->data)) {
-                label = child->data;
-                break;
-            }
-        g_list_free(children);
-    }
+    /* A button with an image (gtk_button_set_image) holds a box (or an
+     * alignment around one) with the image and the label; an icon-only one
+     * has no label at all. */
+    if (label && !GTK_IS_LABEL(label)) label = nested_label(label, 3);
     return label && GTK_IS_LABEL(label) ? GTK_LABEL(label) : NULL;
 }
 

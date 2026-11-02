@@ -145,8 +145,13 @@ XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_set_advanced(xxwidgets_d
 XXWIDGETS_API int xxwidgets_die_main_panel_get_advanced(const xxwidgets_die_main_panel *panel);
 /* 0: no file (File type, File size, Base address, Entry point, the tools,
  * the type area, the engine row and the whole scan bar disabled; the file
- * name bar and the right column stay enabled); 1: a file is loaded. Items
- * the application disabled and unavailable tools stay disabled. */
+ * name bar, the result tree and the right column stay enabled); 1: a file is
+ * loaded. Items the application disabled in the right column and unavailable
+ * tools stay disabled; in the scan bar, 1 enables everything except Report
+ * without a report and the tag filters without tags, so re-apply your own
+ * scan-bar disables after it. A scan panel setter that enables a control
+ * (set_available_tags, set_results) does so even with no file loaded: call
+ * set_loaded(0) again after it. */
 XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_set_loaded(xxwidgets_die_main_panel *panel, int loaded);
 /* Client size in units for a view (advanced 0 or 1). */
 XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_get_minimum_size(const xxwidgets_die_main_panel *panel, int advanced, int *width,
@@ -155,7 +160,11 @@ XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_get_minimum_size(const x
 XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_get_default_size(const xxwidgets_die_main_panel *panel, int advanced, int *width,
                                                                        int *height);
 /* 1 when event belongs to the panel; *out receives the action (NONE when the
- * panel handled it completely). */
+ * panel handled it completely, or the control is hidden or disabled). The
+ * window's RESIZE lays the panel out again and returns 1 with NONE (the
+ * application may act on it too). Returns 0 for the Flags, Database and tag
+ * filter combos and the result tree: the application handles those through
+ * the scan panel as before. Safe to call from the app's event callback. */
 XXWIDGETS_API int xxwidgets_die_main_panel_handle_event(xxwidgets_die_main_panel *panel, const xxwidgets_event *event, xxwidgets_die_action *out);
 /* Re-applies every caption, label and tooltip from the current catalog and
  * lays out again. */

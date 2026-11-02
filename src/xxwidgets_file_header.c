@@ -128,7 +128,7 @@ static xxwidgets_status box_widths(xxwidgets_file_header *header, int *widths)
 }
 
 /* Row: File type, File size, an expanding gap, Base address, Entry point. */
-static xxwidgets_status row_items(xxwidgets_file_header *header, xxwidgets_layout_item *items)
+static xxwidgets_status row_items(xxwidgets_file_header *header, int advanced, xxwidgets_layout_item *items)
 {
     int widths[XXWIDGETS_FILE_HEADER_FIELD_COUNT];
     xxwidgets_status status = box_widths(header, widths);
@@ -141,18 +141,18 @@ static xxwidgets_status row_items(xxwidgets_file_header *header, xxwidgets_layou
     items[3].minimum = items[3].preferred = widths[XXWIDGETS_FILE_HEADER_BASE_ADDRESS];
     items[4].minimum = items[4].preferred = widths[XXWIDGETS_FILE_HEADER_ENTRY_POINT];
     /* Simple view: no right group, so no gap either. */
-    items[2].hidden = items[3].hidden = items[4].hidden = !header->advanced;
+    items[2].hidden = items[3].hidden = items[4].hidden = !advanced;
     return XXWIDGETS_OK;
 }
 
-static xxwidgets_status row_size(xxwidgets_file_header *header, int minimum, int *width, int *height)
+static xxwidgets_status row_size(xxwidgets_file_header *header, int advanced, int minimum, int *width, int *height)
 {
     xxwidgets_layout_item items[5];
     xxwidgets_metrics metrics;
     xxwidgets_status status;
     if (!header || !width || !height) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_app_get_metrics(header->owner->app, &metrics);
-    if (status == XXWIDGETS_OK) status = row_items(header, items);
+    if (status == XXWIDGETS_OK) status = row_items(header, advanced, items);
     if (status != XXWIDGETS_OK) return status;
     /* File size, S, the spacer (0 or more), Base address: at least S apart. */
     *width = minimum ? xxwidgets_layout_line_minimum(items, 5, metrics.spacing) : xxwidgets_layout_line_preferred(items, 5, metrics.spacing);
@@ -162,12 +162,18 @@ static xxwidgets_status row_size(xxwidgets_file_header *header, int minimum, int
 
 xxwidgets_status xxwidgets_file_header_get_preferred_size(xxwidgets_file_header *header, int *width, int *height)
 {
-    return row_size(header, 0, width, height);
+    return header ? row_size(header, header->advanced, 0, width, height) : XXWIDGETS_INVALID_ARGUMENT;
 }
 
 xxwidgets_status xxwidgets_file_header_get_minimum_size(xxwidgets_file_header *header, int *width, int *height)
 {
-    return row_size(header, 1, width, height);
+    return header ? row_size(header, header->advanced, 1, width, height) : XXWIDGETS_INVALID_ARGUMENT;
+}
+
+xxwidgets_status xxwidgets_file_header_view_size(xxwidgets_file_header *header, int advanced, int minimum, int *width, int *height)
+{
+    if (!header || (advanced != 0 && advanced != 1)) return XXWIDGETS_INVALID_ARGUMENT;
+    return row_size(header, advanced, minimum ? 1 : 0, width, height);
 }
 
 xxwidgets_status xxwidgets_file_header_set_bounds(xxwidgets_file_header *header, xxwidgets_rect units)
@@ -181,7 +187,7 @@ xxwidgets_status xxwidgets_file_header_set_bounds(xxwidgets_file_header *header,
     size_t i;
     if (!header || units.x < 0 || units.y < 0 || units.width < 1 || units.height < 1) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_app_get_metrics(header->owner->app, &metrics);
-    if (status == XXWIDGETS_OK) status = row_items(header, items);
+    if (status == XXWIDGETS_OK) status = row_items(header, header->advanced, items);
     if (status != XXWIDGETS_OK) return status;
     /* The right group is right-aligned: the spacer takes the slack. */
     xxwidgets_layout_line(items, 5, units.x, units.width, metrics.spacing);

@@ -843,7 +843,9 @@ xxwidgets_status xxwidgets_scan_panel_set_options(xxwidgets_scan_panel *panel, u
     unsigned int previous;
     xxwidgets_status status;
     if (!panel || (options & ~(unsigned int)SCAN_PANEL_OPTIONS)) return XXWIDGETS_INVALID_ARGUMENT;
-    if (panel->owner->app->dispatch_depth || panel->owner->app->polling || panel->owner->app->syncing) return XXWIDGETS_BUSY;
+    /* Allowed from an event callback (a view toggle or a RESIZE relayout);
+     * not from inside a backend call. */
+    if (panel->owner->app->syncing) return XXWIDGETS_BUSY;
     previous = panel->options;
     status = apply_look(panel, options);
     if (status == XXWIDGETS_OK) status = apply_visibility(panel, panel->visible, options);
@@ -883,6 +885,11 @@ typedef struct scan_frame_plan {
 static int font_units(const xxwidgets_metrics *metrics, int tenths)
 {
     long long units = ((long long)metrics->cell_width * tenths + 5) / 10;
+    /* Measured units: back to Qt's pixels (a 7-pixel cell), scaled by the
+     * control height like the other main-window components (exact Qt
+     * pixels on WinAPI at 96 DPI, where H is 23). Cells keep the cell rule. */
+    if (!metrics->unit_is_cell && metrics->control_height > 0)
+        units = (((long long)tenths * 7 + 5) / 10 * metrics->control_height + 11) / 23;
     return units < 1 ? 1 : units > 32767 ? 32767 : (int)units;
 }
 
@@ -952,8 +959,14 @@ static xxwidgets_status scan_frame_layout(xxwidgets_scan_panel *panel, xxwidgets
     plan_box(&bar[BAR_SIGNATURES], preferred_width(c[XXWIDGETS_SCAN_PANEL_SIGNATURES], NULL), font_units(&m, 114), 0, 0, 0);
     plan_box(&bar[BAR_FLAGS], preferred_width(c[XXWIDGETS_SCAN_PANEL_FLAGS], XXW_TR(app, "Flags")), font_units(&m, 214), 0, 0, 0);
     plan_box(&bar[BAR_DATABASES], preferred_width(c[XXWIDGETS_SCAN_PANEL_DATABASES], XXW_TR(app, XXW_N_("Database"))), font_units(&m, 214), 0, 0, 0);
-    plan_box(&bar[BAR_INCLUDE], preferred_width(c[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS], XXW_TR(app, "Include tags")), font_units(&m, 214), 0, 0, hide_tags);
-    plan_box(&bar[BAR_EXCLUDE], preferred_width(c[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS], XXW_TR(app, "Exclude tags")), font_units(&m, 214), 0, 0, hide_tags);
+    /* The tag combos show a summary ("All tags", "No excluded tags"), not
+     * their label: at least their current caption fits. */
+    plan_box(&bar[BAR_INCLUDE], larger(preferred_width(c[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS], NULL),
+                                       preferred_width(c[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS], XXW_TR(app, "Include tags"))),
+             font_units(&m, 214), 0, 0, hide_tags);
+    plan_box(&bar[BAR_EXCLUDE], larger(preferred_width(c[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS], NULL),
+                                       preferred_width(c[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS], XXW_TR(app, "Exclude tags"))),
+             font_units(&m, 214), 0, 0, hide_tags);
     plan_box(&bar[BAR_SPACER], 0, 0, 0, 1, 0);
     bar[BAR_SPACER].spacer = 1;
     plan_box(&bar[BAR_SCAN], preferred_width(c[XXWIDGETS_SCAN_PANEL_SCAN], NULL), font_units(&m, 143), 0, 0, 0);
@@ -1051,7 +1064,9 @@ xxwidgets_status xxwidgets_scan_panel_set_bounds(xxwidgets_scan_panel *panel, xx
     if (!panel || units.x < 0 || units.y < 0 || units.width < 1 || units.height < 1 || units.x > 32767 - units.width ||
         units.y > 32767 - units.height)
         return XXWIDGETS_INVALID_ARGUMENT;
-    if (panel->owner->app->dispatch_depth || panel->owner->app->polling || panel->owner->app->syncing) return XXWIDGETS_BUSY;
+    /* Allowed from an event callback (a view toggle or a RESIZE relayout);
+     * not from inside a backend call. */
+    if (panel->owner->app->syncing) return XXWIDGETS_BUSY;
     status = scan_frame_layout(panel, units, &plan);
     if (status != XXWIDGETS_OK) return status;
     for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT && status == XXWIDGETS_OK; ++i)
