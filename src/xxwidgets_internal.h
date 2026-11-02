@@ -79,6 +79,8 @@ typedef struct xxwidgets_backend_ops {
     /* Optional: the catalog was replaced or cleared; backend-owned captions
      * (the Cocoa Edit menu) are rebuilt from the new one. */
     void (*translation_changed)(xxwidgets_app *app);
+    /* Optional hover tooltip; text is valid UTF-8, or NULL to remove it. */
+    xxwidgets_status (*set_tooltip)(xxwidgets_widget *widget, const char *text);
 } xxwidgets_backend_ops;
 
 #define XXWIDGETS_ABOUT_ITEMS_MAX 64

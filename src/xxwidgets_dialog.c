@@ -252,7 +252,7 @@ xxwidgets_status xxwidgets_file_dialog(xxwidgets_widget *owner, xxwidgets_file_d
     xxwidgets_app *app;
     if (path) *path = NULL;
     if (accepted) *accepted = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !path || !accepted || (mode != XXWIDGETS_FILE_DIALOG_OPEN && mode != XXWIDGETS_FILE_DIALOG_SAVE) ||
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !path || !accepted || (mode != XXWIDGETS_FILE_DIALOG_OPEN && mode != XXWIDGETS_FILE_DIALOG_SAVE && mode != XXWIDGETS_FILE_DIALOG_FOLDER) ||
         (title && !xxwidgets_valid_utf8(title)))
         return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;

@@ -2466,7 +2466,7 @@ xxwidgets_status xxwidgets_hexview_dump_dialog(xxwidgets_widget *w)
     if (!length) return XXWIDGETS_UNAVAILABLE;
     w->hex_pending_dump = 0;
     if (xxwidgets_file_dialog_available(app))
-        status = xxwidgets_file_dialog(w->parent, XXWIDGETS_FILE_DIALOG_SAVE, "Dump selected bytes", "selection.bin", &path, &accepted);
+        status = xxwidgets_file_dialog(w->parent, XXWIDGETS_FILE_DIALOG_SAVE, XXW_TR(app, "Dump selected bytes"), "selection.bin", &path, &accepted);
     else status = hex_dump_path(w, &path, &accepted, &overwrite);
     if (status == XXWIDGETS_OK && accepted) status = save_hex_selection(w, path, overwrite);
     free(path);

@@ -23,10 +23,14 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef COBJMACROS
+#define COBJMACROS /* C calls into the folder picker's IFileOpenDialog. */
+#endif
 #include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <shlobj.h>
 
 #include <limits.h>
 #include <math.h>
@@ -114,7 +118,8 @@ typedef struct xxwidgets_win32_widget {
     int owner_hidden; /* WINDOW: Windows hid it with its minimized owner; it shows it on restore. */
     /* WINDOW: a resizable text dialog, and the grid its buttons were last laid out for. */
     int about_resizable, about_columns, about_rows;
-    char *restore_text; /* BUTTON in an about window: the label its click replaced, put back by a timer. */
+    HWND tooltip;    /* WINDOW: the tooltip control its widgets share, made by the first set_tooltip. */
+    int has_tooltip; /* A tool of its window's tooltip control, removed when it goes. */
     /* WINDOW: win32_cells_relayout held it to (or moved it into) the work area. The size in cells
      * and the place it had before, and the rect and frame it was given: while
      * nobody moved or resized it, the next relayout asks for that size there
@@ -155,7 +160,6 @@ static LRESULT CALLBACK win32_browser_proc(HWND handle, UINT message, WPARAM wp,
 /* Posted to a dialog win32_modal_owner resized while events were held back,
  * and to every window win32_cells_relayout re-laid out. */
 #define XXWIDGETS_WIN32_RESIZED (WM_APP + 0x581)
-#define XXWIDGETS_WIN32_RELABEL_TIMER 0x5852
 #define XXWIDGETS_WIN32_TEXT_MIN_COLUMNS 40
 #define XXWIDGETS_WIN32_TEXT_MIN_ROWS 10
 /* The cells grow with the Controls font only as far as a dialog this many
@@ -1190,6 +1194,86 @@ done:
     DragFinish(drop);
 }
 
+/* The GUIDs are spelled out so that nothing needs uuid.lib. */
+static const CLSID win32_clsid_file_open_dialog = {0xdc1c5a9c, 0xe88a, 0x4dde, {0xa5, 0xa1, 0x60, 0xf8, 0x2a, 0x20, 0xae, 0xf7}};
+static const IID win32_iid_file_open_dialog = {0xd57c7288, 0xd4ad, 0x4768, {0xbe, 0x02, 0x9d, 0x96, 0x95, 0x32, 0xd9, 0x60}};
+static const IID win32_iid_shell_item = {0x43826d1e, 0xe718, 0x42ee, {0xbc, 0x55, 0xa1, 0xe2, 0x61, 0xc3, 0x7b, 0xfe}};
+typedef HRESULT(WINAPI *win32_item_from_path_fn)(PCWSTR, IBindCtx *, REFIID, void **);
+
+static xxwidgets_status win32_utf8_path(const wchar_t *wide, char **path)
+{
+    int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, NULL, 0, NULL, NULL);
+    if (!bytes) return XXWIDGETS_PLATFORM_ERROR;
+    *path = malloc((size_t)bytes);
+    if (!*path) return XXWIDGETS_OUT_OF_MEMORY;
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, *path, bytes, NULL, NULL)) return XXWIDGETS_OK;
+    free(*path);
+    *path = NULL;
+    return XXWIDGETS_PLATFORM_ERROR;
+}
+
+/* FOLDER mode: the Vista folder picker (IFileOpenDialog, FOS_PICKFOLDERS),
+ * starting in initial or its nearest existing parent; SHBrowseForFolderW where
+ * COM cannot create that dialog. initial is backslashed, or NULL. */
+static xxwidgets_status win32_choose_folder(HWND owner, const wchar_t *caption, wchar_t *initial, char **path, int *accepted)
+{
+    HRESULT initialized = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    IFileOpenDialog *dialog = NULL;
+    xxwidgets_status status = XXWIDGETS_OK;
+    if (initial) {
+        DWORD attributes;
+        while (initial[0] && ((attributes = GetFileAttributesW(initial)) == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_DIRECTORY))) {
+            wchar_t *cut = wcsrchr(initial, L'\\');
+            if (!cut) initial[0] = 0;
+            else if (cut == initial + 2 && initial[1] == L':') {
+                cut[1] = 0;
+                if (GetFileAttributesW(initial) == INVALID_FILE_ATTRIBUTES) initial[0] = 0;
+            } else *cut = 0;
+        }
+    }
+    if (SUCCEEDED(CoCreateInstance(&win32_clsid_file_open_dialog, NULL, CLSCTX_INPROC_SERVER, &win32_iid_file_open_dialog, (void **)&dialog))) {
+        FILEOPENDIALOGOPTIONS options = 0;
+        IShellItem *item = NULL;
+        HRESULT shown;
+        HMODULE shell = GetModuleHandleW(L"shell32.dll");
+        win32_item_from_path_fn item_from_path = shell ? (win32_item_from_path_fn)(void *)GetProcAddress(shell, "SHCreateItemFromParsingName") : NULL;
+        if (SUCCEEDED(IFileOpenDialog_GetOptions(dialog, &options)))
+            IFileOpenDialog_SetOptions(dialog, options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
+        if (caption) IFileOpenDialog_SetTitle(dialog, caption);
+        if (initial && initial[0] && item_from_path && SUCCEEDED(item_from_path(initial, NULL, &win32_iid_shell_item, (void **)&item))) {
+            IFileOpenDialog_SetFolder(dialog, item);
+            IShellItem_Release(item);
+            item = NULL;
+        }
+        shown = IFileOpenDialog_Show(dialog, owner);
+        if (SUCCEEDED(shown) && SUCCEEDED(IFileOpenDialog_GetResult(dialog, &item))) {
+            PWSTR chosen = NULL;
+            if (SUCCEEDED(IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &chosen))) {
+                status = win32_utf8_path(chosen, path);
+                CoTaskMemFree(chosen);
+            } else status = XXWIDGETS_PLATFORM_ERROR;
+            IShellItem_Release(item);
+        } else if (FAILED(shown) && shown != HRESULT_FROM_WIN32(ERROR_CANCELLED)) status = XXWIDGETS_PLATFORM_ERROR;
+        IFileOpenDialog_Release(dialog);
+    } else {
+        BROWSEINFOW browse;
+        PIDLIST_ABSOLUTE item;
+        wchar_t selected[MAX_PATH];
+        ZeroMemory(&browse, sizeof(browse));
+        browse.hwndOwner = owner;
+        browse.lpszTitle = caption;
+        browse.ulFlags = BIF_RETURNONLYFSDIRS | (SUCCEEDED(initialized) ? BIF_NEWDIALOGSTYLE : 0);
+        item = SHBrowseForFolderW(&browse);
+        if (item) {
+            status = SHGetPathFromIDListW(item, selected) ? win32_utf8_path(selected, path) : XXWIDGETS_PLATFORM_ERROR;
+            CoTaskMemFree(item);
+        }
+    }
+    if (status == XXWIDGETS_OK && *path) *accepted = 1;
+    if (SUCCEEDED(initialized)) CoUninitialize();
+    return status;
+}
+
 static xxwidgets_status win32_choose_file(xxwidgets_widget *owner, xxwidgets_file_dialog_mode mode, const char *title, const char *initial, char **path, int *accepted)
 {
     OPENFILENAMEW dialog = {0};
@@ -1207,6 +1291,10 @@ static xxwidgets_status win32_choose_file(xxwidgets_widget *owner, xxwidgets_fil
         DWORD attributes = GetFileAttributesW(name);
         if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) dialog.lpstrInitialDir = name;
         else wcscpy(buffer, name);
+    }
+    if (mode == XXWIDGETS_FILE_DIALOG_FOLDER) {
+        status = win32_choose_folder((HWND)owner->native, caption, name, path, accepted);
+        goto done;
     }
     dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = (HWND)owner->native;
     dialog.lpstrTitle = caption; dialog.lpstrFile = buffer; dialog.nMaxFile = 32768;
@@ -1885,22 +1973,6 @@ static void win32_cells_relayout(xxwidgets_app *app)
     --app->syncing;
 }
 
-/* A click that relabels its own button in a text or about dialog ("Copy all"
- * becoming "Copied") is undone after a moment, ready for the next one. */
-static void win32_relabel_later(xxwidgets_app *app, HWND window, HWND button, char *label)
-{
-    xxwidgets_widget *control = label ? win32_find_widget(app, button) : NULL;
-    xxwidgets_win32_widget *native = control ? (xxwidgets_win32_widget *)control->platform : NULL;
-    if (native && win32_find_widget(app, window) && strcmp(control->text, label)) {
-        if (!native->restore_text) {
-            native->restore_text = label;
-            label = NULL;
-        }
-        SetTimer(window, XXWIDGETS_WIN32_RELABEL_TIMER, 1500, NULL);
-    }
-    free(label);
-}
-
 static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)GetWindowLongPtrW(handle, GWLP_USERDATA);
@@ -1929,14 +2001,8 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                         break;
                     case XXWIDGETS_CHECKCOMBOBOX: break;
                     case XXWIDGETS_BUTTON:
-                        if (HIWORD(wp) == BN_CLICKED) {
-                            xxwidgets_app *app = widget->app;
-                            xxwidgets_win32_widget *frame = (xxwidgets_win32_widget *)widget->platform;
-                            char *label = frame && frame->about_edit ? xxwidgets_strdup(control->text) : NULL;
-                            xxwidgets_emit(control, XXWIDGETS_EVENT_CLICK, 0);
-                            /* The callback may have destroyed both; look them up again. */
-                            if (label) win32_relabel_later(app, handle, control_handle, label);
-                        }
+                        /* "Copied" goes back to "Copy all" in the shared text dialog loop. */
+                        if (HIWORD(wp) == BN_CLICKED) xxwidgets_emit(control, XXWIDGETS_EVENT_CLICK, 0);
                         break;
                     case XXWIDGETS_CHECKBOX:
                         if (HIWORD(wp) == BN_CLICKED) {
@@ -2060,23 +2126,6 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                     if (limits->ptMinTrackSize.y < height) limits->ptMinTrackSize.y = height;
                     return 0;
                 }
-            }
-            break;
-        case WM_TIMER:
-            if (wp == XXWIDGETS_WIN32_RELABEL_TIMER) {
-                xxwidgets_widget *child;
-                if (widget->app->syncing) return 0;
-                KillTimer(handle, wp);
-                for (child = widget->app->widgets; child; child = child->next) {
-                    xxwidgets_win32_widget *native = child->parent == widget ? (xxwidgets_win32_widget *)child->platform : NULL;
-                    if (native && native->restore_text) {
-                        char *label = native->restore_text;
-                        native->restore_text = NULL;
-                        (void)xxwidgets_widget_set_text(child, label);
-                        free(label);
-                    }
-                }
-                return 0;
             }
             break;
         case WM_NCDESTROY:
@@ -2613,8 +2662,14 @@ static xxwidgets_status win32_hexview_create_overview(xxwidgets_widget *widget, 
     if (!native->hex_container || !SetWindowSubclass(native->hex_container, win32_hexview_container_proc, 1, (DWORD_PTR)widget))
         return XXWIDGETS_PLATFORM_ERROR;
     if (!SetParent(table, native->hex_container)) return XXWIDGETS_PLATFORM_ERROR;
-    native->hex_overview = CreateWindowExW(0, L"STATIC", L"File overview", WS_CHILD | WS_VISIBLE | SS_NOTIFY,
-                                         0, 0, 0, 0, native->hex_container, NULL, app->instance, NULL);
+    {
+        /* Its text is only its accessible name. */
+        wchar_t *name = NULL;
+        (void)win32_wide(XXW_TR(widget->app, "File overview"), &name);
+        native->hex_overview = CreateWindowExW(0, L"STATIC", name ? name : L"File overview", WS_CHILD | WS_VISIBLE | SS_NOTIFY,
+                                             0, 0, 0, 0, native->hex_container, NULL, app->instance, NULL);
+        free(name);
+    }
     native->hex_scrollbar = CreateWindowExW(0, L"SCROLLBAR", L"", WS_CHILD | WS_VISIBLE | SBS_VERT,
                                           0, 0, 0, 0, native->hex_container, NULL, app->instance, NULL);
     if (!native->hex_overview || !native->hex_scrollbar ||
@@ -2866,6 +2921,43 @@ static void win32_die_hit(xxwidgets_widget *widget, int x, int y, int extend)
     xxwidgets_die_edit_point(widget, view.first_line + (size_t)row, view.first_column + (size_t)column, extend);
 }
 
+/* Right click (or Shift+F10, the menu key): the editing commands the Cocoa
+ * editor offers, each run as its Ctrl key. position is in screen
+ * coordinates, or -1 from the keyboard. */
+static void win32_die_context_menu(xxwidgets_widget *widget, HWND handle, LPARAM position)
+{
+    static const char *const titles[] = {XXW_N_("Undo"), XXW_N_("Redo"), XXW_N_("Cut"), XXW_N_("Copy"), XXW_N_("Paste"), XXW_N_("Select All")};
+    static const int keys[] = {'Z', 'Y', 'X', 'C', 'V', 'A'};
+    HMENU menu = CreatePopupMenu();
+    POINT point;
+    size_t offset = 0, length = 0, i;
+    int read_only = xxwidgets_die_signature_edit_read_only(widget), command;
+    if (!menu) return;
+    SetFocus(handle);
+    (void)xxwidgets_die_signature_edit_get_selection(widget, &offset, &length);
+    for (i = 0; i < sizeof(titles) / sizeof(titles[0]); ++i) {
+        wchar_t *title = NULL;
+        int disabled = i == 3 ? !length : i == 2 ? (read_only || !length) : i == 5 ? 0 : read_only;
+        if (i == 2) AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
+        if (win32_wide(XXW_TR(widget->app, titles[i]), &title) == XXWIDGETS_OK)
+            AppendMenuW(menu, MF_STRING | (disabled ? MF_GRAYED : 0), (UINT_PTR)(i + 1), title);
+        free(title);
+    }
+    if (position == (LPARAM)-1) {
+        RECT bounds;
+        GetWindowRect(handle, &bounds);
+        point.x = bounds.left;
+        point.y = bounds.top;
+    } else {
+        point.x = (short)LOWORD(position);
+        point.y = (short)HIWORD(position);
+    }
+    command = (int)TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, point.x, point.y, 0, handle, NULL);
+    DestroyMenu(menu);
+    if (command >= 1 && (size_t)command <= sizeof(keys) / sizeof(keys[0]) && xxwidgets_focusable(widget) && !widget->app->syncing)
+        (void)xxwidgets_die_edit_key(widget, keys[command - 1], XXWIDGETS_MOD_CTRL);
+}
+
 static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)data;
@@ -2919,6 +3011,10 @@ static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPA
         win32_die_hit(widget, (short)LOWORD(lp), (short)HIWORD(lp), 1); return 0;
     }
     if (message == WM_LBUTTONUP && native->die_dragging) { native->die_dragging = 0; ReleaseCapture(); return 0; }
+    if (message == WM_CONTEXTMENU && xxwidgets_focusable(widget) && !widget->app->syncing && !native->die_dragging) {
+        win32_die_context_menu(widget, handle, lp);
+        return 0;
+    }
     if (message == WM_CAPTURECHANGED) { native->die_dragging = 0; return 0; }
     if ((message == WM_VSCROLL || message == WM_HSCROLL) && !widget->app->syncing) {
         xxwidgets_die_edit_view view;
@@ -3136,9 +3232,63 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
     return status;
 }
 
+/* Tooltips: one control per window, made on first use. Every widget with a
+ * tip is a tool of its window's control, identified by its own handle. The
+ * V2 size is what both comctl32 5 and 6 accept. */
+static HWND win32_tooltip_tool(xxwidgets_widget *widget, TOOLINFOW *tool)
+{
+    xxwidgets_widget *window = widget;
+    xxwidgets_win32_widget *frame;
+    while (window && window->kind != XXWIDGETS_WINDOW) window = window->parent;
+    frame = window ? (xxwidgets_win32_widget *)window->platform : NULL;
+    if (!frame || !window->native || !widget->native) return NULL;
+    ZeroMemory(tool, sizeof(*tool));
+    tool->cbSize = TTTOOLINFOW_V2_SIZE;
+    tool->uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+    tool->hwnd = (HWND)window->native;
+    tool->uId = (UINT_PTR)widget->native;
+    if (!frame->tooltip) {
+        INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_BAR_CLASSES};
+        InitCommonControlsEx(&controls);
+        frame->tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, NULL, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT,
+                                         CW_USEDEFAULT, CW_USEDEFAULT, (HWND)window->native, NULL, GetModuleHandleW(NULL), NULL);
+        /* Long tips wrap instead of running off the screen. */
+        if (frame->tooltip) SendMessageW(frame->tooltip, TTM_SETMAXTIPWIDTH, 0, GetSystemMetrics(SM_CXSCREEN) / 2);
+    }
+    return frame->tooltip;
+}
+
+static xxwidgets_status win32_set_tooltip(xxwidgets_widget *widget, const char *text)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    TOOLINFOW tool;
+    HWND tooltip;
+    wchar_t *wide = NULL;
+    xxwidgets_status status = XXWIDGETS_OK;
+    if (!native) return XXWIDGETS_PLATFORM_ERROR;
+    if (!text) {
+        if (native->has_tooltip && (tooltip = win32_tooltip_tool(widget, &tool)) != NULL) SendMessageW(tooltip, TTM_DELTOOLW, 0, (LPARAM)&tool);
+        native->has_tooltip = 0;
+        return XXWIDGETS_OK;
+    }
+    tooltip = win32_tooltip_tool(widget, &tool);
+    if (!tooltip) return XXWIDGETS_PLATFORM_ERROR;
+    status = win32_wide(text, &wide);
+    if (status != XXWIDGETS_OK) return status;
+    tool.lpszText = wide;
+    if (native->has_tooltip) SendMessageW(tooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&tool);
+    else if (SendMessageW(tooltip, TTM_ADDTOOLW, 0, (LPARAM)&tool)) native->has_tooltip = 1;
+    else status = XXWIDGETS_PLATFORM_ERROR;
+    free(wide);
+    return status;
+}
+
 static void win32_destroy(xxwidgets_widget *widget)
 {
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    /* A tool outliving its handle could show its tip over a later control. */
+    if (native && native->has_tooltip) (void)win32_set_tooltip(widget, NULL);
+    if (native && native->tooltip) DestroyWindow(native->tooltip);
     if (native && native->menu) {
         if (widget->native) SetMenu((HWND)widget->native, NULL);
         DestroyMenu(native->menu);
@@ -3156,7 +3306,6 @@ static void win32_destroy(xxwidgets_widget *widget)
     if (native && native->hex_font) DeleteObject(native->hex_font);
     if (native && native->hex_regular_font) DeleteObject(native->hex_regular_font);
     if (native && native->hex_bold_font) DeleteObject(native->hex_bold_font);
-    if (native) free(native->restore_text);
     if (native) free(native->font_layout);
     if (native) free(native->tree_items);
     free(widget->platform);
@@ -5356,4 +5505,6 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_has_focus,
                                                     win32_accept_file_drops,
                                                     win32_hexview_page_rows, win32_paste_text, win32_hexview_font, win32_window_menu,
-                                                    win32_about_rich_content};
+                                                    win32_about_rich_content,
+                                                    NULL, /* translation_changed */
+                                                    win32_set_tooltip};

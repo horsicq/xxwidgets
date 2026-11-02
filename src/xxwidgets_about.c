@@ -22,6 +22,23 @@
 #include "xxwidgets_internal.h"
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
+/* Milliseconds on a monotonic clock; 0 when there is none. */
+static uint64_t about_clock(void)
+{
+#ifdef _WIN32
+    return (uint64_t)GetTickCount64();
+#else
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now)) return 0;
+    return (uint64_t)now.tv_sec * 1000 + (uint64_t)now.tv_nsec / 1000000;
+#endif
+}
 
 xxwidgets_status xxwidgets_about_dialog_create(xxwidgets_about_dialog **out_dialog)
 {
@@ -205,10 +222,16 @@ static char *about_body(const xxwidgets_about_dialog *dialog)
     return body;
 }
 
+/* "Copied" (or "Copy failed") goes back to "Copy all" this long after the
+ * last click, ready to report the next one. */
+#define ABOUT_RELABEL_MS 1500
+
 typedef struct about_state {
     xxwidgets_widget *window, *close, *copy;
     const char *body;
     int done;
+    int relabeled;      /* The copy button reports a click. */
+    uint64_t copied_at; /* about_clock() of that click. */
 } about_state;
 
 static void about_event(xxwidgets_app *app, const xxwidgets_event *event, void *user)
@@ -219,7 +242,10 @@ static void about_event(xxwidgets_app *app, const xxwidgets_event *event, void *
         state->done = 1;
     else if (event->widget == state->copy && event->type == XXWIDGETS_EVENT_CLICK) {
         xxwidgets_status status = app->ops->copy_text(state->window, state->body);
-        xxwidgets_widget_set_text(state->copy, status == XXWIDGETS_OK ? XXW_TR(app, "Copied") : XXW_TR(app, "Copy failed"));
+        if (xxwidgets_widget_set_text(state->copy, status == XXWIDGETS_OK ? XXW_TR(app, "Copied") : XXW_TR(app, "Copy failed")) == XXWIDGETS_OK) {
+            state->relabeled = 1;
+            state->copied_at = about_clock();
+        }
     }
 }
 
@@ -342,7 +368,13 @@ static xxwidgets_status show_content(xxwidgets_about_dialog *dialog, xxwidgets_w
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_set_visible(state.window, 1);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_focus(state.close);
-    while (status == XXWIDGETS_OK && !state.done && !app->quit) status = xxwidgets_app_poll(app, 30);
+    while (status == XXWIDGETS_OK && !state.done && !app->quit) {
+        status = xxwidgets_app_poll(app, 30);
+        if (status == XXWIDGETS_OK && state.relabeled && !state.done && about_clock() - state.copied_at >= ABOUT_RELABEL_MS) {
+            state.relabeled = 0;
+            status = xxwidgets_widget_set_text(state.copy, XXW_TR(app, "Copy all"));
+        }
+    }
 finish:
     if (state.window) {
         cleanup = xxwidgets_widget_set_visible(state.window, 0);

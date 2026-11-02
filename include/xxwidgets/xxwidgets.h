@@ -245,6 +245,9 @@ XXWIDGETS_API xxwidgets_status xxwidgets_widget_get_rect(const xxwidgets_widget 
 XXWIDGETS_API xxwidgets_status xxwidgets_window_set_minimum_size(xxwidgets_widget *window, int columns, int rows);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_visible(xxwidgets_widget *widget, int visible);
 XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *widget, int enabled);
+/* Hover tooltip in UTF-8; NULL or "" removes it. Backends without tooltips
+ * accept and ignore it (OK). */
+XXWIDGETS_API xxwidgets_status xxwidgets_widget_set_tooltip(xxwidgets_widget *widget, const char *text);
 /* Immediate modality without showing the window or starting an event loop.
  * WINDOW_MODAL blocks owner; APPLICATION_MODAL blocks every other application
  * window, including windows created later. Nested modal descendants stay usable.
@@ -547,13 +550,15 @@ XXWIDGETS_API xxwidgets_status xxwidgets_open_url(xxwidgets_widget *owner, const
 
 typedef enum xxwidgets_file_dialog_mode {
     XXWIDGETS_FILE_DIALOG_OPEN = 0, /* choose an existing file */
-    XXWIDGETS_FILE_DIALOG_SAVE      /* choose a file name; replacing a file is confirmed */
+    XXWIDGETS_FILE_DIALOG_SAVE,     /* choose a file name; replacing a file is confirmed */
+    XXWIDGETS_FILE_DIALOG_FOLDER    /* choose an existing folder; *path is that folder */
 } xxwidgets_file_dialog_mode;
 
 /* Native file chooser. Modal/reentrancy rules are the same as
  * about_dialog_show. title is UTF-8 and may be NULL. initial may be NULL or
  * empty; a file preselects it, a folder (or a missing file's folder) is where
- * the chooser starts. On acceptance *path receives a malloc'd file path the
+ * the chooser starts (FOLDER: a folder to start in or preselect). On
+ * acceptance *path receives a malloc'd file (FOLDER: folder) path the
  * caller frees and *accepted is 1. Cancellation is successful with
  * accepted == 0 and *path NULL. UNAVAILABLE when the backend has no native
  * chooser; xxwidgets_file_dialog_available reports that in advance. */

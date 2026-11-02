@@ -563,7 +563,7 @@ xxwidgets_status xxwidgets_strings_source_dialog(xxwidgets_widget *owner, const 
     char description[128];
     xxwidgets_status status, cleanup;
     int enabled, hidden, disabled = 0, attached = 0, width = 128, height = 34;
-    const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}, {"Ctrl+F", 2}};
+    const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}, {"Ctrl+F", 2}, {"Meta+F", 2}};
     if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) ||
         !path || !xxwidgets_valid_utf8(path) || !source || !source->read || source->count > source->total_count ||
         owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2) return XXWIDGETS_INVALID_ARGUMENT;
@@ -639,7 +639,7 @@ xxwidgets_status xxwidgets_strings_source_dialog(xxwidgets_widget *owner, const 
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(xxwidgets_strings_control(modal.view, XXWIDGETS_STRINGS_COPY), XXW_TR(app, "Copy preview"));
         if (status == XXWIDGETS_OK) status = source_error(&modal, XXW_TR(app, "Row text is a preview; Save exports complete strings"));
     }
-    if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, 2);
+    if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, sizeof(shortcuts) / sizeof(shortcuts[0]));
     if (status != XXWIDGETS_OK) goto finish;
     if ((!source->save && !source->save_ex) || !xxwidgets_file_dialog_available(app)) {
         status = xxwidgets_widget_set_visible(xxwidgets_strings_control(modal.view, XXWIDGETS_STRINGS_SAVE), 0);

@@ -42,6 +42,14 @@
 #define ABOUT_TEXT_SPARE_ROWS 5
 #define ABOUT_TEXT_MIN_COLUMNS 40
 #define ABOUT_TEXT_MIN_ROWS 10
+/* How much wider than the theme font's a font's text runs is measured on
+ * these letters, as in the Win32 backend (win32_cell_sample). */
+#define CELL_SAMPLE "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+/* The cells grow with the Controls font only as far as a dialog this many
+ * cells large still fits the primary work area, as on Win32
+ * (XXWIDGETS_WIN32_FIT_COLUMNS and _ROWS). */
+#define FIT_COLUMNS 120
+#define FIT_ROWS 35
 
 /* Themes give buttons, entries and combos a min-height meant for box layouts
  * (30-34 px), taller than a text cell. Only that floor is dropped: each theme
@@ -68,6 +76,14 @@ typedef struct gtk_app_state {
     int base_cell_width; /* From the font; grid_fit widens at most to 1.5x. */
     int fitted;
     guint fit_source;
+    /* The theme font's cell (before grid_fit), line height and width of
+     * CELL_SAMPLE: a Controls font's cell is measured against them
+     * (gtk_cell_size). grid_fit widened the cell from fit_from to fit_to
+     * pixels (0 until it ran); a later font keeps that proportion. */
+    int theme_cell_width, theme_cell_height, theme_line_height, theme_sample_width;
+    int fit_from, fit_to;
+    int cap_cell_width; /* With a Controls font: the widest cell grid_fit may make; 0 otherwise. */
+    guint resize_source; /* Reports RESIZE after the cells changed (cells_resized). */
     PangoFontDescription *fonts[XXWIDGETS_FONT_ROLE_COUNT];
     /* One stylesheet per role, attached to every control of that role. */
     GtkCssProvider *font_css[XXWIDGETS_FONT_ROLE_COUNT];
@@ -102,8 +118,10 @@ typedef struct gtk_widget_state {
     uint64_t tree_content_revision;
     int tree_collapsing, tree_before_collapse;
     GtkWidget *about_text; /* Owned by the window's content container. */
+    GtkWidget *about_image; /* Owned by the window's content container; NULL without an image. */
     int about_resizable;   /* WINDOW: the copyable text dialog, whose text follows the window size. */
     int about_text_x;      /* WINDOW: left edge of the about text, in pixels. */
+    int resize_pending;    /* WINDOW: the cells changed; RESIZE is still to be reported. */
     PangoFontDescription *preview_font;
     GtkCssProvider *preview_css;
     PangoFontDescription *hex_font;
@@ -113,6 +131,7 @@ typedef struct gtk_widget_state {
     int has_preview;
     GtkAdjustment *die_vertical, *die_horizontal; /* Owned by native scrollbars. */
     GtkIMContext *die_im;
+    GtkWidget *die_menu; /* The right-click menu, made on first use (gtk_die_menu). */
     int die_adjusting, die_dragging, die_cell_width, die_cell_height, die_gutter;
     size_t die_rows, die_columns;
 } gtk_widget_state;
@@ -291,6 +310,8 @@ static void fonts_attach(xxwidgets_widget *widget)
     font_attach(state->browser_up, app->font_css[XXWIDGETS_FONT_CONTROLS], GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
+static void cells_follow_font(xxwidgets_app *app);
+
 static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font_options *options)
 {
     gtk_app_state *state = app->platform;
@@ -316,6 +337,8 @@ static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font
             rows_font_attributes(widget);
             if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) gtk_widget_queue_resize(GTK_WIDGET(widget->native));
         }
+    /* The cells follow the Controls font; existing windows take the new ones. */
+    cells_follow_font(app);
     return XXWIDGETS_OK;
 }
 
@@ -611,16 +634,25 @@ static GtkLabel *control_label(GtkWidget *native)
     return label && GTK_IS_LABEL(label) ? GTK_LABEL(label) : NULL;
 }
 
-/* A label that its cells cut short shows the whole text as its tooltip. */
+/* A label that its cells cut short shows the whole text as its tooltip, and
+ * then the tooltip the program set (gtk_set_tooltip) on the next line. An
+ * uncut label leaves that tooltip to GTK's default handler. */
 static gboolean ellipsis_tooltip(GtkWidget *native, gint x, gint y, gboolean keyboard, GtkTooltip *tooltip, gpointer data)
 {
     GtkLabel *label = control_label(native);
+    gchar *extra;
     (void)x;
     (void)y;
     (void)keyboard;
     (void)data;
     if (!label || !pango_layout_is_ellipsized(gtk_label_get_layout(label))) return FALSE;
-    gtk_tooltip_set_text(tooltip, gtk_label_get_text(label));
+    extra = gtk_widget_get_tooltip_text(native);
+    if (extra) {
+        gchar *both = g_strconcat(gtk_label_get_text(label), "\n", extra, NULL);
+        gtk_tooltip_set_text(tooltip, both);
+        g_free(both);
+        g_free(extra);
+    } else gtk_tooltip_set_text(tooltip, gtk_label_get_text(label));
     return TRUE;
 }
 
@@ -710,6 +742,197 @@ static void about_text_layout(xxwidgets_widget *window, int old_columns, int old
         child->rect = rect;
         if (pixel_rect(child, &x, &y, &pixel_width, &pixel_height)) apply_geometry(child, x, y, pixel_width, pixel_height);
     }
+}
+
+/* The width of CELL_SAMPLE, 0 if it cannot be measured, and the line height
+ * (ascent plus descent) in font laid over the theme font, as the role
+ * stylesheets apply it; NULL measures the theme font itself. */
+static int font_sample_width(const PangoFontDescription *font, int *line_height)
+{
+    GtkWidget *probe = gtk_label_new(NULL);
+    PangoContext *context;
+    PangoFontDescription *merged;
+    int width = 0;
+    *line_height = 0;
+    g_object_ref_sink(probe);
+    context = gtk_widget_get_pango_context(probe);
+    merged = context ? pango_font_description_copy(pango_context_get_font_description(context)) : NULL;
+    if (merged) {
+        PangoLayout *layout = pango_layout_new(context);
+        PangoFontMetrics *metrics;
+        if (font) pango_font_description_merge(merged, font, TRUE);
+        if (layout) {
+            pango_layout_set_font_description(layout, merged);
+            pango_layout_set_text(layout, CELL_SAMPLE, -1);
+            pango_layout_get_pixel_size(layout, &width, NULL);
+            g_object_unref(layout);
+        }
+        metrics = pango_context_get_metrics(context, merged, pango_context_get_language(context));
+        if (metrics) {
+            *line_height = PANGO_PIXELS_CEIL(pango_font_metrics_get_ascent(metrics) + pango_font_metrics_get_descent(metrics));
+            pango_font_metrics_unref(metrics);
+        }
+        pango_font_description_free(merged);
+    }
+    gtk_widget_destroy(probe);
+    g_object_unref(probe);
+    return width > 0 ? width : 0;
+}
+
+/* The primary monitor's work area (Wayland has no primary: the first one). */
+static int primary_workarea(GdkRectangle *area)
+{
+#if GTK_CHECK_VERSION(3, 22, 0)
+    GdkDisplay *display = gdk_display_get_default();
+    GdkMonitor *monitor = display ? gdk_display_get_primary_monitor(display) : NULL;
+    if (!monitor && display && gdk_display_get_n_monitors(display) > 0) monitor = gdk_display_get_monitor(display, 0);
+    if (!monitor) return 0;
+    gdk_monitor_get_workarea(monitor, area);
+#else
+    GdkScreen *screen = gdk_screen_get_default();
+    if (!screen) return 0;
+    gdk_screen_get_monitor_workarea(screen, gdk_screen_get_primary_monitor(screen), area);
+#endif
+    return area->width > 0 && area->height > 0;
+}
+
+/* The cells follow the Controls font, measured as win32_cell_size does: the
+ * theme font gives the theme cell, and so does a Controls font whose text is
+ * no wider and whose lines are no taller. Another font's cell is the theme
+ * cell widened as much as its text runs wider (rounded up from a quarter of
+ * a pixel) and taller by as much as its lines are, so a control keeps the
+ * theme's padding and border around the larger text. It is never smaller
+ * than the theme cell, nor larger than the cell in which a FIT_COLUMNS x
+ * FIT_ROWS dialog fits the primary work area (with the frame guessed as in
+ * window_frame_area), unless the theme cell already is: a larger font is
+ * clipped there, and the dialog's buttons stay on the screen. *cap is that
+ * widest cell for grid_fit, 0 for the theme font. */
+static void gtk_cell_size(const gtk_app_state *state, int *width, int *height, int *cap)
+{
+    const PangoFontDescription *font = state->fonts[XXWIDGETS_FONT_CONTROLS];
+    GdkRectangle area;
+    int line = 0, sample;
+    *width = state->theme_cell_width;
+    *height = state->theme_cell_height;
+    *cap = 0;
+    if (!font || state->theme_sample_width <= 0 || (sample = font_sample_width(font, &line)) <= 0) return;
+    if (sample > state->theme_sample_width) {
+        int64_t widened = ((int64_t)state->theme_cell_width * sample + (int64_t)state->theme_sample_width * 3 / 4) / state->theme_sample_width;
+        if (widened > *width) *width = widened > 4096 ? 4096 : (int)widened;
+    }
+    if (state->theme_line_height > 0 && line > state->theme_line_height) {
+        int64_t taller = (int64_t)state->theme_cell_height + line - state->theme_line_height;
+        *height = taller > 4096 ? 4096 : (int)taller;
+    }
+    if (primary_workarea(&area)) {
+        int most_width = (area.width - 16) / FIT_COLUMNS, most_height = (area.height - 48) / FIT_ROWS;
+        if (most_width < state->theme_cell_width) most_width = state->theme_cell_width;
+        if (most_height < state->theme_cell_height) most_height = state->theme_cell_height;
+        if (*width > most_width) *width = most_width;
+        if (*height > most_height) *height = most_height;
+        *cap = most_width;
+    }
+}
+
+/* Reports RESIZE to the windows cells_follow_font re-laid out, once events
+ * run, as the Win32 backend posts XXWIDGETS_WIN32_RESIZED. One window per
+ * call: its handler may destroy widgets, or the whole app (whose shutdown
+ * then removes this source). */
+static gboolean cells_resized(gpointer data)
+{
+    xxwidgets_app *app = data;
+    xxwidgets_widget *widget;
+    for (widget = app->widgets; widget; widget = widget->next) {
+        gtk_widget_state *state = widget->platform;
+        if (widget->kind == XXWIDGETS_WINDOW && state && state->resize_pending) {
+            state->resize_pending = 0;
+            if (!app->syncing) xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+            return G_SOURCE_CONTINUE;
+        }
+    }
+    ((gtk_app_state *)app->platform)->resize_source = 0;
+    return G_SOURCE_REMOVE;
+}
+
+/* After the fonts changed: the cells follow the Controls font (gtk_cell_size),
+ * widened in the proportion grid_fit widened the cell it found, within the
+ * same cap. As in win32_cells_relayout, every control then takes its rect in
+ * the new cells and every window its rect's new size where it is, held to
+ * its work area (apply_geometry); the configure event that follows reports a
+ * held window's smaller size. Each window reports RESIZE once events run, so
+ * a program that places controls in pixels places them again. Before the
+ * first fit, grid_fit measures the new font itself. */
+static void cells_follow_font(xxwidgets_app *app)
+{
+    gtk_app_state *state = app->platform;
+    xxwidgets_widget *widget;
+    int width, height, cap, cell_width;
+    gtk_cell_size(state, &width, &height, &cap);
+    state->base_cell_width = width;
+    state->cap_cell_width = cap;
+    cell_width = width;
+    if (state->fitted && state->fit_from > 0 && state->fit_to > state->fit_from) {
+        int64_t widened = ((int64_t)width * state->fit_to + state->fit_from - 1) / state->fit_from;
+        int64_t theme = ((int64_t)state->theme_cell_width * state->fit_to + state->fit_from - 1) / state->fit_from;
+        if (cap > 0 && widened > cap) widened = cap;
+        if (widened < theme) widened = theme;
+        if (widened > 4096) widened = 4096;
+        if (widened > cell_width) cell_width = (int)widened;
+    }
+    if (cell_width == state->cell_width && height == state->cell_height) return;
+    state->cell_width = cell_width;
+    state->cell_height = height;
+    for (widget = app->widgets; widget; widget = widget->next) {
+        int x, y, pixel_width, pixel_height;
+        if (!widget->platform || !widget->native || (widget->parent && (!widget->parent->platform || !((gtk_widget_state *)widget->parent->platform)->content)))
+            continue;
+        if (widget->kind == XXWIDGETS_WINDOW && gtk_widget_get_mapped(GTK_WIDGET(widget->native)) && gtk_window_is_maximized(GTK_WINDOW(widget->native))) {
+            /* A maximized window keeps its frame, as on Win32, and no
+             * configure event follows: its rect becomes what that frame
+             * holds in the new cells, never less than its minimum. */
+            gtk_widget_state *native = widget->platform;
+            int columns, rows;
+            gtk_window_get_size(GTK_WINDOW(widget->native), &pixel_width, &pixel_height);
+            columns = pixel_width / cell_width;
+            rows = (pixel_height - native->menu_height) / height;
+            if (widget->has_minimum) {
+                if (columns < widget->min_columns) columns = widget->min_columns;
+                if (rows < widget->min_rows) rows = widget->min_rows;
+            }
+            if (columns > 0 && rows > 0) {
+                widget->rect.width = columns;
+                widget->rect.height = rows;
+                native->applied_rect = widget->rect;
+            }
+            continue;
+        }
+        if (pixel_rect(widget, &x, &y, &pixel_width, &pixel_height)) apply_geometry(widget, x, y, pixel_width, pixel_height);
+    }
+    for (widget = app->widgets; widget; widget = widget->next) {
+        gtk_widget_state *native = widget->platform;
+        if (!native || !widget->native) continue;
+        if (widget->kind == XXWIDGETS_CHECKCOMBOBOX && native->combo_scroll)
+            gtk_widget_set_size_request(native->combo_scroll, 24 * cell_width, (int)(widget->item_count < 10 ? widget->item_count : 10) * height + 8);
+        if (widget->kind != XXWIDGETS_WINDOW || !native->content) continue;
+        if (native->about_text) {
+            /* gtk_about_content placed the text, and the image, in cells. */
+            GtkWidget *scroll = gtk_widget_get_parent(native->about_text);
+            int padding = 2 * cell_width;
+            native->about_text_x = native->about_image ? 12 * cell_width + 2 * padding : padding;
+            if (scroll && gtk_widget_get_parent(scroll) == native->content) {
+                gtk_layout_move(GTK_LAYOUT(native->content), scroll, native->about_text_x, height);
+                if (!native->about_resizable)
+                    gtk_widget_set_size_request(scroll, widget->rect.width * cell_width - native->about_text_x - padding, 17 * height);
+            }
+            if (native->about_image && gtk_widget_get_parent(native->about_image) == native->content)
+                gtk_layout_move(GTK_LAYOUT(native->content), native->about_image, padding, height);
+            if (native->about_resizable) about_text_layout(widget, widget->rect.width, widget->rect.height);
+        }
+        native->min_width = native->min_height = -1;
+        window_update_minimum(widget);
+        native->resize_pending = 1;
+    }
+    if (!state->resize_source) state->resize_source = g_idle_add(cells_resized, app);
 }
 
 static gboolean window_close(GtkWidget *native, GdkEvent *event, gpointer data)
@@ -2113,6 +2336,9 @@ static xxwidgets_status gtk_init_backend(xxwidgets_app *app)
     control_height = measure_control_height();
     if (control_height + GRID_ROW_GAP > state->cell_height) state->cell_height = control_height + GRID_ROW_GAP;
     state->base_cell_width = state->cell_width;
+    state->theme_cell_width = state->cell_width;
+    state->theme_cell_height = state->cell_height;
+    state->theme_sample_width = font_sample_width(NULL, &state->theme_line_height);
     g_signal_connect(gdk_screen_get_default(), "monitors-changed", G_CALLBACK(screen_changed), app);
     g_signal_connect(gdk_screen_get_default(), "size-changed", G_CALLBACK(screen_changed), app);
     for (size_t role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
@@ -2127,6 +2353,7 @@ static void gtk_shutdown_backend(xxwidgets_app *app)
 {
     gtk_app_state *state = app->platform;
     if (state && state->fit_source) g_source_remove(state->fit_source);
+    if (state && state->resize_source) g_source_remove(state->resize_source);
     if (state) g_signal_handlers_disconnect_by_data(gdk_screen_get_default(), app);
     if (state)
         for (size_t role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
@@ -2475,10 +2702,70 @@ static void gtk_die_hit(xxwidgets_widget *widget, double x, double y, int extend
     xxwidgets_die_edit_point(widget, view.first_line + (size_t)row, view.first_column + (size_t)column, extend);
 }
 
+static void gtk_die_menu_activate(GtkMenuItem *item, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    int key = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(item), "xxwidgets-die-key"));
+    if (key && xxwidgets_focusable(widget) && !widget->app->syncing) (void)xxwidgets_die_edit_key(widget, key, XXWIDGETS_MOD_CTRL);
+}
+
+/* The macOS editor's right-click menu (Undo, Redo, Cut, Copy, Paste and
+ * Select All), each item sent as the editor's own Ctrl shortcut. It is made
+ * once and kept: a menu destroyed when it closes would lose its activated
+ * item. Its captions are translated, and items enabled, each time it opens. */
+static gboolean gtk_die_menu(xxwidgets_widget *widget, GtkWidget *native, GdkEventButton *event)
+{
+    static const char *const titles[] = {XXW_N_("Undo"), XXW_N_("Redo"), NULL, XXW_N_("Cut"), XXW_N_("Copy"), XXW_N_("Paste"), XXW_N_("Select All")};
+    static const char keys[] = {'z', 'y', 0, 'x', 'c', 'v', 'a'};
+    gtk_widget_state *state = widget->platform;
+    GList *items, *item;
+    size_t index = 0, offset = 0, length = 0;
+    int read_only = xxwidgets_die_signature_edit_read_only(widget);
+    if (!state->die_menu) {
+        state->die_menu = gtk_menu_new();
+        g_object_ref_sink(state->die_menu);
+        for (index = 0; index < sizeof(keys); ++index) {
+            GtkWidget *entry = keys[index] ? gtk_menu_item_new_with_label("") : gtk_separator_menu_item_new();
+            if (keys[index]) {
+                g_object_set_data(G_OBJECT(entry), "xxwidgets-die-key", GINT_TO_POINTER((int)keys[index]));
+                g_signal_connect(entry, "activate", G_CALLBACK(gtk_die_menu_activate), widget);
+            }
+            gtk_menu_shell_append(GTK_MENU_SHELL(state->die_menu), entry);
+        }
+        gtk_widget_show_all(state->die_menu);
+        gtk_menu_attach_to_widget(GTK_MENU(state->die_menu), native, NULL);
+    }
+    (void)xxwidgets_die_signature_edit_get_selection(widget, &offset, &length);
+    items = gtk_container_get_children(GTK_CONTAINER(state->die_menu));
+    for (item = items, index = 0; item && index < sizeof(keys); item = item->next, ++index) {
+        int enabled;
+        if (!keys[index]) continue;
+        /* As the macOS menu validates them: Copy and Cut need a selection,
+         * and all but Copy and Select All an editable text. */
+        if (keys[index] == 'a') enabled = 1;
+        else if (keys[index] == 'c') enabled = length != 0;
+        else enabled = !read_only && (keys[index] != 'x' || length != 0);
+        gtk_menu_item_set_label(GTK_MENU_ITEM(item->data), XXW_TR(widget->app, titles[index]));
+        gtk_widget_set_sensitive(GTK_WIDGET(item->data), enabled);
+    }
+    g_list_free(items);
+#if GTK_CHECK_VERSION(3, 22, 0)
+    gtk_menu_popup_at_pointer(GTK_MENU(state->die_menu), (GdkEvent *)event);
+#else
+    gtk_menu_popup(GTK_MENU(state->die_menu), NULL, NULL, NULL, NULL, event->button, event->time);
+#endif
+    return TRUE;
+}
+
 static gboolean gtk_die_pointer(GtkWidget *native, GdkEventButton *event, gpointer data)
 {
     xxwidgets_widget *widget = data;
     gtk_widget_state *state = widget->platform;
+    if (event->button == 3 && event->type == GDK_BUTTON_PRESS) {
+        if (!xxwidgets_focusable(widget) || widget->app->syncing) return FALSE;
+        gtk_widget_grab_focus(native);
+        return gtk_die_menu(widget, native, event);
+    }
     if (event->button != 1) return FALSE;
     if (event->type == GDK_BUTTON_RELEASE) {
         if (state->die_dragging) { state->die_dragging = 0; gtk_grab_remove(native); }
@@ -2829,8 +3116,8 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
                 gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state->hex_scroll), GTK_POLICY_AUTOMATIC, vertical_policy);
                 state->hex_overview = gtk_drawing_area_new();
                 gtk_widget_set_size_request(state->hex_overview, 12, -1);
-                gtk_widget_set_tooltip_text(state->hex_overview, "File overview: click or drag to go to a file offset");
-                atk_object_set_name(gtk_widget_get_accessible(state->hex_overview), "File overview");
+                gtk_widget_set_tooltip_text(state->hex_overview, XXW_TR(widget->app, "File overview: click or drag to go to a file offset"));
+                atk_object_set_name(gtk_widget_get_accessible(state->hex_overview), XXW_TR(widget->app, "File overview"));
                 gtk_widget_add_events(state->hex_overview, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK);
                 g_signal_connect(state->hex_overview, "draw", G_CALLBACK(gtk_hex_overview_draw), widget);
                 g_signal_connect(state->hex_overview, "button-press-event", G_CALLBACK(gtk_hex_overview_pointer), widget);
@@ -2857,7 +3144,7 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             break;
         }
         case XXWIDGETS_ARCHIVEBROWSER: {
-            static const char *titles[] = {"Name", "Size", "Packed Size", "Modified", "Attributes"};
+            static const char *titles[] = {XXW_N_("Name"), XXW_N_("Size"), XXW_N_("Packed Size"), XXW_N_("Modified"), XXW_N_("Attributes")};
             GtkListStore *store = gtk_list_store_new(6, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
             GtkWidget *address_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
             int column;
@@ -2867,7 +3154,7 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             state->root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
             g_object_ref_sink(state->root);
             state->browser_up = gtk_button_new_from_icon_name("go-up", GTK_ICON_SIZE_BUTTON);
-            gtk_widget_set_tooltip_text(state->browser_up, "Up one folder (Backspace)");
+            gtk_widget_set_tooltip_text(state->browser_up, XXW_TR(widget->app, "Up one folder (Backspace)"));
             state->browser_address = gtk_entry_new();
             gtk_editable_set_editable(GTK_EDITABLE(state->browser_address), FALSE);
             gtk_box_pack_start(GTK_BOX(address_bar), state->browser_up, FALSE, FALSE, 0);
@@ -2881,7 +3168,7 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             for (column = 0; column < 5; ++column) {
                 GtkTreeViewColumn *view_column = gtk_tree_view_column_new();
                 GtkCellRenderer *renderer = gtk_cell_renderer_text_new();
-                gtk_tree_view_column_set_title(view_column, titles[column]);
+                gtk_tree_view_column_set_title(view_column, XXW_TR(widget->app, titles[column]));
                 if (!column) {
                     GtkCellRenderer *icon = gtk_cell_renderer_pixbuf_new();
                     gtk_tree_view_column_pack_start(view_column, icon, FALSE);
@@ -2950,6 +3237,12 @@ static void gtk_destroy_backend(xxwidgets_widget *widget)
         g_object_unref(state->die_im);
     }
     if (state->die_dragging && native) gtk_grab_remove(native);
+    if (state->die_menu) {
+        /* Detaches it from native, which must still exist. */
+        gtk_widget_destroy(state->die_menu);
+        g_object_unref(state->die_menu);
+        state->die_menu = NULL;
+    }
     if (state->die_vertical) g_signal_handlers_disconnect_by_data(state->die_vertical, widget);
     if (state->die_horizontal) g_signal_handlers_disconnect_by_data(state->die_horizontal, widget);
     if (state->hex_overview) {
@@ -3035,6 +3328,8 @@ static gboolean grid_fit(gpointer data)
     gtk_app_state *state = app->platform;
     xxwidgets_widget *widget;
     int needed = state->cell_width, cap = state->base_cell_width * 3 / 2;
+    /* A Controls font's cell stays within its work-area cap (gtk_cell_size). */
+    if (state->cap_cell_width > 0 && cap > state->cap_cell_width) cap = state->cap_cell_width;
     state->fit_source = 0;
     state->fitted = 1;
     for (widget = app->widgets; widget; widget = widget->next) {
@@ -3046,6 +3341,9 @@ static gboolean grid_fit(gpointer data)
         if (per_cell > needed) needed = per_cell;
     }
     if (needed > cap) needed = cap;
+    /* The proportion a later Controls font keeps (cells_follow_font). */
+    state->fit_from = state->base_cell_width;
+    state->fit_to = needed > state->cell_width ? needed : state->cell_width;
     if (needed > state->cell_width) {
         state->cell_width = needed;
         for (widget = app->widgets; widget; widget = widget->next) {
@@ -3081,7 +3379,17 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_LABEL: {
             PangoEllipsizeMode mode = widget->keep_end ? PANGO_ELLIPSIZE_MIDDLE : PANGO_ELLIPSIZE_END;
+            /* A label more than one row tall wraps its text from the top, as
+             * on Win32, one line per row; only its last line is cut short. */
+            gboolean wrap = widget->rect.height > 1;
+            int lines = wrap ? (widget->rect.height < 1000 ? widget->rect.height : 1000) : -1;
             if (gtk_label_get_ellipsize(GTK_LABEL(native)) != mode) gtk_label_set_ellipsize(GTK_LABEL(native), mode);
+            if (!gtk_label_get_line_wrap(GTK_LABEL(native)) != !wrap) {
+                gtk_label_set_line_wrap_mode(GTK_LABEL(native), PANGO_WRAP_WORD_CHAR);
+                gtk_label_set_line_wrap(GTK_LABEL(native), wrap);
+                gtk_label_set_yalign(GTK_LABEL(native), wrap ? 0.0f : 0.5f);
+            }
+            if (gtk_label_get_lines(GTK_LABEL(native)) != lines) gtk_label_set_lines(GTK_LABEL(native), lines);
             if (strcmp(gtk_label_get_text(GTK_LABEL(native)), widget->text)) gtk_label_set_text(GTK_LABEL(native), widget->text);
             break;
         }
@@ -3440,6 +3748,7 @@ static xxwidgets_status gtk_about_content(xxwidgets_widget *window, const xxwidg
         g_object_unref(scaled);
         gtk_widget_set_size_request(image, image_box, image_box);
         gtk_layout_put(GTK_LAYOUT(state->content), image, padding, app->cell_height);
+        state->about_image = image;
         gtk_widget_show(image);
     }
     return XXWIDGETS_OK;
@@ -3478,8 +3787,9 @@ static gchar *absolute_path(const char *path)
     return joined;
 }
 
-static void choose_file_start(GtkFileChooser *chooser, const char *initial, int save)
+static void choose_file_start(GtkFileChooser *chooser, const char *initial, xxwidgets_file_dialog_mode mode)
 {
+    int save = mode == XXWIDGETS_FILE_DIALOG_SAVE;
     gchar *path = absolute_path(initial), *folder, *name;
     if (!path) {
         /* Nothing typed yet: start where relative paths resolve, not in Recent. */
@@ -3489,12 +3799,13 @@ static void choose_file_start(GtkFileChooser *chooser, const char *initial, int 
         return;
     }
     if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
+        /* FOLDER starts inside it: Select with nothing selected returns it. */
         gtk_file_chooser_set_current_folder(chooser, path);
-    } else if (g_file_test(path, G_FILE_TEST_EXISTS)) {
+    } else if (mode != XXWIDGETS_FILE_DIALOG_FOLDER && g_file_test(path, G_FILE_TEST_EXISTS)) {
         gtk_file_chooser_set_filename(chooser, path);
     } else {
         /* A path that does not exist yet still names the folder to start in,
-         * and for Save the proposed file name. */
+         * and for Save the proposed file name; for FOLDER, so does a file. */
         folder = g_path_get_dirname(path);
         name = g_path_get_basename(path);
         if (!g_file_test(folder, G_FILE_TEST_IS_DIR)) {
@@ -3533,15 +3844,19 @@ static void chooser_mapped(GtkWidget *dialog, gpointer data)
 
 static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_dialog_mode mode, const char *title, const char *initial, char **path, int *accepted)
 {
-    int save = mode == XXWIDGETS_FILE_DIALOG_SAVE;
+    int save = mode == XXWIDGETS_FILE_DIALOG_SAVE, folder = mode == XXWIDGETS_FILE_DIALOG_FOLDER;
     GtkWidget *dialog;
     GtkFileChooser *chooser;
     xxwidgets_status status = XXWIDGETS_OK;
     /* The "_" marks each button's mnemonic; a translation places its own. */
-    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title : (save ? XXW_TR(owner->app, "Save File") : XXW_TR(owner->app, "Open File")),
-                                         GTK_WINDOW(owner->native), save ? GTK_FILE_CHOOSER_ACTION_SAVE : GTK_FILE_CHOOSER_ACTION_OPEN,
+    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title :
+                                         save   ? XXW_TR(owner->app, "Save File") :
+                                         folder ? XXW_TR(owner->app, "Select Folder") : XXW_TR(owner->app, "Open File"),
+                                         GTK_WINDOW(owner->native),
+                                         save ? GTK_FILE_CHOOSER_ACTION_SAVE : folder ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER : GTK_FILE_CHOOSER_ACTION_OPEN,
                                          XXW_TR(owner->app, "_Cancel"), GTK_RESPONSE_CANCEL,
-                                         save ? XXW_TR(owner->app, "_Save") : XXW_TR(owner->app, "_Open"), GTK_RESPONSE_ACCEPT, NULL);
+                                         save ? XXW_TR(owner->app, "_Save") : folder ? XXW_TR(owner->app, "_Select") : XXW_TR(owner->app, "_Open"),
+                                         GTK_RESPONSE_ACCEPT, NULL);
     if (!dialog) return XXWIDGETS_PLATFORM_ERROR;
     /* Destroying the window from outside during gtk_dialog_run must not free
      * the dialog under us. */
@@ -3553,7 +3868,7 @@ static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_
     gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
     gtk_file_chooser_set_local_only(chooser, TRUE);
     gtk_file_chooser_set_do_overwrite_confirmation(chooser, save);
-    choose_file_start(chooser, initial, save);
+    choose_file_start(chooser, initial, mode);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         gchar *selected = gtk_file_chooser_get_filename(chooser);
         if (selected) {
@@ -3637,6 +3952,20 @@ static xxwidgets_status gtk_window_menu(xxwidgets_widget *window)
     return XXWIDGETS_OK;
 }
 
+/* The program's hover tooltip. A button or label whose text its cells cut
+ * short shows that text first (ellipsis_tooltip). */
+static xxwidgets_status gtk_set_tooltip(xxwidgets_widget *widget, const char *text)
+{
+    GtkWidget *native = widget->native;
+    if (!native) return XXWIDGETS_OK;
+    if (text && !g_utf8_validate(text, -1, NULL)) return XXWIDGETS_INVALID_ARGUMENT;
+    gtk_widget_set_tooltip_text(native, text);
+    /* Removing the text also turns has-tooltip off, which the ellipsis
+     * tooltip of labels and buttons (cell_control) still needs. */
+    if (!text && (GTK_IS_LABEL(native) || GTK_IS_BUTTON(native))) gtk_widget_set_has_tooltip(native, TRUE);
+    return XXWIDGETS_OK;
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_init_backend,
                                                     gtk_shutdown_backend,
@@ -3658,4 +3987,5 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_choose_file,
                                                     gtk_has_focus,
                                                     gtk_accept_file_drops,
-                                                    gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu, NULL};
+                                                    gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu, NULL /* about_rich_content */,
+                                                    NULL /* translation_changed */, gtk_set_tooltip};

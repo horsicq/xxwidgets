@@ -611,60 +611,10 @@ finish:
     (void)xxwidgets_widget_focus(C(v, TYPES));
     return status;
 }
+/* "Dump all" writes into a folder; every native backend has a folder picker. */
 static xxwidgets_status choose_directory(xxwidgets_widget *owner, char **path, int *accepted)
 {
-    *path = NULL;
-    *accepted = 0;
-#ifdef _WIN32
-    if (owner->app->backend != XXWIDGETS_BACKEND_TUI && xxwidgets_widget_native_handle(owner)) {
-        BROWSEINFOW browse = {0};
-        PIDLIST_ABSOLUTE item;
-        wchar_t selected[MAX_PATH], title[256];
-        HRESULT initialized = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        browse.hwndOwner = (HWND)xxwidgets_widget_native_handle(owner);
-        browse.lpszTitle = MultiByteToWideChar(CP_UTF8, 0, XXW_TR(owner->app, "Dump all extractor objects"), -1, title, 256) ? title
-                                                                                                                        : L"Dump all extractor objects";
-        browse.ulFlags = BIF_RETURNONLYFSDIRS | (SUCCEEDED(initialized) ? BIF_NEWDIALOGSTYLE : 0);
-        item = SHBrowseForFolderW(&browse);
-        if (item) {
-            if (SHGetPathFromIDListW(item, selected)) {
-                int length = WideCharToMultiByte(CP_UTF8, 0, selected, -1, NULL, 0, NULL, NULL);
-                *path = length ? malloc((size_t)length) : NULL;
-                if (*path) {
-                    WideCharToMultiByte(CP_UTF8, 0, selected, -1, *path, length, NULL, NULL);
-                    *accepted = 1;
-                }
-            }
-            CoTaskMemFree(item);
-            if (SUCCEEDED(initialized)) CoUninitialize();
-            return *accepted ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
-        }
-        if (SUCCEEDED(initialized)) CoUninitialize();
-        return XXWIDGETS_OK;
-    }
-#endif
-    {
-        char *chosen = NULL, *slash, *forward;
-        xxwidgets_status status =
-            xxwidgets_file_dialog(owner, XXWIDGETS_FILE_DIALOG_SAVE, XXW_TR(owner->app, "Choose extraction folder using manifest location"), "extractor.patch.json",
-                                  &chosen, accepted);
-        if (status != XXWIDGETS_OK || !*accepted) {
-            free(chosen);
-            return status;
-        }
-        slash = strrchr(chosen, '\\');
-        forward = strrchr(chosen, '/');
-        if (forward && (!slash || forward > slash)) slash = forward;
-        if (slash) {
-            if (slash == chosen || (slash == chosen + 2 && chosen[1] == ':')) slash[1] = 0;
-            else *slash = 0;
-            *path = chosen;
-        } else {
-            free(chosen);
-            *path = xxwidgets_strdup(".");
-        }
-        return *path ? XXWIDGETS_OK : XXWIDGETS_OUT_OF_MEMORY;
-    }
+    return xxwidgets_file_dialog(owner, XXWIDGETS_FILE_DIALOG_FOLDER, XXW_TR(owner->app, "Dump all extractor objects"), NULL, path, accepted);
 }
 static const char *provider_error(xxwidgets_extractor *v, const char *fallback)
 {

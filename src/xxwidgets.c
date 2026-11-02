@@ -518,6 +518,12 @@ xxwidgets_status xxwidgets_widget_set_enabled(xxwidgets_widget *widget, int enab
     }
     return status;
 }
+xxwidgets_status xxwidgets_widget_set_tooltip(xxwidgets_widget *widget, const char *text)
+{
+    if (!widget || (text && !valid_utf8(text))) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!widget->app->ops->set_tooltip) return XXWIDGETS_OK;
+    return widget->app->ops->set_tooltip(widget, text && *text ? text : NULL);
+}
 xxwidgets_status xxwidgets_checkbox_set_radio(xxwidgets_widget *widget, int radio)
 {
     if (!widget || widget->kind != XXWIDGETS_CHECKBOX || (radio != 0 && radio != 1))

@@ -413,43 +413,6 @@ xxwidgets_status xxwidgets_memory_map_choose_directory(xxwidgets_widget *owner, 
     if (!owner || owner->kind != XXWIDGETS_WINDOW) return XXWIDGETS_INVALID_ARGUMENT;
     if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing ||
         (owner->app->modal_window && owner->app->modal_window != owner)) return XXWIDGETS_BUSY;
-#ifdef _WIN32
-    if (owner->app->backend != XXWIDGETS_BACKEND_TUI && xxwidgets_widget_native_handle(owner)) {
-        BROWSEINFOW browse;
-        PIDLIST_ABSOLUTE item;
-        wchar_t selected[MAX_PATH];
-        HRESULT initialized = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        memset(&browse, 0, sizeof(browse));
-        browse.hwndOwner = (HWND)xxwidgets_widget_native_handle(owner);
-        browse.lpszTitle = L"Dump all memory map regions";
-        browse.ulFlags = BIF_RETURNONLYFSDIRS | (SUCCEEDED(initialized) ? BIF_NEWDIALOGSTYLE : 0);
-        item = SHBrowseForFolderW(&browse);
-        if (item) {
-            if (SHGetPathFromIDListW(item, selected)) {
-                int length = WideCharToMultiByte(CP_UTF8, 0, selected, -1, NULL, 0, NULL, NULL);
-                *path = length ? malloc((size_t)length) : NULL;
-                if (*path) { WideCharToMultiByte(CP_UTF8, 0, selected, -1, *path, length, NULL, NULL); *accepted = 1; }
-            }
-            CoTaskMemFree(item);
-            if (SUCCEEDED(initialized)) CoUninitialize();
-            return *accepted ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
-        }
-        if (SUCCEEDED(initialized)) CoUninitialize();
-        return XXWIDGETS_OK;
-    }
-#endif
-    {
-        char *chosen = NULL, *slash, *forward;
-        xxwidgets_status status = xxwidgets_file_dialog(owner, XXWIDGETS_FILE_DIALOG_SAVE, "Choose dump folder using manifest location", "memory-map.patch.json", &chosen, accepted);
-        if (status != XXWIDGETS_OK || !*accepted) { free(chosen); return status; }
-        slash = strrchr(chosen, '\\'); forward = strrchr(chosen, '/');
-        if (forward && (!slash || forward > slash)) slash = forward;
-        if (slash) {
-            if (slash == chosen || (slash == chosen + 2 && chosen[1] == ':')) slash[1] = 0;
-            else *slash = 0;
-            *path = chosen;
-        } else { free(chosen); *path = xxwidgets_strdup("."); }
-        if (!*path) { *accepted = 0; return XXWIDGETS_OUT_OF_MEMORY; }
-        return XXWIDGETS_OK;
-    }
+    /* "Dump all" writes into a folder; every native backend has a folder picker. */
+    return xxwidgets_file_dialog(owner, XXWIDGETS_FILE_DIALOG_FOLDER, XXW_TR(owner->app, "Dump all memory map regions"), NULL, path, accepted);
 }
