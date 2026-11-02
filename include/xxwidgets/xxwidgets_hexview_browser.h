@@ -50,6 +50,15 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_browser_set_options(xxwidgets_h
 /* As xxwidgets_hexview_dialog, opening with options; NULL uses the defaults. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, const char *title, const char *path,
                                                                      xx_io_device *device, const xxwidgets_hex_options *options);
+/* Shows the absolute range [offset, offset + length) selected, paging there,
+ * and updates the offset box and status; length 0 only moves to offset (EOF
+ * included). A range past EOF fails without changing anything. No events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_browser_select(xxwidgets_hexview_browser *browser, uint64_t offset, uint64_t length);
+/* As xxwidgets_hexview_dialog_with_options, opened at offset with length
+ * bytes selected (xxwidgets_hexview_browser_select); e.g. an overlay. */
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_dialog_at(xxwidgets_widget *owner, const char *title, const char *path,
+                                                           xx_io_device *device, const xxwidgets_hex_options *options,
+                                                           uint64_t offset, uint64_t length);
 #ifdef __cplusplus
 }
 #endif

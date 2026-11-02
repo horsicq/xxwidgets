@@ -40,6 +40,16 @@ XXWIDGETS_API xxwidgets_status xxwidgets_file_information_set_data(xxwidgets_fil
 XXWIDGETS_API xxwidgets_status xxwidgets_file_information_dialog(xxwidgets_widget *owner, const char *title,
     const char *path, const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count);
 
+/* The index of the first item named selector (exact, ASCII case-insensitive
+ * as a fallback), or SIZE_MAX when selector is NULL, empty or absent. */
+XXWIDGETS_API size_t xxwidgets_file_information_find(const xxwidgets_data_struct_item *items, size_t count, const char *selector);
+/* As xxwidgets_file_information_dialog, opened with the structure that
+ * xxwidgets_file_information_find picks selected, e.g. "IMAGE_FILE_HEADER";
+ * the first one when it picks none. Opening at an item emits no event. */
+XXWIDGETS_API xxwidgets_status xxwidgets_file_information_dialog_at(xxwidgets_widget *owner, const char *title,
+    const char *path, const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count,
+    const char *selector);
+
 #ifdef __cplusplus
 }
 #endif

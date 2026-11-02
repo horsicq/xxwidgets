@@ -243,8 +243,47 @@ static void information_event(xxwidgets_app *app, const xxwidgets_event *event, 
     if (status != XXWIDGETS_OK) { modal->failure = status; modal->done = 1; }
 }
 
+static int same_name(const char *left, const char *right, int fold)
+{
+    for (;; ++left, ++right) {
+        unsigned char a = (unsigned char)*left, b = (unsigned char)*right;
+        if (fold && a >= 'A' && a <= 'Z') a = (unsigned char)(a - 'A' + 'a');
+        if (fold && b >= 'A' && b <= 'Z') b = (unsigned char)(b - 'A' + 'a');
+        if (a != b) return 0;
+        if (!a) return 1;
+    }
+}
+
+size_t xxwidgets_file_information_find(const xxwidgets_data_struct_item *items, size_t count, const char *selector)
+{
+    size_t i;
+    int fold;
+    if (!items || !selector || !*selector) return SIZE_MAX;
+    for (fold = 0; fold < 2; ++fold)
+        for (i = 0; i < count; ++i)
+            if (items[i].name && same_name(items[i].name, selector, fold)) return i;
+    return SIZE_MAX;
+}
+
+static xxwidgets_status information_dialog(xxwidgets_widget *owner, const char *title, const char *path,
+    const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count, size_t selected);
+
 xxwidgets_status xxwidgets_file_information_dialog(xxwidgets_widget *owner, const char *title,
     const char *path, const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count)
+{
+    return information_dialog(owner, title, path, file_type, size, items, count, SIZE_MAX);
+}
+
+xxwidgets_status xxwidgets_file_information_dialog_at(xxwidgets_widget *owner, const char *title,
+    const char *path, const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count,
+    const char *selector)
+{
+    return information_dialog(owner, title, path, file_type, size, items, count,
+        xxwidgets_file_information_find(items, count, selector));
+}
+
+static xxwidgets_status information_dialog(xxwidgets_widget *owner, const char *title, const char *path,
+    const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count, size_t selected)
 {
     information_modal modal = {0};
     xxwidgets_app *app;
@@ -276,6 +315,7 @@ xxwidgets_status xxwidgets_file_information_dialog(xxwidgets_widget *owner, cons
         status = xxwidgets_file_information_create(modal.window, (xxwidgets_rect){1, 1, 152, 30}, &modal.information);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_file_information_set_data(modal.information, path, file_type, size, items, count);
+    if (status == XXWIDGETS_OK && selected < count) status = xxwidgets_data_struct_view_select(modal.information->view, selected);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Copy all"), (xxwidgets_rect){1, 33, 14, 2}, &modal.copy);
     if (status == XXWIDGETS_OK)

@@ -22,6 +22,9 @@ typedef struct cocoa_app_state {
     XXWidgetsApplicationDelegate *delegate;
     NSFont *fonts[XXWIDGETS_FONT_ROLE_COUNT];
     NSFont *formatted_font;
+    /* Measured placement (cocoa_metrics): cached until the fonts change. */
+    xxwidgets_metrics metrics;
+    int metrics_valid;
 } cocoa_app_state;
 
 typedef struct cocoa_widget_state {
@@ -53,6 +56,11 @@ typedef struct cocoa_widget_state {
     NSFont *applied_font;
     NSTextView *field_editor;
     NSMenu *menu;
+    /* WINDOW laid out in points (it or one of its controls has a frame):
+     * RESIZE reports every content size change, not only whole cells. */
+    int measured;
+    NSSize reported_size;   /* WINDOW: the content size RESIZE last reported. */
+    int frame_minimum;      /* WINDOW: contentMinSize came from min_frame_*. */
 } cocoa_widget_state;
 
 static xxwidgets_app *active_app;
@@ -154,7 +162,12 @@ static int cocoa_label_wraps(xxwidgets_widget *widget, NSRect slot)
     NSString *text = [field stringValue];
     BOOL wrap = NO;
     NSLineBreakMode mode;
-    if (widget->rect.height > 1 && !widget->keep_end && [text length])
+    /* A frame (points) has room for more than one line when it is clearly
+     * taller than one; a cell rect when it has more than one row. */
+    NSFont *font = [field font];
+    CGFloat line = font ? ceil([font ascender] - [font descender] + [font leading]) : 0;
+    int rows = widget->has_frame ? (line > 0 && NSHeight(slot) >= 1.75 * line) : widget->rect.height > 1;
+    if (rows && !widget->keep_end && [text length])
         wrap = [cell cellSizeForBounds:NSMakeRect(0, 0, CGFLOAT_MAX, CGFLOAT_MAX)].width > NSWidth(slot) ||
                [text rangeOfCharacterFromSet:[NSCharacterSet newlineCharacterSet]].location != NSNotFound;
     mode = wrap ? NSLineBreakByWordWrapping : widget->keep_end ? NSLineBreakByTruncatingMiddle : NSLineBreakByTruncatingTail;
@@ -170,17 +183,28 @@ static int cocoa_label_wraps(xxwidgets_widget *widget, NSRect slot)
  * grid and never trim a single-line field below its font's natural height. */
 static void cocoa_fit_control(xxwidgets_widget *widget)
 {
-    if (widget->kind != XXWIDGETS_BUTTON && widget->kind != XXWIDGETS_CHECKBOX &&
+    if (widget->kind != XXWIDGETS_BUTTON && widget->kind != XXWIDGETS_CHECKBOX && widget->kind != XXWIDGETS_VALUE &&
         widget->kind != XXWIDGETS_EDIT && widget->kind != XXWIDGETS_LABEL && !xxwidgets_combo_kind(widget)) return;
     cocoa_app_state *app = widget->app->platform;
     NSControl *control = widget->native;
+    if (widget->has_frame) {
+        /* Measured placement: the frame is the visible (alignment) rect and
+         * the control keeps exactly the height it was given (B1, B6). */
+        NSRect slot = NSMakeRect(widget->frame.x, widget->frame.y, widget->frame.width, widget->frame.height);
+        NSRect placed;
+        if (widget->kind == XXWIDGETS_LABEL) (void)cocoa_label_wraps(widget, slot);
+        placed = [control frameForAlignmentRect:slot];
+        if (!NSEqualRects([control frame], placed)) [control setFrame:placed];
+        if (widget->kind == XXWIDGETS_LABEL) cocoa_apply_tooltip(widget);
+        return;
+    }
     NSRect slot = NSMakeRect(widget->rect.x * app->cell_width, widget->rect.y * app->cell_height,
                              widget->rect.width * app->cell_width, widget->rect.height * app->cell_height);
     int wraps = widget->kind == XXWIDGETS_LABEL && cocoa_label_wraps(widget, slot);
     NSRect frame = [control frameForAlignmentRect:slot];
     CGFloat minimum = ceil([[control cell] cellSize].height);
     /* A wrapping label keeps its whole slot: its lines fill its rows from the top. */
-    if (!wraps && (widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_LABEL)) {
+    if (!wraps && (widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_VALUE || widget->kind == XXWIDGETS_LABEL)) {
         /* Single-line text stays vertically aligned with the native buttons
          * even when a shared TUI layout reserves two rows for the control. */
         frame.size.height = widget->kind == XXWIDGETS_LABEL ? MIN(minimum, slot.size.height) : minimum;
@@ -199,7 +223,7 @@ static void cocoa_check_rows(xxwidgets_widget *widget, NSFont *font)
 {
     cocoa_app_state *app = widget->app->platform;
     cocoa_widget_state *state = widget->platform;
-    CGFloat width = MAX(24 * app->cell_width, widget->rect.width * app->cell_width);
+    CGFloat width = MAX(24 * app->cell_width, widget->has_frame ? (CGFloat)widget->frame.width : widget->rect.width * app->cell_width);
     CGFloat row = MAX(app->cell_height, ceil([font ascender] - [font descender] + [font leading]) + 4);
     CGFloat shown = (widget->item_count < 10 ? widget->item_count : 10) * row + 8;
     for (NSButton *check in [state->combo_checks subviews]) {
@@ -209,6 +233,23 @@ static void cocoa_check_rows(xxwidgets_widget *widget, NSFont *font)
     }
     [state->combo_checks setFrameSize:NSMakeSize(width, MAX(shown, widget->item_count * row))];
     [state->combo_popover setContentSize:NSMakeSize(width, shown)];
+}
+
+/* The bold face of font (xxwidgets_widget_set_bold), through NSFontManager;
+ * the bold system font when the family has none. */
+static NSFont *cocoa_bold_font(NSFont *font)
+{
+    NSFontManager *manager = [NSFontManager sharedFontManager];
+    NSFont *bold = [manager convertFont:font toHaveTrait:NSBoldFontMask];
+    if (!bold || !([manager traitsOfFont:bold] & NSBoldFontMask)) bold = [NSFont boldSystemFontOfSize:[font pointSize]];
+    return bold ? bold : font;
+}
+
+static NSTextAlignment cocoa_alignment(xxwidgets_alignment alignment)
+{
+    /* LEFT keeps AppKit's natural alignment (right-to-left languages). */
+    return alignment == XXWIDGETS_ALIGN_CENTER ? NSTextAlignmentCenter :
+           alignment == XXWIDGETS_ALIGN_RIGHT ? NSTextAlignmentRight : NSTextAlignmentNatural;
 }
 
 static void cocoa_widget_fonts(xxwidgets_widget *widget)
@@ -229,6 +270,7 @@ static void cocoa_widget_fonts(xxwidgets_widget *widget)
             app->formatted_font ? app->formatted_font : [NSFont userFixedPitchFontOfSize:[NSFont systemFontSize]];
         if (!font) font = cocoa_role_font(widget, XXWIDGETS_FONT_TABLE_VIEWS);
     }
+    if ((widget->kind == XXWIDGETS_LABEL || widget->kind == XXWIDGETS_VALUE) && widget->bold) font = cocoa_bold_font(font);
     int font_changed = state->applied_font != font;
     if (xxwidgets_list_kind(widget)) {
         NSTableView *table = native;
@@ -346,8 +388,13 @@ static xxwidgets_status cocoa_apply_fonts(xxwidgets_app *app, const xxwidgets_fo
         cells_changed = cell_width != state->cell_width || cell_height != state->cell_height;
         state->cell_width = cell_width;
         state->cell_height = cell_height;
-        for (xxwidgets_widget *widget = app->widgets; widget; widget = widget->next)
+        state->metrics_valid = 0; /* H and L follow the Controls font. */
+        for (xxwidgets_widget *widget = app->widgets; widget; widget = widget->next) {
+            cocoa_widget_state *widget_state = widget->platform;
             cocoa_widget_fonts(widget);
+            /* A window laid out in points measures again (RESIZE on the next poll). */
+            if (widget->kind == XXWIDGETS_WINDOW && widget_state && widget_state->measured) widget_state->relayout_pending = 1;
+        }
         if (cells_changed) cocoa_cells_relayout(app);
         return XXWIDGETS_OK;
     }
@@ -429,12 +476,25 @@ static int cocoa_window_minimum_cells(const xxwidgets_widget *widget, int *colum
 static void cocoa_window_apply_minimum(xxwidgets_widget *widget)
 {
     cocoa_app_state *app = widget->app->platform;
+    cocoa_widget_state *state = widget->platform;
     NSWindow *window = widget->native;
     NSSize largest, minimum, current;
-    int columns, rows;
-    if (!cocoa_window_minimum_cells(widget, &columns, &rows)) return;
+    int columns, rows, cells = cocoa_window_minimum_cells(widget, &columns, &rows);
+    int points = widget->min_frame_width > 0 || widget->min_frame_height > 0;
+    if (!cells && !points) {
+        /* xxwidgets_window_set_minimum_frame(0, 0) removed the last limit. */
+        if (state && state->frame_minimum) {
+            state->frame_minimum = 0;
+            [window setContentMinSize:NSMakeSize(1, 1)];
+        }
+        return;
+    }
+    if (state) state->frame_minimum = points;
     largest = cocoa_window_largest(widget);
     minimum = NSMakeSize(columns * app->cell_width, rows * app->cell_height);
+    /* A minimum in points (set_minimum_frame) and one in cells: the larger. */
+    if (widget->min_frame_width > minimum.width) minimum.width = widget->min_frame_width;
+    if (widget->min_frame_height > minimum.height) minimum.height = widget->min_frame_height;
     if (largest.width > 0 && minimum.width > largest.width) minimum.width = largest.width;
     if (largest.height > 0 && minimum.height > largest.height) minimum.height = largest.height;
     if (!NSEqualSizes([window contentMinSize], minimum)) [window setContentMinSize:minimum];
@@ -471,15 +531,21 @@ static void cocoa_about_text_layout(xxwidgets_widget *window, int old_columns, i
 
 /* Takes the content size, in cells, as the window's rect: rounded to the
  * nearest cell and never below the minimum (dialogs pass the size on to views
- * that reject smaller ones). Emits RESIZE when it changed. */
-static void cocoa_window_resized(xxwidgets_widget *widget)
+ * that reject smaller ones). Emits RESIZE when it changed, and returns 1 then.
+ * A window laid out in points (state->measured) reports every change of its
+ * content size, also one within a cell. */
+static int cocoa_window_resized(xxwidgets_widget *widget)
 {
     cocoa_app_state *app_state = widget->app->platform;
     cocoa_widget_state *state = widget->platform;
     NSSize size = [[(NSWindow *)widget->native contentView] frame].size;
     int width = (int)floor(size.width / app_state->cell_width + 0.5);
     int height = (int)floor(size.height / app_state->cell_height + 0.5);
-    int min_columns, min_rows;
+    int min_columns, min_rows, points_changed = 0;
+    if (state->measured) {
+        points_changed = !NSEqualSizes(size, state->reported_size);
+        state->reported_size = size;
+    }
     if (cocoa_window_minimum_cells(widget, &min_columns, &min_rows)) {
         /* Capped by the screen as cocoa_window_apply_minimum caps it: there
          * the rect is the size the window really has, so a layout made for it
@@ -499,8 +565,10 @@ static void cocoa_window_resized(xxwidgets_widget *widget)
         widget->rect.height = height;
         state->applied_rect = widget->rect;
         if (state->about_resizable) cocoa_about_text_layout(widget, old_columns, old_rows);
-        xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+        points_changed = 1;
     }
+    if (points_changed) xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+    return points_changed;
 }
 
 /* After the cells changed (cocoa_apply_fonts), as on Windows: every control
@@ -524,10 +592,11 @@ static void cocoa_cells_relayout(xxwidgets_app *app)
             continue;
         }
         window = widget->native;
-        if (!([window styleMask] & NSWindowStyleMaskFullScreen) && [window isZoomed]) {
+        if (!([window styleMask] & NSWindowStyleMaskFullScreen) && ([window isZoomed] || widget->has_frame)) {
             /* A zoomed window keeps its frame, as a maximized one does on
-             * Windows and GTK; its rect follows from its size in the new cells. */
-            cocoa_window_resized(widget);
+             * Windows and GTK; its rect follows from its size in the new cells.
+             * So does one sized in points (set_frame): points do not change. */
+            (void)cocoa_window_resized(widget);
         } else if (!([window styleMask] & NSWindowStyleMaskFullScreen)) {
             NSRect before = [window frame], after;
             NSSize largest = cocoa_window_largest(widget);
@@ -2142,13 +2211,7 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 
 - (void)outlineView:(NSOutlineView *)outline willDisplayCell:(id)cell forTableColumn:(NSTableColumn *)column item:(id)item
 {
-    if (cocoa_tree_mark_column(column) >= 0) {
-        NSInteger row = [outline rowForItem:item];
-        BOOL selected = row >= 0 && [[outline selectedRowIndexes] containsIndex:(NSUInteger)row];
-        [cell setTextColor:selected ? [NSColor selectedControlTextColor] : [NSColor linkColor]];
-        [cell setDrawsBackground:NO];
-        return;
-    }
+    if (!widget || !item) return;
     xxwidgets_tree_color colors = xxwidgets_treeview_node_color(widget, (size_t)[item unsignedLongLongValue]);
     BOOL dark = [[[outline effectiveAppearance] bestMatchFromAppearancesWithNames:
         @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] isEqualToString:NSAppearanceNameDarkAqua];
@@ -2163,6 +2226,13 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
         foreground = [NSColor colorWithSRGBRed:((color >> 16) & 255) / 255.0
             green:((color >> 8) & 255) / 255.0 blue:(color & 255) / 255.0 alpha:1];
     [cell setTextColor:foreground];
+    if (cocoa_tree_mark_column(column) >= 0) {
+        /* B7: the S and ? marks take the row's own text colour (the
+         * selection colour on a selected row), as on Windows and GTK; the
+         * row background stays the row's, drawn by the text column. */
+        [cell setDrawsBackground:NO];
+        return;
+    }
     [cell setDrawsBackground:!selected && background != UINT32_MAX];
     if (!selected && background != UINT32_MAX)
         [cell setBackgroundColor:[NSColor colorWithSRGBRed:((background >> 16) & 255) / 255.0
@@ -2633,13 +2703,14 @@ static xxwidgets_status cocoa_poll_backend(xxwidgets_app *app, int timeout_ms)
             before = window->rect;
             relayout = state->relayout_pending;
             state->relayout_pending = 0;
+            int emitted = 0;
             if (state->fit_pending) {
                 state->fit_pending = 0;
-                if ([(NSWindow *)window->native styleMask] & NSWindowStyleMaskResizable) cocoa_window_resized(window);
+                if ([(NSWindow *)window->native styleMask] & NSWindowStyleMaskResizable) emitted = cocoa_window_resized(window);
             }
             /* New cells (cocoa_cells_relayout): RESIZE also when the size in
              * cells stayed; cocoa_window_resized reported a changed one. */
-            if (relayout && rect_equal(before, window->rect)) xxwidgets_emit(window, XXWIDGETS_EVENT_RESIZE, 0);
+            if (relayout && !emitted && rect_equal(before, window->rect)) xxwidgets_emit(window, XXWIDGETS_EVENT_RESIZE, 0);
         }
         while (!app->quit && processed < 256) {
             NSDate *until = processed ? [NSDate distantPast] : deadline;
@@ -2812,6 +2883,38 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
             if (widget->kind == XXWIDGETS_EDIT) { [field setDelegate:state->delegate]; [field setTarget:state->delegate]; [field setAction:@selector(editActivated:)]; }
             else [[field cell] setLineBreakMode:NSLineBreakByTruncatingTail];
             native = field;
+            break;
+        }
+        case XXWIDGETS_VALUE: {
+            /* B3: read-only text in a sunken box, selectable (copy) and
+             * focusable, centred by default (sync applies the alignment). */
+            NSTextField *field = [[NSTextField alloc] initWithFrame:NSZeroRect];
+            [field setFont:font];
+            [field setEditable:NO];
+            [field setSelectable:YES];
+            [field setBezeled:YES];
+            [field setBezelStyle:NSTextFieldSquareBezel];
+            [field setDrawsBackground:YES];
+            [field setAlignment:NSTextAlignmentCenter];
+            [[field cell] setWraps:NO];
+            [[field cell] setScrollable:YES];
+            native = field;
+            break;
+        }
+        case XXWIDGETS_GROUP: {
+            /* B4: a light untitled frame drawn around sibling controls. It is
+             * added below every sibling (cocoa_create_backend) and takes no
+             * input: NSBox refuses first responder. */
+            NSBox *box = [[NSBox alloc] initWithFrame:NSZeroRect];
+            [box setBoxType:NSBoxCustom];
+            [box setTitlePosition:NSNoTitle];
+            [box setBorderWidth:1];
+            [box setCornerRadius:4];
+            [box setBorderColor:[NSColor separatorColor]];
+            [box setFillColor:[NSColor clearColor]];
+            [box setTransparent:NO];
+            [box setContentViewMargins:NSZeroSize];
+            native = box;
             break;
         }
         case XXWIDGETS_DIE_SIGNATURE_EDIT: {
@@ -3122,7 +3225,10 @@ static xxwidgets_status cocoa_create_backend(xxwidgets_widget *widget)
         if (!native) { cocoa_destroy_backend(widget); return XXWIDGETS_OUT_OF_MEMORY; }
         widget->native = native;
         if (!state->root) state->root = native;
-        if (widget->parent)
+        if (widget->parent && widget->kind == XXWIDGETS_GROUP)
+            /* Below every sibling, also those created before it (B4). */
+            [[(NSWindow *)widget->parent->native contentView] addSubview:state->root positioned:NSWindowBelow relativeTo:nil];
+        else if (widget->parent)
             [[(NSWindow *)widget->parent->native contentView] addSubview:state->root];
         xxwidgets_status status = cocoa_sync_backend(widget);
         if (status != XXWIDGETS_OK) cocoa_destroy_backend(widget);
@@ -3194,6 +3300,119 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
     }
 }
 
+/* NSBezelStyleRegularSquare, named NSBezelStyleFlexiblePush since the macOS 14
+ * SDK: the push bezel that stretches to any height (B6). The value keeps both
+ * SDKs free of deprecation warnings. */
+#define COCOA_BEZEL_FLEXIBLE ((NSBezelStyle)2)
+
+/* Height of the visible (alignment) rect of control at its natural size. */
+static CGFloat cocoa_aligned_height(NSControl *control)
+{
+    NSSize size = [[control cell] cellSize];
+    return NSHeight([control alignmentRectForFrame:NSMakeRect(0, 0, size.width, size.height)]);
+}
+
+/* B1 metrics in points, measured from scratch controls in the current
+ * Controls and Text edits fonts: H the tallest of a push button, an edit and
+ * a pop-up button, L a caption label. M, S and the insets are Qt's numbers,
+ * which are points here as on the other backends' pixels. */
+static xxwidgets_status cocoa_metrics(xxwidgets_app *app, xxwidgets_metrics *metrics)
+{
+    @autoreleasepool {
+        cocoa_app_state *state = app->platform;
+        if (!state) return XXWIDGETS_PLATFORM_ERROR;
+        if (!state->metrics_valid) {
+            NSFont *system = [NSFont systemFontOfSize:[NSFont systemFontSize]];
+            NSFont *font = state->fonts[XXWIDGETS_FONT_CONTROLS] ? state->fonts[XXWIDGETS_FONT_CONTROLS] : system;
+            NSFont *edit_font = state->fonts[XXWIDGETS_FONT_TEXT_EDITS] ? state->fonts[XXWIDGETS_FONT_TEXT_EDITS] : font;
+            NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
+            NSTextField *field = [[NSTextField alloc] initWithFrame:NSZeroRect];
+            NSTextField *label = [[NSTextField alloc] initWithFrame:NSZeroRect];
+            NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+            CGFloat control, caption;
+            xxwidgets_metrics measured;
+            if (!button || !field || !label || !popup || !font) {
+                [button release]; [field release]; [label release]; [popup release];
+                return XXWIDGETS_OUT_OF_MEMORY;
+            }
+            [button setButtonType:NSButtonTypeMomentaryPushIn];
+            [button setBezelStyle:NSBezelStyleRounded];
+            [button setFont:font];
+            [button setTitle:@"Xg"];
+            [field setFont:edit_font];
+            [field setBezeled:YES];
+            [field setEditable:YES];
+            [field setStringValue:@"Xg"];
+            [label setFont:font];
+            [label setBezeled:NO];
+            [label setEditable:NO];
+            [label setDrawsBackground:NO];
+            [label setStringValue:@"Xg"];
+            [popup setFont:font];
+            [popup addItemWithTitle:@"Xg"];
+            control = MAX(MAX(cocoa_aligned_height(button), cocoa_aligned_height(field)), cocoa_aligned_height(popup));
+            caption = [[label cell] cellSize].height;
+            [button release]; [field release]; [label release]; [popup release];
+            memset(&measured, 0, sizeof(measured));
+            measured.unit_is_cell = 0;
+            measured.cell_width = (int)ceil(state->cell_width);
+            measured.cell_height = (int)ceil(state->cell_height);
+            measured.control_height = control >= 1 ? (int)ceil(control) : measured.cell_height;
+            measured.label_height = caption >= 1 ? (int)ceil(caption) : measured.cell_height;
+            measured.spacing = 6;
+            measured.margin = 9;
+            measured.small_icon = 16;
+            measured.frame_inset = 5;
+            measured.panel_inset = 3;
+            measured.caption_gap = 3;
+            if (measured.cell_width < 1) measured.cell_width = 1;
+            if (measured.cell_height < 1) measured.cell_height = 1;
+            state->metrics = measured;
+            state->metrics_valid = 1;
+        }
+        *metrics = state->metrics;
+        return XXWIDGETS_OK;
+    }
+}
+
+/* From now on window reports every content size change (cocoa_window_resized),
+ * starting from the size it has. */
+static void cocoa_window_measured(xxwidgets_widget *window)
+{
+    cocoa_widget_state *state = window->platform;
+    if (!state || !window->native || state->measured) return;
+    state->measured = 1;
+    state->reported_size = [[(NSWindow *)window->native contentView] frame].size;
+}
+
+/* Applies widget->frame (has_frame) to a control: its alignment rect, so the
+ * visible bezel lands on the frame and AppKit's shadow and focus-ring margins
+ * stay outside it. Marks the window as laid out in points. */
+static void cocoa_apply_frame(xxwidgets_widget *widget)
+{
+    cocoa_widget_state *state = widget->platform;
+    NSView *root = state->root;
+    NSRect slot = NSMakeRect(widget->frame.x, widget->frame.y, widget->frame.width, widget->frame.height);
+    NSRect placed;
+    if (widget->kind == XXWIDGETS_BUTTON) {
+        /* B6: a button clearly taller than the push bezel (the two-row Scan
+         * button) takes the bezel that stretches; the rounded one has a
+         * fixed height and would sit in the middle of the frame. */
+        xxwidgets_metrics metrics;
+        NSButton *button = widget->native;
+        NSBezelStyle style = NSBezelStyleRounded;
+        if (cocoa_metrics(widget->app, &metrics) == XXWIDGETS_OK && 2 * widget->frame.height > 3 * metrics.control_height)
+            style = COCOA_BEZEL_FLEXIBLE;
+        if ([button bezelStyle] != style) [button setBezelStyle:style];
+    }
+    placed = [root frameForAlignmentRect:slot];
+    if (!NSEqualRects([root frame], placed)) {
+        [root setFrame:placed];
+        if (xxwidgets_list_kind(widget)) cocoa_size_table(widget);
+    }
+    if (widget->parent) cocoa_window_measured(widget->parent);
+}
+
 static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
 {
     @autoreleasepool {
@@ -3205,7 +3424,13 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
         NSRect frame = NSMakeRect(widget->rect.x * app_state->cell_width,
             widget->rect.y * app_state->cell_height, widget->rect.width * app_state->cell_width,
             widget->rect.height * app_state->cell_height);
-        if (!state->has_rect || !rect_equal(state->applied_rect, widget->rect)) {
+        if (widget->has_frame) {
+            /* Measured placement (B1): the frame, in points, is the visible
+             * alignment rect; cell rects and cell relayouts no longer move it.
+             * A window keeps the size cocoa_place gave it. */
+            if (widget->kind != XXWIDGETS_WINDOW) cocoa_apply_frame(widget);
+            state->has_rect = 0; /* Should the frame go, the rect applies again. */
+        } else if (!state->has_rect || !rect_equal(state->applied_rect, widget->rect)) {
             if (widget->kind == XXWIDGETS_WINDOW) {
                 NSWindow *window = native;
                 /* Never larger than the screen's visible area, so a dialog's
@@ -3285,7 +3510,33 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
             /* Wrapping, truncation and the full-text tooltip follow the text
              * and the frame (cocoa_fit_control, run by cocoa_widget_fonts below). */
             [(NSTextField *)native setStringValue:text];
+            if ([(NSTextField *)native alignment] != cocoa_alignment(widget->alignment))
+                [(NSTextField *)native setAlignment:cocoa_alignment(widget->alignment)];
             break;
+        case XXWIDGETS_VALUE: {
+            /* The program owns the text; a selection being copied keeps its
+             * field editor, which shows the new text too. Bold is applied by
+             * cocoa_widget_fonts below. */
+            NSTextField *field = native;
+            if (![edit_text(field) isEqualToString:text]) {
+                NSText *editor = [field currentEditor];
+                [field setStringValue:text];
+                if (editor) [editor setString:text];
+            }
+            if ([field alignment] != cocoa_alignment(widget->alignment)) {
+                [field setAlignment:cocoa_alignment(widget->alignment)];
+                [[field currentEditor] setAlignment:cocoa_alignment(widget->alignment)];
+            }
+            break;
+        }
+        case XXWIDGETS_GROUP: {
+            NSBox *box = native;
+            if ([text length]) {
+                [box setTitle:text];
+                if ([box titlePosition] != NSAtTop) [box setTitlePosition:NSAtTop];
+            } else if ([box titlePosition] != NSNoTitle) [box setTitlePosition:NSNoTitle];
+            break;
+        }
         case XXWIDGETS_EDIT: {
             NSTextField *field = native;
             if (![edit_text(field) isEqualToString:text]) {
@@ -3303,6 +3554,9 @@ static xxwidgets_status cocoa_sync_backend(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_BUTTON:
             [(NSButton *)native setTitle:text];
+            /* An icon button keeps its text as its accessible name (B2), also
+             * when it shows the icon alone. */
+            [(NSButton *)native setAccessibilityLabel:widget->icon_rgba ? text : nil];
             break;
         case XXWIDGETS_CHECKBOX:
             [(NSButton *)native setTitle:text];
@@ -3532,7 +3786,8 @@ static int cocoa_has_focus(const xxwidgets_widget *widget)
         NSResponder *responder = [window firstResponder];
         if (!responder) return 0;
         if (responder == widget->native) return 1;
-        if (widget->kind == XXWIDGETS_EDIT && [(NSTextField *)widget->native currentEditor] == responder) return 1;
+        if ((widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_VALUE) &&
+            [(NSTextField *)widget->native currentEditor] == responder) return 1;
         cocoa_widget_state *state = widget->platform;
         return state && state->root && [responder isKindOfClass:[NSView class]] && [(NSView *)responder isDescendantOf:state->root];
     }
@@ -3813,12 +4068,227 @@ static xxwidgets_status cocoa_set_tooltip(xxwidgets_widget *widget, const char *
     }
 }
 
+/* B1 measure: the natural size of the visible (alignment) rect in points,
+ * from a copy of the control's cell so the live control (and an edit's field
+ * editor) is never touched. text NULL: the current text; a combo box fits its
+ * widest record. Lists, tables, trees, views and frames: their current size. */
+static xxwidgets_status cocoa_measure(xxwidgets_widget *widget, const char *utf8, int *width, int *height)
+{
+    @autoreleasepool {
+        cocoa_app_state *app = widget->app->platform;
+        cocoa_widget_state *state = widget->platform;
+        NSView *view = widget->native;
+        NSString *text = nil;
+        NSSize size;
+        NSRect aligned;
+        if (!app || !state || !view) return XXWIDGETS_PLATFORM_ERROR;
+        if (utf8) {
+            text = [NSString stringWithUTF8String:utf8];
+            if (!text) return XXWIDGETS_INVALID_ARGUMENT;
+        }
+        switch (widget->kind) {
+        case XXWIDGETS_LABEL:
+        case XXWIDGETS_EDIT:
+        case XXWIDGETS_VALUE:
+        case XXWIDGETS_BUTTON:
+        case XXWIDGETS_CHECKBOX:
+        case XXWIDGETS_CHECKCOMBOBOX: {
+            NSCell *cell = [[[(NSControl *)view cell] copy] autorelease];
+            if (!cell) return XXWIDGETS_OUT_OF_MEMORY;
+            if (widget->kind == XXWIDGETS_CHECKCOMBOBOX) {
+                /* The button shows "caption ▾" (cocoa_sync_backend). */
+                NSString *widest = text;
+                if (!widest) {
+                    NSDictionary *attributes = [NSDictionary dictionaryWithObject:[(NSControl *)view font] forKey:NSFontAttributeName];
+                    CGFloat most = -1;
+                    for (size_t index = 0; index <= widget->item_count; ++index) {
+                        const char *entry = index < widget->item_count ? widget->items[index] : xxwidgets_combobox_caption(widget);
+                        NSString *candidate = [NSString stringWithUTF8String:entry ? entry : ""];
+                        CGFloat candidate_width = candidate ? [candidate sizeWithAttributes:attributes].width : -1;
+                        if (candidate && candidate_width > most) {
+                            most = candidate_width;
+                            widest = candidate;
+                        }
+                    }
+                    if (!widest) widest = @"";
+                }
+                [(NSButtonCell *)cell setTitle:[NSString stringWithFormat:@"%@ ▾", widest]];
+            } else if (text) {
+                if (widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_CHECKBOX) [(NSButtonCell *)cell setTitle:text];
+                else [cell setStringValue:text];
+            }
+            if (widget->kind == XXWIDGETS_LABEL) {
+                /* One line per line of the text: no width limit to wrap at. */
+                [cell setWraps:YES];
+                size = [cell cellSizeForBounds:NSMakeRect(0, 0, CGFLOAT_MAX, CGFLOAT_MAX)];
+            } else size = [cell cellSize];
+            break;
+        }
+        case XXWIDGETS_COMBOBOX:
+            if (text) {
+                NSPopUpButtonCell *cell = [[[NSPopUpButtonCell alloc] initTextCell:@"" pullsDown:NO] autorelease];
+                if (!cell) return XXWIDGETS_OUT_OF_MEMORY;
+                [cell setFont:[(NSControl *)view font]];
+                [cell addItemWithTitle:text];
+                size = [cell cellSize];
+            } else size = [[(NSControl *)view cell] cellSize];
+            break;
+        default: {
+            /* Views take the size they are given: report the current one. */
+            NSRect frame = [state->root frame];
+            if (NSWidth(frame) < 1 || NSHeight(frame) < 1) {
+                *width = (int)ceil(widget->rect.width * app->cell_width);
+                *height = (int)ceil(widget->rect.height * app->cell_height);
+                return XXWIDGETS_OK;
+            }
+            aligned = [state->root alignmentRectForFrame:frame];
+            *width = (int)ceil(NSWidth(aligned));
+            *height = (int)ceil(NSHeight(aligned));
+            return XXWIDGETS_OK;
+        }
+        }
+        aligned = [view alignmentRectForFrame:NSMakeRect(0, 0, size.width, size.height)];
+        *width = (int)ceil(NSWidth(aligned));
+        *height = (int)ceil(NSHeight(aligned));
+        /* An empty edit still offers room to type, as cell_measure does. */
+        if (widget->kind == XXWIDGETS_EDIT && *width < 3 * app->cell_width) *width = (int)ceil(3 * app->cell_width);
+        return XXWIDGETS_OK;
+    }
+}
+
+/* B1 place for a WINDOW: the content size becomes frame.width x frame.height
+ * points, the top-left corner stays, never beyond the screen's visible area
+ * and never below the minimum. No RESIZE when AppKit gave exactly that size
+ * (set_frame emits no events); a clamped size is reported on the next poll. */
+static xxwidgets_status cocoa_place_window(xxwidgets_widget *widget)
+{
+    cocoa_app_state *app = widget->app->platform;
+    cocoa_widget_state *state = widget->platform;
+    NSWindow *window = widget->native;
+    NSRect before = [window frame];
+    NSScreen *screen = [window screen] ? [window screen] : [NSScreen mainScreen];
+    NSRect available = screen ? [screen visibleFrame] : NSZeroRect;
+    NSSize wanted = NSMakeSize(widget->frame.width, widget->frame.height), size = wanted, actual;
+    if (NSWidth(available) > 0 && NSHeight(available) > 0) {
+        NSRect content = [window contentRectForFrameRect:available];
+        if (size.width > NSWidth(content)) size.width = floor(NSWidth(content));
+        if (size.height > NSHeight(content)) size.height = floor(NSHeight(content));
+    }
+    cocoa_window_measured(widget);
+    [window setContentSize:size];
+    [window setFrameTopLeftPoint:NSMakePoint(NSMinX(before), NSMaxY(before))];
+    cocoa_window_apply_minimum(widget);
+    actual = [[window contentView] frame].size;
+    if (NSEqualSizes(actual, wanted)) {
+        int columns = (int)floor(actual.width / app->cell_width + 0.5), rows = (int)floor(actual.height / app->cell_height + 0.5);
+        widget->rect.width = columns > 0 ? columns : 1;
+        widget->rect.height = rows > 0 ? rows : 1;
+        state->applied_rect = widget->rect;
+        state->reported_size = actual;
+        state->fit_pending = 0;
+    }
+    return XXWIDGETS_OK;
+}
+
+/* B1 place: widget->frame in points relative to the window's content view. */
+static xxwidgets_status cocoa_place(xxwidgets_widget *widget)
+{
+    @autoreleasepool {
+        if (!widget->platform || !widget->native) return XXWIDGETS_PLATFORM_ERROR;
+        if (widget->kind == XXWIDGETS_WINDOW) return cocoa_place_window(widget);
+        /* Sync applies the frame (cocoa_apply_frame), then the fonts and the
+         * label fitting that follow it. */
+        return cocoa_sync_backend(widget);
+    }
+}
+
+/* The geometry AppKit really has: the alignment rect in the flipped content
+ * view, rounded to whole points; a window its content size. */
+static xxwidgets_status cocoa_native_frame(const xxwidgets_widget *widget, xxwidgets_rect *out)
+{
+    @autoreleasepool {
+        const cocoa_widget_state *state = widget->platform;
+        NSRect frame;
+        if (!state || !widget->native) return XXWIDGETS_PLATFORM_ERROR;
+        if (widget->kind == XXWIDGETS_WINDOW) {
+            NSSize size = [[(NSWindow *)widget->native contentView] frame].size;
+            out->x = out->y = 0;
+            out->width = (int)lround(size.width);
+            out->height = (int)lround(size.height);
+            return XXWIDGETS_OK;
+        }
+        frame = [state->root alignmentRectForFrame:[state->root frame]];
+        out->x = (int)lround(NSMinX(frame));
+        out->y = (int)lround(NSMinY(frame));
+        out->width = (int)lround(NSWidth(frame));
+        out->height = (int)lround(NSHeight(frame));
+        return XXWIDGETS_OK;
+    }
+}
+
+static xxwidgets_status cocoa_minimum_frame(xxwidgets_widget *window)
+{
+    @autoreleasepool {
+        if (!window->platform || !window->native) return XXWIDGETS_PLATFORM_ERROR;
+        cocoa_window_apply_minimum(window);
+        return XXWIDGETS_OK;
+    }
+}
+
+static int cocoa_supports_kind(xxwidgets_kind kind)
+{
+    return kind == XXWIDGETS_VALUE || kind == XXWIDGETS_GROUP;
+}
+
+/* B2: the stored RGBA icon as a small_icon-point image (16 px fill 16 pt; a
+ * Retina screen scales them, as Qt does), left of the title or alone. AppKit
+ * dims it with the button. The title stays the accessible name. */
+static xxwidgets_status cocoa_set_icon(xxwidgets_widget *widget)
+{
+    @autoreleasepool {
+        NSButton *button = widget->native;
+        if (!widget->platform || !button) return XXWIDGETS_PLATFORM_ERROR;
+        if (widget->icon_rgba && widget->icon_width && widget->icon_height) {
+            unsigned int width = widget->icon_width, height = widget->icon_height, row;
+            CGFloat side = 16, longest = width > height ? width : height;
+            NSBitmapImageRep *pixels = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                pixelsWide:(NSInteger)width pixelsHigh:(NSInteger)height bitsPerSample:8
+                samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace
+                bitmapFormat:NSBitmapFormatAlphaNonpremultiplied bytesPerRow:(NSInteger)width * 4
+                bitsPerPixel:32];
+            NSImage *image;
+            xxwidgets_metrics metrics;
+            if (!pixels || ![pixels bitmapData]) { [pixels release]; return XXWIDGETS_OUT_OF_MEMORY; }
+            for (row = 0; row < height; ++row)
+                memcpy([pixels bitmapData] + (size_t)row * (size_t)[pixels bytesPerRow],
+                       widget->icon_rgba + (size_t)row * width * 4u, (size_t)width * 4u);
+            if (cocoa_metrics(widget->app, &metrics) == XXWIDGETS_OK && metrics.small_icon > 0) side = metrics.small_icon;
+            image = [[NSImage alloc] initWithSize:NSMakeSize(floor(side * width / longest + 0.5), floor(side * height / longest + 0.5))];
+            if (!image) { [pixels release]; return XXWIDGETS_OUT_OF_MEMORY; }
+            [image addRepresentation:pixels];
+            [pixels release];
+            [button setImage:image];
+            [image release];
+            [button setImageScaling:NSImageScaleProportionallyDown];
+            [button setImagePosition:(widget->icon_flags & XXWIDGETS_ICON_ONLY) ? NSImageOnly : NSImageLeft];
+        } else {
+            [button setImage:nil];
+            [button setImagePosition:NSNoImage];
+        }
+        [button setAccessibilityLabel:widget->icon_rgba ? [NSString stringWithUTF8String:widget->text] : nil];
+        /* The natural size changed; a framed button keeps its frame. */
+        if (widget->has_frame) cocoa_apply_frame(widget);
+        return XXWIDGETS_OK;
+    }
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {
     "AppKit", cocoa_init_backend, cocoa_shutdown_backend, cocoa_poll_backend,
     cocoa_create_backend, cocoa_destroy_backend, cocoa_sync_backend,
     cocoa_read_text_backend, cocoa_read_value_backend, cocoa_focus_backend, cocoa_modal_owner, cocoa_about_content, cocoa_copy_text,
     cocoa_apply_fonts, NULL, cocoa_preview_font, NULL, NULL, cocoa_choose_file, cocoa_has_focus, cocoa_accept_file_drops, cocoa_hexview_page_rows, cocoa_paste_text, cocoa_hexview_font, cocoa_window_menu, NULL, cocoa_translation_changed,
     cocoa_set_tooltip,
-    NULL /* metrics */, NULL /* measure */, NULL /* place */, NULL /* native_frame */, NULL /* minimum_frame */,
-    NULL /* supports_kind */, NULL /* set_icon */, NULL /* begin_update */, NULL /* end_update */
+    cocoa_metrics, cocoa_measure, cocoa_place, cocoa_native_frame, cocoa_minimum_frame,
+    cocoa_supports_kind, cocoa_set_icon,
+    NULL /* begin_update: AppKit coalesces redraws until the next display pass */, NULL /* end_update */
 };

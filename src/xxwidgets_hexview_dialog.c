@@ -1,6 +1,7 @@
 /* Copyright (c) 2026 hors<horsicq@gmail.com>. SPDX-License-Identifier: MIT */
 #include "xxwidgets_internal.h"
 #include "xxwidgets/xxwidgets_hexview_browser.h"
+#include "xxfclib/io/xx_io.h"
 #include <limits.h>
 
 typedef struct hex_modal {
@@ -49,8 +50,26 @@ xxwidgets_status xxwidgets_hexview_dialog(xxwidgets_widget *owner, const char *t
     return xxwidgets_hexview_dialog_with_options(owner, title, path, device, NULL);
 }
 
+static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device,
+    const xxwidgets_hex_options *options, int at, uint64_t offset, uint64_t length);
+
 xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, const char *title,
     const char *path, xx_io_device *device, const xxwidgets_hex_options *options)
+{
+    return hex_dialog(owner, title, path, device, options, 0, 0, 0);
+}
+
+xxwidgets_status xxwidgets_hexview_dialog_at(xxwidgets_widget *owner, const char *title, const char *path,
+    xx_io_device *device, const xxwidgets_hex_options *options, uint64_t offset, uint64_t length)
+{
+    int64_t size = device ? xx_io_total_size(device) : -1;
+    /* Refuse a range past EOF before any window opens. */
+    if (size < 0 || offset > (uint64_t)size || length > (uint64_t)size - offset) return XXWIDGETS_INVALID_ARGUMENT;
+    return hex_dialog(owner, title, path, device, options, 1, offset, length);
+}
+
+static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device,
+    const xxwidgets_hex_options *options, int at, uint64_t offset, uint64_t length)
 {
     hex_modal modal = {0};
     xxwidgets_app *app;
@@ -83,6 +102,7 @@ xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, 
     if (status == XXWIDGETS_OK)
         status = xxwidgets_hexview_browser_set_device(modal.view, path, device);
     if (status == XXWIDGETS_OK && options) status = xxwidgets_hexview_browser_set_options(modal.view, options);
+    if (status == XXWIDGETS_OK && at) status = xxwidgets_hexview_browser_select(modal.view, offset, length);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){114, 31, 12, 2}, &modal.close);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, sizeof(shortcuts) / sizeof(shortcuts[0]));

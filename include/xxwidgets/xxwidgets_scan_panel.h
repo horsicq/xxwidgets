@@ -56,6 +56,9 @@ typedef enum xxwidgets_scan_panel_control_id {
     XXWIDGETS_SCAN_PANEL_ARCHITECTURE,
     XXWIDGETS_SCAN_PANEL_TYPE_LABEL,
     XXWIDGETS_SCAN_PANEL_TYPE,
+    /* Row E (XXWIDGETS_SCAN_PANEL_ENGINE_ROW); hidden with options 0. */
+    XXWIDGETS_SCAN_PANEL_ENGINE,
+    XXWIDGETS_SCAN_PANEL_ENGINE_LABEL,
     XXWIDGETS_SCAN_PANEL_CONTROL_COUNT
 } xxwidgets_scan_panel_control_id;
 
@@ -137,11 +140,18 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_report(const xxwidgets_s
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_show_report(xxwidgets_scan_panel *panel);
 
 /* Main-window options, for xxwidgets_die_main_panel. Options 0 (the default)
- * keep the cell layout above unchanged. The engine row adds two control ids,
- * XXWIDGETS_SCAN_PANEL_ENGINE (COMBOBOX "Automatic" / "Detect It Easy (DiE)",
- * tooltip "Scan engine"; SELECT is the application's to handle) and
- * XXWIDGETS_SCAN_PANEL_ENGINE_LABEL ("Scan"), appended before
- * XXWIDGETS_SCAN_PANEL_CONTROL_COUNT together with their implementation. */
+ * keep the cell layout above unchanged: ENGINE and ENGINE_LABEL exist but stay
+ * hidden. ENGINE is a COMBOBOX "Automatic" (record value 0) / "Detect It Easy
+ * (DiE)" (1), tooltip "Scan engine"; its SELECT is the application's to
+ * handle (xxwidgets_widget_set_value selects without an event). ENGINE_LABEL
+ * is its caption "Scan".
+ * With ENGINE_ROW on a backend with XXWIDGETS_VALUE, ENDIANNESS, MODE,
+ * ARCHITECTURE, TYPE (tooltip = caption) and ELAPSED return VALUE controls
+ * instead of the LABELs options 0 shows (without VALUE the LABELs are
+ * centred); set_file_info and set_elapsed fill both, so a handle taken
+ * before set_options keeps its text. Every captioned box of row
+ * E gets a GROUP frame where the backend has GROUP. set_rect (cells) places
+ * only what options 0 shows; use set_bounds with other options. */
 enum {
     /* Row E: the Scan engine combo, then Endianness, Mode, Architecture and
      * Type as captioned VALUE boxes. */
@@ -154,12 +164,16 @@ enum {
     /* The include/exclude tag filters stay hidden. */
     XXWIDGETS_SCAN_PANEL_HIDE_TAG_FILTERS = 1u << 3
 };
-/* Shows, hides and restyles controls for options; emits no events. */
+/* Shows, hides and restyles controls for options; emits no events. Unknown
+ * bits: INVALID_ARGUMENT. Lay out again (set_bounds) after a change. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_options(xxwidgets_scan_panel *panel, unsigned int options);
 XXWIDGETS_API unsigned int xxwidgets_scan_panel_get_options(const xxwidgets_scan_panel *panel);
-/* Frame mode: lays rows E (with ENGINE_ROW), F (the tree, which takes every
+/* Frame mode: lays rows E (with ENGINE_ROW; without it the File type and
+ * file-info captions and LABELs, unframed), F (the tree, which takes every
  * extra unit of height) and G (the scan bar, bottom-aligned) out within
- * units through xxwidgets_widget_set_frame. set_rect keeps the cell layout. */
+ * units through xxwidgets_widget_set_frame. A size below the minimum is laid
+ * out at the minimum. On failure the controls keep their previous frames.
+ * set_rect keeps the cell layout. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_bounds(xxwidgets_scan_panel *panel, xxwidgets_rect units);
 /* Smallest size of the frame-mode layout for the current options. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_minimum_size(xxwidgets_scan_panel *panel, int *width, int *height);

@@ -253,6 +253,13 @@ xxwidgets_status xxwidgets_hexview_browser_go_to(xxwidgets_hexview_browser *v, c
     status = xxwidgets_hexview_seek_device(C(v, HEX), offset);
     return status == XXWIDGETS_OK ? location(v) : status;
 }
+xxwidgets_status xxwidgets_hexview_browser_select(xxwidgets_hexview_browser *v, uint64_t offset, uint64_t length)
+{
+    xxwidgets_status status;
+    if (!v || offset > v->size || length > v->size - offset) return XXWIDGETS_INVALID_ARGUMENT;
+    status = length ? xxwidgets_hexview_set_source_selection(C(v, HEX), offset, length) : xxwidgets_hexview_seek_device(C(v, HEX), offset);
+    return status == XXWIDGETS_OK ? location(v) : status;
+}
 xxwidgets_status xxwidgets_hexview_browser_refresh(xxwidgets_hexview_browser *v)
 {
     uint64_t base;

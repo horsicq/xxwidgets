@@ -23,6 +23,7 @@
 #include "xxfclib/scan/xx_scan_color.h"
 #include "xxwidgets/xxwidgets_scan_panel.h"
 #include "xxwidgets/xxwidgets_combobox.h"
+#include "xxwidgets_layout.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -30,12 +31,27 @@
 #include <string.h>
 #include <wchar.h>
 
+#define SCAN_PANEL_OPTIONS (XXWIDGETS_SCAN_PANEL_ENGINE_ROW | XXWIDGETS_SCAN_PANEL_HIDE_FILE_TYPE | \
+    XXWIDGETS_SCAN_PANEL_FIXED_CAPTIONS | XXWIDGETS_SCAN_PANEL_HIDE_TAG_FILTERS)
+
 struct xxwidgets_scan_panel {
     xxwidgets_widget *owner;
     xxwidgets_widget *controls[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT];
     char *report;
     size_t count;
+    unsigned int options;
+    int visible;
+    /* Engine-row look (ENGINE_ROW), created hidden with the rest and NULL on
+     * a backend without the kind: GROUP frames around the captioned boxes and
+     * VALUE twins of the four file-info LABELs and of the elapsed time. */
+    xxwidgets_widget *engine_frame, *info_frames[4], *info_values[4], *elapsed_value;
 };
+
+static const xxwidgets_scan_panel_control_id info_controls[4][2] = {
+    {XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXWIDGETS_SCAN_PANEL_ENDIANNESS},
+    {XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXWIDGETS_SCAN_PANEL_MODE},
+    {XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXWIDGETS_SCAN_PANEL_ARCHITECTURE},
+    {XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_TYPE}};
 
 static int panel_rect(xxwidgets_rect bounds)
 {
@@ -87,15 +103,32 @@ static void control_rects(xxwidgets_rect bounds, xxwidgets_rect *rects)
     /* Hidden: the combo boxes carry their own names, as in DIE. */
     rects[XXWIDGETS_SCAN_PANEL_FLAGS_LABEL] = rects[XXWIDGETS_SCAN_PANEL_DATABASES_LABEL] =
         rects[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL] = rects[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL] = (xxwidgets_rect){x, row_a, 1, 1};
+    /* The engine row has no cell layout: set_bounds places it. */
+    rects[XXWIDGETS_SCAN_PANEL_ENGINE] = rects[XXWIDGETS_SCAN_PANEL_ENGINE_LABEL] = (xxwidgets_rect){x, row_a, 1, 1};
 }
 
 static const xxwidgets_scan_panel_control_id hidden_labels[4] = {
     XXWIDGETS_SCAN_PANEL_FLAGS_LABEL, XXWIDGETS_SCAN_PANEL_DATABASES_LABEL,
     XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL};
 
+/* With ENGINE_ROW the VALUE twins stand for the file-info LABELs and the
+ * elapsed time. */
+static xxwidgets_widget *shown_value(const xxwidgets_scan_panel *panel, xxwidgets_scan_panel_control_id control)
+{
+    size_t i;
+    if (!(panel->options & XXWIDGETS_SCAN_PANEL_ENGINE_ROW)) return NULL;
+    if (control == XXWIDGETS_SCAN_PANEL_ELAPSED) return panel->elapsed_value;
+    for (i = 0; i < 4; ++i)
+        if (info_controls[i][1] == control) return panel->info_values[i];
+    return NULL;
+}
+
 xxwidgets_widget *xxwidgets_scan_panel_control(const xxwidgets_scan_panel *panel, xxwidgets_scan_panel_control_id control)
 {
-    return panel && control >= 0 && control < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT ? panel->controls[control] : NULL;
+    xxwidgets_widget *value;
+    if (!panel || control < 0 || control >= XXWIDGETS_SCAN_PANEL_CONTROL_COUNT) return NULL;
+    value = shown_value(panel, control);
+    return value ? value : panel->controls[control];
 }
 
 static xxwidgets_status fill_choices(xxwidgets_widget *widget, const char *const *names, size_t count)
@@ -383,21 +416,31 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
         XXWIDGETS_LABEL,         XXWIDGETS_LABEL,         XXWIDGETS_COMBOBOX,      XXWIDGETS_LABEL,  XXWIDGETS_CHECKCOMBOBOX,
         XXWIDGETS_CHECKCOMBOBOX, XXWIDGETS_LABEL,         XXWIDGETS_LABEL,
         XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL,
-        XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL};
+        XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL,
+        XXWIDGETS_COMBOBOX, XXWIDGETS_LABEL};
     static const char *const names[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
         XXW_N_("No flags"), XXW_N_("Main database only"), XXW_N_("Scan"), ">", XXW_N_("Scan results"), XXW_N_("Flags"), XXW_N_("Databases"), XXW_N_("Automatic"), XXW_N_("Scan"),
         XXW_N_("All tags"), XXW_N_("No excluded tags"), XXW_N_("Include tags"), XXW_N_("Exclude tags"),
         XXW_N_("Signatures"), XXW_N_("Directory"), XXW_N_("Log"), "",
-        XXW_N_("Endianness"), "", XXW_N_("Mode"), "", XXW_N_("Architecture"), "", XXW_N_("Type"), ""};
-    /* Also the focus order: what DIE puts on top, the results, the buttons. */
-    static const xxwidgets_scan_panel_control_id creation_order[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT] = {
+        XXW_N_("Endianness"), "", XXW_N_("Mode"), "", XXW_N_("Architecture"), "", XXW_N_("Type"), "",
+        XXW_N_("Automatic"), XXW_N_("Scan")};
+    /* Also the focus order: what DIE puts on top, the results, the buttons.
+     * Values >= CONTROL_COUNT are the engine-row extras (extra_widget). */
+    enum { ENGINE_FRAME = XXWIDGETS_SCAN_PANEL_CONTROL_COUNT, INFO_FRAME, INFO_VALUE = INFO_FRAME + 4, ELAPSED_VALUE = INFO_VALUE + 4, CREATED };
+    static const int creation_order[CREATED] = {
         XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_FILE_TYPE,
-        XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXWIDGETS_SCAN_PANEL_ENDIANNESS, XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXWIDGETS_SCAN_PANEL_MODE,
-        XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXWIDGETS_SCAN_PANEL_ARCHITECTURE, XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_TYPE,
+        XXWIDGETS_SCAN_PANEL_ENGINE_LABEL, ENGINE_FRAME, XXWIDGETS_SCAN_PANEL_ENGINE,
+        XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXWIDGETS_SCAN_PANEL_ENDIANNESS, INFO_FRAME + 0, INFO_VALUE + 0,
+        XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXWIDGETS_SCAN_PANEL_MODE, INFO_FRAME + 1, INFO_VALUE + 1,
+        XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXWIDGETS_SCAN_PANEL_ARCHITECTURE, INFO_FRAME + 2, INFO_VALUE + 2,
+        XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_TYPE, INFO_FRAME + 3, INFO_VALUE + 3,
         XXWIDGETS_SCAN_PANEL_RESULTS, XXWIDGETS_SCAN_PANEL_SIGNATURES,
         XXWIDGETS_SCAN_PANEL_FLAGS_LABEL, XXWIDGETS_SCAN_PANEL_FLAGS, XXWIDGETS_SCAN_PANEL_DATABASES_LABEL, XXWIDGETS_SCAN_PANEL_DATABASES,
         XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS_LABEL, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
-        XXWIDGETS_SCAN_PANEL_SCAN, XXWIDGETS_SCAN_PANEL_DIRECTORY, XXWIDGETS_SCAN_PANEL_LOG, XXWIDGETS_SCAN_PANEL_REPORT, XXWIDGETS_SCAN_PANEL_ELAPSED};
+        XXWIDGETS_SCAN_PANEL_SCAN, XXWIDGETS_SCAN_PANEL_DIRECTORY, XXWIDGETS_SCAN_PANEL_LOG, XXWIDGETS_SCAN_PANEL_REPORT,
+        XXWIDGETS_SCAN_PANEL_ELAPSED, ELAPSED_VALUE};
+    static const char *const engine_names[2] = {XXW_N_("Automatic"), XXW_N_("Detect It Easy (DiE)")};
+    static const uint64_t engine_values[2] = {0, 1};
     static const char *const flag_names[6] = {XXW_N_("Deep scan"), XXW_N_("Heuristic scan"), XXW_N_("Verbose results"), XXW_N_("Aggressive scan"), XXW_N_("Hide unknown results"), XXW_N_("Format text report")};
     static const char *const database_names[1] = {XXW_N_("Custom database")};
     static const uint64_t database_values[1] = {XXWIDGETS_SCAN_DATABASE_CUSTOM};
@@ -412,15 +455,38 @@ xxwidgets_status xxwidgets_scan_panel_create(xxwidgets_widget *owner, xxwidgets_
     panel = (xxwidgets_scan_panel *)calloc(1, sizeof(*panel));
     if (!panel) return XXWIDGETS_OUT_OF_MEMORY;
     panel->owner = owner;
+    panel->visible = 1;
     control_rects(bounds, rects);
-    for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT; ++i) {
-        xxwidgets_scan_panel_control_id control = creation_order[i];
-        status = xxwidgets_widget_create(owner->app, owner, kinds[control], XXW_TR(owner->app, names[control]), rects[control], &panel->controls[control]);
+    for (i = 0; i < CREATED; ++i) {
+        int control = creation_order[i];
+        xxwidgets_kind kind;
+        xxwidgets_widget **slot;
+        if (control < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT) {
+            status = xxwidgets_widget_create(owner->app, owner, kinds[control], XXW_TR(owner->app, names[control]), rects[control], &panel->controls[control]);
+            if (status != XXWIDGETS_OK) goto failed;
+            continue;
+        }
+        if (control == ENGINE_FRAME) { kind = XXWIDGETS_GROUP; slot = &panel->engine_frame; }
+        else if (control < INFO_VALUE) { kind = XXWIDGETS_GROUP; slot = &panel->info_frames[control - INFO_FRAME]; }
+        else if (control < ELAPSED_VALUE) { kind = XXWIDGETS_VALUE; slot = &panel->info_values[control - INFO_VALUE]; }
+        else { kind = XXWIDGETS_VALUE; slot = &panel->elapsed_value; }
+        if (!xxwidgets_app_supports_kind(owner->app, kind)) continue;
+        /* Hidden at once, in the hidden labels' cell: options 0 never show it. */
+        status = xxwidgets_widget_create(owner->app, owner, kind, "", rects[XXWIDGETS_SCAN_PANEL_FLAGS_LABEL], slot);
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(*slot, 0);
         if (status != XXWIDGETS_OK) goto failed;
     }
     {
         static const char *const automatic[] = {XXW_N_("Automatic")};
         status = xxwidgets_translated_choices(panel->controls[XXWIDGETS_SCAN_PANEL_FILE_TYPE], automatic, NULL, 1);
+        if (status != XXWIDGETS_OK) goto failed;
+    }
+    status = xxwidgets_translated_choices(panel->controls[XXWIDGETS_SCAN_PANEL_ENGINE], engine_names, engine_values, 2);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(panel->controls[XXWIDGETS_SCAN_PANEL_ENGINE], 0);
+    if (status != XXWIDGETS_OK) goto failed;
+    for (i = 0; i < 2; ++i) {
+        static const xxwidgets_scan_panel_control_id engine_controls[2] = {XXWIDGETS_SCAN_PANEL_ENGINE, XXWIDGETS_SCAN_PANEL_ENGINE_LABEL};
+        status = xxwidgets_widget_set_visible(panel->controls[engine_controls[i]], 0);
         if (status != XXWIDGETS_OK) goto failed;
     }
     status = fill_choices(panel->controls[XXWIDGETS_SCAN_PANEL_FLAGS], flag_names, 6);
@@ -459,6 +525,21 @@ xxwidgets_status xxwidgets_scan_panel_destroy(xxwidgets_scan_panel *panel)
         if (status != XXWIDGETS_OK) return status;
         panel->controls[i] = NULL;
     }
+    {
+        xxwidgets_widget **extras[10];
+        extras[0] = &panel->engine_frame;
+        extras[9] = &panel->elapsed_value;
+        for (i = 0; i < 4; ++i) {
+            extras[1 + i] = &panel->info_frames[i];
+            extras[5 + i] = &panel->info_values[i];
+        }
+        for (i = 0; i < 10; ++i) {
+            if (!*extras[i]) continue;
+            status = xxwidgets_widget_destroy(*extras[i]);
+            if (status != XXWIDGETS_OK) return status;
+            *extras[i] = NULL;
+        }
+    }
     free(panel->report);
     free(panel);
     return XXWIDGETS_OK;
@@ -484,18 +565,66 @@ xxwidgets_status xxwidgets_scan_panel_set_rect(xxwidgets_scan_panel *panel, xxwi
     return XXWIDGETS_OK;
 }
 
+/* Whether control i is shown for options while the panel is visible. */
+static int control_shown(unsigned int options, size_t i, int has_value)
+{
+    size_t j;
+    for (j = 0; j < sizeof(hidden_labels) / sizeof(hidden_labels[0]); ++j)
+        if (hidden_labels[j] == (xxwidgets_scan_panel_control_id)i) return 0;
+    switch (i) {
+        case XXWIDGETS_SCAN_PANEL_FILE_TYPE:
+        case XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL: return !(options & XXWIDGETS_SCAN_PANEL_HIDE_FILE_TYPE);
+        case XXWIDGETS_SCAN_PANEL_ENGINE:
+        case XXWIDGETS_SCAN_PANEL_ENGINE_LABEL: return (options & XXWIDGETS_SCAN_PANEL_ENGINE_ROW) != 0;
+        case XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS:
+        case XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS: return !(options & XXWIDGETS_SCAN_PANEL_HIDE_TAG_FILTERS);
+        case XXWIDGETS_SCAN_PANEL_ENDIANNESS:
+        case XXWIDGETS_SCAN_PANEL_MODE:
+        case XXWIDGETS_SCAN_PANEL_ARCHITECTURE:
+        case XXWIDGETS_SCAN_PANEL_TYPE:
+        case XXWIDGETS_SCAN_PANEL_ELAPSED: return !((options & XXWIDGETS_SCAN_PANEL_ENGINE_ROW) && has_value);
+        default: return 1;
+    }
+}
+
+/* Shows what visible and options call for; every control is set, so a
+ * failure leaves the others right and the next call repairs it. */
+static xxwidgets_status apply_visibility(xxwidgets_scan_panel *panel, int visible, unsigned int options)
+{
+    xxwidgets_status result = XXWIDGETS_OK, status;
+    int engine_row = (options & XXWIDGETS_SCAN_PANEL_ENGINE_ROW) != 0;
+    size_t i;
+    for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT; ++i) {
+        xxwidgets_widget *value = NULL;
+        size_t k;
+        if (i == XXWIDGETS_SCAN_PANEL_ELAPSED) value = panel->elapsed_value;
+        for (k = 0; k < 4; ++k)
+            if (info_controls[k][1] == (xxwidgets_scan_panel_control_id)i) value = panel->info_values[k];
+        status = xxwidgets_widget_set_visible(panel->controls[i], visible && control_shown(options, i, value != NULL));
+        if (status != XXWIDGETS_OK && result == XXWIDGETS_OK) result = status;
+        if (value) {
+            status = xxwidgets_widget_set_visible(value, visible && engine_row);
+            if (status != XXWIDGETS_OK && result == XXWIDGETS_OK) result = status;
+        }
+    }
+    {
+        xxwidgets_widget *frames[5] = {panel->engine_frame, panel->info_frames[0], panel->info_frames[1], panel->info_frames[2], panel->info_frames[3]};
+        for (i = 0; i < 5; ++i) {
+            if (!frames[i]) continue;
+            status = xxwidgets_widget_set_visible(frames[i], visible && engine_row);
+            if (status != XXWIDGETS_OK && result == XXWIDGETS_OK) result = status;
+        }
+    }
+    return result;
+}
+
 xxwidgets_status xxwidgets_scan_panel_set_visible(xxwidgets_scan_panel *panel, int visible)
 {
-    size_t i, j;
+    xxwidgets_status status;
     if (!panel) return XXWIDGETS_INVALID_ARGUMENT;
-    for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT; ++i) {
-        int hidden = 0;
-        xxwidgets_status status;
-        for (j = 0; j < sizeof(hidden_labels) / sizeof(hidden_labels[0]); ++j) hidden |= hidden_labels[j] == (xxwidgets_scan_panel_control_id)i;
-        status = xxwidgets_widget_set_visible(panel->controls[i], visible && !hidden);
-        if (status != XXWIDGETS_OK) return status;
-    }
-    return XXWIDGETS_OK;
+    status = apply_visibility(panel, visible, panel->options);
+    if (status == XXWIDGETS_OK) panel->visible = visible != 0;
+    return status;
 }
 
 static char *join_text(const char *const *parts, size_t count)
@@ -612,6 +741,7 @@ xxwidgets_status xxwidgets_scan_panel_set_file_info(xxwidgets_scan_panel *panel,
     for (i = 0; i < 4; ++i) if (texts[i] && !xxwidgets_valid_utf8(texts[i])) return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; i < 4; ++i) {
         xxwidgets_status status = xxwidgets_widget_set_text(panel->controls[fields[i]], texts[i] ? texts[i] : "");
+        if (status == XXWIDGETS_OK && panel->info_values[i]) status = xxwidgets_widget_set_text(panel->info_values[i], texts[i] ? texts[i] : "");
         if (status != XXWIDGETS_OK) return status;
     }
     return XXWIDGETS_OK;
@@ -623,6 +753,10 @@ xxwidgets_status xxwidgets_scan_panel_set_elapsed(xxwidgets_scan_panel *panel, l
     if (!panel) return XXWIDGETS_INVALID_ARGUMENT;
     if (msec < 0) text[0] = 0;
     else snprintf(text, sizeof(text), "%lld %s", msec, XXW_TR(panel->owner->app, "msec"));
+    if (panel->elapsed_value) {
+        xxwidgets_status status = xxwidgets_widget_set_text(panel->elapsed_value, text);
+        if (status != XXWIDGETS_OK) return status;
+    }
     return xxwidgets_widget_set_text(panel->controls[XXWIDGETS_SCAN_PANEL_ELAPSED], text);
 }
 
@@ -674,4 +808,289 @@ xxwidgets_status xxwidgets_scan_panel_get_report(const xxwidgets_scan_panel *pan
 xxwidgets_status xxwidgets_scan_panel_show_report(xxwidgets_scan_panel *panel)
 {
     return panel ? xxwidgets_text_dialog(panel->owner, XXW_TR((panel->owner)->app, "Scan report"), panel->report ? panel->report : "") : XXWIDGETS_INVALID_ARGUMENT;
+}
+
+/* Engine row, fixed captions and the VALUE look (DIE_LOOK.md 3.3 (8)). */
+static xxwidgets_status apply_look(xxwidgets_scan_panel *panel, unsigned int options)
+{
+    xxwidgets_app *app = panel->owner->app;
+    int engine_row = (options & XXWIDGETS_SCAN_PANEL_ENGINE_ROW) != 0, fixed = (options & XXWIDGETS_SCAN_PANEL_FIXED_CAPTIONS) != 0;
+    xxwidgets_status status;
+    size_t i;
+    status = xxwidgets_checkcombobox_set_fixed_caption(panel->controls[XXWIDGETS_SCAN_PANEL_FLAGS], fixed ? XXW_TR(app, "Flags") : NULL);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_checkcombobox_set_fixed_caption(panel->controls[XXWIDGETS_SCAN_PANEL_DATABASES], fixed ? XXW_TR(app, XXW_N_("Database")) : NULL);
+    if (status != XXWIDGETS_OK) return status;
+    /* Without VALUE the LABELs stand in, centred like the values they replace. */
+    for (i = 0; i < 4; ++i) {
+        if (panel->info_values[i]) continue;
+        status = xxwidgets_widget_set_alignment(panel->controls[info_controls[i][1]], engine_row ? XXWIDGETS_ALIGN_CENTER : XXWIDGETS_ALIGN_LEFT);
+        if (status != XXWIDGETS_OK) return status;
+    }
+    if (engine_row) {
+        /* Tooltips are best effort: a backend may refuse one (WinAPI before
+         * its tooltip control exists) and the row works without them. */
+        (void)xxwidgets_widget_set_tooltip(panel->controls[XXWIDGETS_SCAN_PANEL_ENGINE], XXW_TR(app, XXW_N_("Scan engine")));
+        for (i = 0; i < 4; ++i)
+            if (panel->info_values[i])
+                (void)xxwidgets_widget_set_tooltip(panel->info_values[i], panel->controls[info_controls[i][0]]->text);
+    }
+    return XXWIDGETS_OK;
+}
+
+xxwidgets_status xxwidgets_scan_panel_set_options(xxwidgets_scan_panel *panel, unsigned int options)
+{
+    unsigned int previous;
+    xxwidgets_status status;
+    if (!panel || (options & ~(unsigned int)SCAN_PANEL_OPTIONS)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (panel->owner->app->dispatch_depth || panel->owner->app->polling || panel->owner->app->syncing) return XXWIDGETS_BUSY;
+    previous = panel->options;
+    status = apply_look(panel, options);
+    if (status == XXWIDGETS_OK) status = apply_visibility(panel, panel->visible, options);
+    if (status != XXWIDGETS_OK) {
+        /* Best effort back to the previous look; the options stay as they were. */
+        (void)apply_look(panel, previous);
+        (void)apply_visibility(panel, panel->visible, previous);
+        return status;
+    }
+    panel->options = options;
+    return XXWIDGETS_OK;
+}
+
+unsigned int xxwidgets_scan_panel_get_options(const xxwidgets_scan_panel *panel)
+{
+    return panel ? panel->options : 0u;
+}
+
+/* Frame mode. Widths follow Qt DIE 3.11 at 96 DPI with Segoe UI 9, where a
+ * text cell is 7 units: they are written in tenths of a cell so they scale
+ * with the font, and never drop below what the text needs (measured). */
+enum {
+    FRAME_FILE_TYPE = 0, FRAME_ENGINE, FRAME_INFO, /* 4 info boxes */
+    FRAME_BOXES = FRAME_INFO + 4
+};
+enum {
+    BAR_SIGNATURES = 0, BAR_FLAGS, BAR_DATABASES, BAR_INCLUDE, BAR_EXCLUDE, BAR_SPACER, BAR_SCAN, BAR_ITEMS
+};
+
+typedef struct scan_frame_plan {
+    xxwidgets_rect controls[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT];
+    int placed[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT];
+    xxwidgets_rect engine_frame, info_frames[4], info_values[4], elapsed_value;
+    int minimum_width, minimum_height;
+} scan_frame_plan;
+
+static int font_units(const xxwidgets_metrics *metrics, int tenths)
+{
+    long long units = ((long long)metrics->cell_width * tenths + 5) / 10;
+    return units < 1 ? 1 : units > 32767 ? 32767 : (int)units;
+}
+
+static int preferred_width(xxwidgets_widget *widget, const char *text)
+{
+    int width = 1, height = 1;
+    if (!widget) return 1;
+    if (text) (void)xxwidgets_widget_measure_text(widget, text, &width, &height);
+    else (void)xxwidgets_widget_get_preferred_size(widget, &width, &height);
+    return width;
+}
+
+static int larger(int a, int b) { return a > b ? a : b; }
+
+static void plan_box(xxwidgets_layout_item *item, int minimum, int preferred, int maximum, int stretch, int hidden)
+{
+    memset(item, 0, sizeof(*item));
+    item->minimum = minimum;
+    item->preferred = larger(minimum, preferred);
+    item->maximum = maximum ? larger(maximum, item->preferred) : 0;
+    item->stretch = stretch;
+    item->hidden = hidden;
+}
+
+static xxwidgets_status scan_frame_layout(xxwidgets_scan_panel *panel, xxwidgets_rect units, scan_frame_plan *plan)
+{
+    static const char *const info_samples[4] = {"LE", "64-bit", "AMD64", "GUI"};
+    /* Control widths: preferred, and the most a growing box takes (0: fixed). */
+    static const int info_tenths[4][2] = {{100, 0}, {114, 0}, {130, 157}, {130, 157}};
+    static const xxwidgets_scan_panel_control_id bar_controls[BAR_ITEMS] = {
+        XXWIDGETS_SCAN_PANEL_SIGNATURES, XXWIDGETS_SCAN_PANEL_FLAGS, XXWIDGETS_SCAN_PANEL_DATABASES,
+        XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS, XXWIDGETS_SCAN_PANEL_CONTROL_COUNT, XXWIDGETS_SCAN_PANEL_SCAN};
+    xxwidgets_metrics m;
+    xxwidgets_layout_item boxes[FRAME_BOXES], bar[BAR_ITEMS];
+    xxwidgets_widget **c = panel->controls;
+    xxwidgets_app *app = panel->owner->app;
+    unsigned int options = panel->options;
+    int engine_row = (options & XXWIDGETS_SCAN_PANEL_ENGINE_ROW) != 0;
+    int hide_tags = (options & XXWIDGETS_SCAN_PANEL_HIDE_TAG_FILTERS) != 0;
+    int inset2, box_height, bar_height, pad, tree_minimum, width, height, top_minimum, bar_minimum, row2_minimum;
+    int directory, log, report, elapsed, tree_y, bar_y, row2_y, button_y, i;
+    xxwidgets_status status = xxwidgets_app_get_metrics(app, &m);
+    if (status != XXWIDGETS_OK) return status;
+    memset(plan, 0, sizeof(*plan));
+    inset2 = 2 * m.frame_inset;
+    /* Row E: captioned boxes; each box is its control plus the frame insets
+     * and at least as wide as its caption. */
+    plan_box(&boxes[FRAME_FILE_TYPE],
+             larger(preferred_width(c[XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL], NULL), preferred_width(c[XXWIDGETS_SCAN_PANEL_FILE_TYPE], NULL)) + inset2,
+             font_units(&m, 157) + inset2, 0, 0, (options & XXWIDGETS_SCAN_PANEL_HIDE_FILE_TYPE) != 0);
+    plan_box(&boxes[FRAME_ENGINE],
+             larger(preferred_width(c[XXWIDGETS_SCAN_PANEL_ENGINE_LABEL], NULL), preferred_width(c[XXWIDGETS_SCAN_PANEL_ENGINE], NULL)) + inset2,
+             font_units(&m, 286) + inset2, 0, 1, !engine_row);
+    for (i = 0; i < 4; ++i) {
+        xxwidgets_widget *value = engine_row && panel->info_values[i] ? panel->info_values[i] : c[info_controls[i][1]];
+        int minimum = larger(preferred_width(c[info_controls[i][0]], NULL), preferred_width(value, info_samples[i])) + inset2;
+        plan_box(&boxes[FRAME_INFO + i], minimum, font_units(&m, info_tenths[i][0]) + inset2,
+                 info_tenths[i][1] ? font_units(&m, info_tenths[i][1]) + inset2 : 0, info_tenths[i][1] ? 1 : 0, 0);
+    }
+    box_height = xxwidgets_layout_caption_box_height(&m, m.control_height);
+    /* Row G: Signatures, Flags, Database, the tag filters, then the tall Scan
+     * button at the right edge; below them Directory, Log, and right-aligned
+     * the report button and the elapsed time, pad units taller than a button
+     * (Qt: 60 = 23 + 6 + 31). */
+    pad = m.frame_inset + m.panel_inset;
+    bar_height = 2 * m.control_height + m.spacing + pad;
+    plan_box(&bar[BAR_SIGNATURES], preferred_width(c[XXWIDGETS_SCAN_PANEL_SIGNATURES], NULL), font_units(&m, 114), 0, 0, 0);
+    plan_box(&bar[BAR_FLAGS], preferred_width(c[XXWIDGETS_SCAN_PANEL_FLAGS], XXW_TR(app, "Flags")), font_units(&m, 214), 0, 0, 0);
+    plan_box(&bar[BAR_DATABASES], preferred_width(c[XXWIDGETS_SCAN_PANEL_DATABASES], XXW_TR(app, XXW_N_("Database"))), font_units(&m, 214), 0, 0, 0);
+    plan_box(&bar[BAR_INCLUDE], preferred_width(c[XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS], XXW_TR(app, "Include tags")), font_units(&m, 214), 0, 0, hide_tags);
+    plan_box(&bar[BAR_EXCLUDE], preferred_width(c[XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS], XXW_TR(app, "Exclude tags")), font_units(&m, 214), 0, 0, hide_tags);
+    plan_box(&bar[BAR_SPACER], 0, 0, 0, 1, 0);
+    bar[BAR_SPACER].spacer = 1;
+    plan_box(&bar[BAR_SCAN], preferred_width(c[XXWIDGETS_SCAN_PANEL_SCAN], NULL), font_units(&m, 143), 0, 0, 0);
+    directory = larger(preferred_width(c[XXWIDGETS_SCAN_PANEL_DIRECTORY], NULL), font_units(&m, 114));
+    log = larger(preferred_width(c[XXWIDGETS_SCAN_PANEL_LOG], NULL), font_units(&m, 114));
+    /* Report is square (H) in units; cells keep its "[>]". */
+    report = m.unit_is_cell ? preferred_width(c[XXWIDGETS_SCAN_PANEL_REPORT], NULL) : m.control_height;
+    elapsed = larger(preferred_width(engine_row && panel->elapsed_value ? panel->elapsed_value : c[XXWIDGETS_SCAN_PANEL_ELAPSED], "00000 msec"),
+                     font_units(&m, 129));
+    /* Minimum size: the widest row, and the rows stacked with the tree at
+     * three control heights. */
+    top_minimum = xxwidgets_layout_line_minimum(boxes, FRAME_BOXES, m.spacing);
+    bar_minimum = xxwidgets_layout_line_minimum(bar, BAR_ITEMS, m.spacing);
+    row2_minimum = directory + log + report + elapsed + bar[BAR_SCAN].minimum + 4 * m.spacing;
+    tree_minimum = 3 * m.control_height;
+    plan->minimum_width = larger(top_minimum, larger(bar_minimum, row2_minimum));
+    plan->minimum_height = box_height + tree_minimum + bar_height + 2 * m.spacing;
+    width = larger(units.width, plan->minimum_width);
+    height = larger(units.height, plan->minimum_height);
+    /* Row E. */
+    (void)xxwidgets_layout_line(boxes, FRAME_BOXES, units.x, width, m.spacing);
+    for (i = 0; i < FRAME_BOXES; ++i) {
+        xxwidgets_layout_caption_box box;
+        xxwidgets_rect area;
+        if (boxes[i].hidden) continue;
+        area = xxwidgets_layout_rect(boxes[i].position, units.y, boxes[i].size > 0 ? boxes[i].size : 1, box_height);
+        xxwidgets_layout_caption_box_split(&m, area, m.control_height, &box);
+        if (i == FRAME_FILE_TYPE) {
+            plan->controls[XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL] = box.caption;
+            plan->controls[XXWIDGETS_SCAN_PANEL_FILE_TYPE] = box.control;
+            plan->placed[XXWIDGETS_SCAN_PANEL_FILE_TYPE_LABEL] = plan->placed[XXWIDGETS_SCAN_PANEL_FILE_TYPE] = 1;
+        } else if (i == FRAME_ENGINE) {
+            plan->controls[XXWIDGETS_SCAN_PANEL_ENGINE_LABEL] = box.caption;
+            plan->controls[XXWIDGETS_SCAN_PANEL_ENGINE] = box.control;
+            plan->placed[XXWIDGETS_SCAN_PANEL_ENGINE_LABEL] = plan->placed[XXWIDGETS_SCAN_PANEL_ENGINE] = 1;
+            plan->engine_frame = box.frame;
+        } else {
+            int k = i - FRAME_INFO;
+            plan->controls[info_controls[k][0]] = box.caption;
+            plan->controls[info_controls[k][1]] = box.control;
+            plan->placed[info_controls[k][0]] = plan->placed[info_controls[k][1]] = 1;
+            plan->info_frames[k] = box.frame;
+            plan->info_values[k] = box.control;
+        }
+    }
+    /* Row F takes every extra unit of height; row G sits at the bottom. */
+    tree_y = units.y + box_height + m.spacing;
+    bar_y = units.y + height - bar_height;
+    plan->controls[XXWIDGETS_SCAN_PANEL_RESULTS] = xxwidgets_layout_rect(units.x, tree_y, width, bar_y - m.spacing - tree_y);
+    plan->placed[XXWIDGETS_SCAN_PANEL_RESULTS] = 1;
+    (void)xxwidgets_layout_line(bar, BAR_ITEMS, units.x, width, m.spacing);
+    for (i = 0; i < BAR_ITEMS; ++i) {
+        if (bar[i].hidden || bar[i].spacer) continue;
+        plan->controls[bar_controls[i]] = xxwidgets_layout_rect(bar[i].position, bar_y, bar[i].size > 0 ? bar[i].size : 1,
+                                                                 i == BAR_SCAN ? bar_height : m.control_height);
+        plan->placed[bar_controls[i]] = 1;
+    }
+    /* The elapsed time ends S left of Scan and reaches the bottom; the
+     * buttons of the second row are centred on it. */
+    row2_y = bar_y + m.control_height + m.spacing;
+    button_y = row2_y + pad / 2;
+    plan->elapsed_value = xxwidgets_layout_rect(bar[BAR_SCAN].position - m.spacing - elapsed, row2_y, elapsed, m.control_height + pad);
+    plan->controls[XXWIDGETS_SCAN_PANEL_ELAPSED] = plan->elapsed_value;
+    plan->controls[XXWIDGETS_SCAN_PANEL_REPORT] = xxwidgets_layout_rect(plan->elapsed_value.x - m.spacing - report, button_y, report, m.control_height);
+    plan->controls[XXWIDGETS_SCAN_PANEL_DIRECTORY] = xxwidgets_layout_rect(units.x, button_y, directory, m.control_height);
+    plan->controls[XXWIDGETS_SCAN_PANEL_LOG] = xxwidgets_layout_rect(units.x + directory + m.spacing, button_y, log, m.control_height);
+    plan->placed[XXWIDGETS_SCAN_PANEL_ELAPSED] = plan->placed[XXWIDGETS_SCAN_PANEL_REPORT] =
+        plan->placed[XXWIDGETS_SCAN_PANEL_DIRECTORY] = plan->placed[XXWIDGETS_SCAN_PANEL_LOG] = 1;
+    return XXWIDGETS_OK;
+}
+
+typedef struct scan_frame_backup {
+    xxwidgets_widget *widget;
+    xxwidgets_rect frame, rect;
+    int has_frame;
+} scan_frame_backup;
+
+static xxwidgets_status place_backed_up(scan_frame_backup *backups, size_t *count, xxwidgets_widget *widget, xxwidgets_rect frame)
+{
+    if (!widget) return XXWIDGETS_OK;
+    backups[*count].widget = widget;
+    backups[*count].frame = widget->frame;
+    backups[*count].rect = widget->rect;
+    backups[*count].has_frame = widget->has_frame;
+    ++*count;
+    return xxwidgets_layout_place(widget, frame);
+}
+
+xxwidgets_status xxwidgets_scan_panel_set_bounds(xxwidgets_scan_panel *panel, xxwidgets_rect units)
+{
+    scan_frame_plan plan;
+    scan_frame_backup backups[XXWIDGETS_SCAN_PANEL_CONTROL_COUNT + 10];
+    size_t count = 0, i;
+    xxwidgets_status status;
+    if (!panel || units.x < 0 || units.y < 0 || units.width < 1 || units.height < 1 || units.x > 32767 - units.width ||
+        units.y > 32767 - units.height)
+        return XXWIDGETS_INVALID_ARGUMENT;
+    if (panel->owner->app->dispatch_depth || panel->owner->app->polling || panel->owner->app->syncing) return XXWIDGETS_BUSY;
+    status = scan_frame_layout(panel, units, &plan);
+    if (status != XXWIDGETS_OK) return status;
+    for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT && status == XXWIDGETS_OK; ++i)
+        if (plan.placed[i]) status = place_backed_up(backups, &count, panel->controls[i], plan.controls[i]);
+    /* The engine-row twins and frames go where the controls they stand for
+     * went, whether or not they show now: a later set_options needs no
+     * second set_bounds for them. */
+    if (status == XXWIDGETS_OK && plan.placed[XXWIDGETS_SCAN_PANEL_ENGINE])
+        status = place_backed_up(backups, &count, panel->engine_frame, plan.engine_frame);
+    for (i = 0; i < 4 && status == XXWIDGETS_OK; ++i) {
+        status = place_backed_up(backups, &count, panel->info_frames[i], plan.info_frames[i]);
+        if (status == XXWIDGETS_OK) status = place_backed_up(backups, &count, panel->info_values[i], plan.info_values[i]);
+    }
+    if (status == XXWIDGETS_OK) status = place_backed_up(backups, &count, panel->elapsed_value, plan.elapsed_value);
+    if (status != XXWIDGETS_OK) {
+        /* The failing widget restored itself; restore the earlier ones
+         * logically and re-apply them best effort, as set_rect does. */
+        for (i = 0; i + 1 < count; ++i) {
+            xxwidgets_widget *widget = backups[i].widget;
+            widget->frame = backups[i].frame;
+            widget->rect = backups[i].rect;
+            widget->has_frame = backups[i].has_frame;
+            ++widget->app->syncing;
+            if (widget->has_frame && widget->app->ops->place) (void)widget->app->ops->place(widget);
+            else (void)widget->app->ops->sync(widget);
+            --widget->app->syncing;
+        }
+    }
+    return status;
+}
+
+xxwidgets_status xxwidgets_scan_panel_get_minimum_size(xxwidgets_scan_panel *panel, int *width, int *height)
+{
+    scan_frame_plan plan;
+    xxwidgets_status status;
+    if (!panel || !width || !height) return XXWIDGETS_INVALID_ARGUMENT;
+    status = scan_frame_layout(panel, xxwidgets_layout_rect(0, 0, 1, 1), &plan);
+    if (status != XXWIDGETS_OK) return status;
+    *width = plan.minimum_width;
+    *height = plan.minimum_height;
+    return XXWIDGETS_OK;
 }

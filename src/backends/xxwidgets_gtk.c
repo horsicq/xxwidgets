@@ -87,6 +87,10 @@ typedef struct gtk_app_state {
     PangoFontDescription *fonts[XXWIDGETS_FONT_ROLE_COUNT];
     /* One stylesheet per role, attached to every control of that role. */
     GtkCssProvider *font_css[XXWIDGETS_FONT_ROLE_COUNT];
+    /* Measured placement (gtk_metrics): the natural height of an untrimmed
+     * one-row control and of a caption label in the Controls font; 0 until
+     * measured, cleared when the fonts change. */
+    int control_height, label_height;
 } gtk_app_state;
 
 typedef struct gtk_widget_state {
@@ -134,6 +138,8 @@ typedef struct gtk_widget_state {
     GtkWidget *die_menu; /* The right-click menu, made on first use (gtk_die_menu). */
     int die_adjusting, die_dragging, die_cell_width, die_cell_height, die_gutter;
     size_t die_rows, die_columns;
+    int bold_applied;          /* LABEL / VALUE: the bold attribute last applied. */
+    int client_width, client_height; /* WINDOW with a frame: content size last reported by RESIZE. */
 } gtk_widget_state;
 
 /* Keep the full-file map outside the scrolling content. The adjacent native
@@ -338,6 +344,8 @@ static xxwidgets_status gtk_apply_fonts(xxwidgets_app *app, const xxwidgets_font
             rows_font_attributes(widget);
             if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) gtk_widget_queue_resize(GTK_WIDGET(widget->native));
         }
+    /* The frame metrics are measured again in the new font (gtk_metrics). */
+    state->control_height = state->label_height = 0;
     /* The cells follow the Controls font; existing windows take the new ones. */
     cells_follow_font(app);
     return XXWIDGETS_OK;
@@ -558,14 +566,21 @@ static void window_update_minimum(xxwidgets_widget *window)
 {
     gtk_app_state *app = window->app->platform;
     gtk_widget_state *state = window->platform;
-    int64_t columns = 0, rows = 0, width, height;
+    int64_t columns = 0, rows = 0, width, height, frame_width = 0, frame_height = 0;
+    int framed = window->min_frame_width > 0 || window->min_frame_height > 0;
     if (!state || !state->content) return;
     if (!gtk_window_get_resizable(GTK_WINDOW(window->native))) {
         columns = window->rect.width;
         rows = window->rect.height;
-    } else if (window->has_minimum) {
-        columns = window->min_columns;
-        rows = window->min_rows;
+    } else if (window->has_minimum || framed) {
+        /* xxwidgets_window_set_minimum_size in cells, set_minimum_frame in
+         * pixels: the larger of the two. */
+        if (window->has_minimum) {
+            columns = window->min_columns;
+            rows = window->min_rows;
+        }
+        frame_width = window->min_frame_width;
+        frame_height = window->min_frame_height;
     } else if (state->about_resizable) {
         /* Its buttons follow the bottom and right edges: the children's
          * bounding box would grow with every resize. */
@@ -575,12 +590,20 @@ static void window_update_minimum(xxwidgets_widget *window)
         xxwidgets_widget *child;
         for (child = window->app->widgets; child; child = child->next)
             if (child->parent == window && child->visible) {
+                if (child->has_frame) {
+                    /* Placed in pixels (gtk_place). */
+                    if (child->frame.x + child->frame.width > frame_width) frame_width = child->frame.x + child->frame.width;
+                    if (child->frame.y + child->frame.height > frame_height) frame_height = child->frame.y + child->frame.height;
+                    continue;
+                }
                 if (child->rect.x + child->rect.width > columns) columns = child->rect.x + child->rect.width;
                 if (child->rect.y + child->rect.height > rows) rows = child->rect.y + child->rect.height;
             }
     }
     width = columns * app->cell_width;
     height = rows * app->cell_height;
+    if (frame_width > width) width = frame_width;
+    if (frame_height > height) height = frame_height;
     {
         /* A minimum taller or wider than the work area would push the frame
          * off a small screen; the layout's last rows are cut off instead. */
@@ -632,7 +655,27 @@ static void window_update_minimum(xxwidgets_widget *window)
 static GtkLabel *control_label(GtkWidget *native)
 {
     GtkWidget *label = GTK_IS_LABEL(native) ? native : GTK_IS_BIN(native) ? gtk_bin_get_child(GTK_BIN(native)) : NULL;
+    /* A button with an image (gtk_button_set_image) holds a box with the
+     * image and the label; an icon-only one has no label at all. */
+    while (label && GTK_IS_BIN(label) && !GTK_IS_LABEL(label)) label = gtk_bin_get_child(GTK_BIN(label));
+    if (label && GTK_IS_BOX(label)) {
+        GList *children = gtk_container_get_children(GTK_CONTAINER(label)), *child;
+        label = NULL;
+        for (child = children; child; child = child->next)
+            if (GTK_IS_LABEL(child->data)) {
+                label = child->data;
+                break;
+            }
+        g_list_free(children);
+    }
     return label && GTK_IS_LABEL(label) ? GTK_LABEL(label) : NULL;
+}
+
+/* A BUTTON showing only its icon (XXWIDGETS_ICON_ONLY): its text is then the
+ * accessible name and the tooltip. */
+static int icon_only(const xxwidgets_widget *widget)
+{
+    return widget && widget->kind == XXWIDGETS_BUTTON && widget->icon_rgba && (widget->icon_flags & XXWIDGETS_ICON_ONLY);
 }
 
 /* A label that its cells cut short shows the whole text as its tooltip, and
@@ -641,11 +684,23 @@ static GtkLabel *control_label(GtkWidget *native)
 static gboolean ellipsis_tooltip(GtkWidget *native, gint x, gint y, gboolean keyboard, GtkTooltip *tooltip, gpointer data)
 {
     GtkLabel *label = control_label(native);
+    xxwidgets_widget *owner = g_object_get_data(G_OBJECT(native), "xxwidgets-widget");
     gchar *extra;
     (void)x;
     (void)y;
     (void)keyboard;
     (void)data;
+    if (icon_only(owner) && owner->text[0]) {
+        /* The hidden text first, then the program's tooltip unless it repeats it. */
+        extra = gtk_widget_get_tooltip_text(native);
+        if (extra && strcmp(extra, owner->text)) {
+            gchar *both = g_strconcat(owner->text, "\n", extra, NULL);
+            gtk_tooltip_set_text(tooltip, both);
+            g_free(both);
+        } else gtk_tooltip_set_text(tooltip, owner->text);
+        g_free(extra);
+        return TRUE;
+    }
     if (!label || !pango_layout_is_ellipsized(gtk_label_get_layout(label))) return FALSE;
     extra = gtk_widget_get_tooltip_text(native);
     if (extra) {
@@ -716,6 +771,41 @@ static int measure_control_height(void)
     return height;
 }
 
+/* Measured placement metrics (spec 3.1, the H and L of the size rules): the
+ * natural height of a button, entry and combo box as the theme draws them
+ * outside the cell grid (about 34 px with Adwaita), and of a caption label,
+ * both in the Controls font. Framed controls keep GRID_CSS's dropped floor,
+ * so a frame this tall is always honoured. */
+static void measure_frame_metrics(gtk_app_state *state)
+{
+    GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL), *box = gtk_layout_new(NULL, NULL);
+    GtkWidget *controls[4];
+    int control = 0, label = 0;
+    size_t i;
+    gtk_container_add(GTK_CONTAINER(window), box);
+    controls[0] = gtk_button_new_with_label("Mg");
+    controls[1] = gtk_entry_new();
+    controls[2] = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(controls[2]), "Mg");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(controls[2]), 0);
+    controls[3] = gtk_label_new("Mg");
+    for (i = 0; i < sizeof(controls) / sizeof(controls[0]); ++i) {
+        int minimum = 0, natural = 0;
+        font_attach(controls[i], state->font_css[XXWIDGETS_FONT_CONTROLS], GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        gtk_layout_put(GTK_LAYOUT(box), controls[i], 0, 0);
+        gtk_widget_show(controls[i]);
+        gtk_widget_get_preferred_height(controls[i], &minimum, &natural);
+        if (natural < minimum) natural = minimum;
+        if (i == 3) label = natural;
+        else if (natural > control) control = natural;
+    }
+    gtk_widget_destroy(window);
+    state->control_height = control > 0 ? control : state->cell_height - GRID_ROW_GAP;
+    state->label_height = label > 0 ? label : state->theme_line_height;
+    if (state->control_height < 1) state->control_height = 1;
+    if (state->label_height < 1) state->label_height = 1;
+}
+
 static void apply_geometry(xxwidgets_widget *widget, int x, int y, int width, int height);
 
 /* The copyable text dialog keeps its text between the top row and the button
@@ -733,7 +823,7 @@ static void about_text_layout(xxwidgets_widget *window, int old_columns, int old
     for (child = window->app->widgets; child; child = child->next) {
         xxwidgets_rect rect;
         int x, y, pixel_width, pixel_height;
-        if (child->parent != window || child->kind != XXWIDGETS_BUTTON || !child->platform) continue;
+        if (child->parent != window || child->kind != XXWIDGETS_BUTTON || !child->platform || child->has_frame) continue;
         rect = child->rect;
         rect.y += window->rect.height - old_rows;
         if (2 * rect.x >= old_columns) rect.x += window->rect.width - old_columns;
@@ -887,6 +977,9 @@ static void cells_follow_font(xxwidgets_app *app)
         int x, y, pixel_width, pixel_height;
         if (!widget->platform || !widget->native || (widget->parent && (!widget->parent->platform || !((gtk_widget_state *)widget->parent->platform)->content)))
             continue;
+        /* Placed in pixels (gtk_place): the program lays it out again on the
+         * RESIZE reported below. */
+        if (widget->has_frame) continue;
         if (widget->kind == XXWIDGETS_WINDOW && gtk_widget_get_mapped(GTK_WIDGET(widget->native)) && gtk_window_is_maximized(GTK_WINDOW(widget->native))) {
             /* A maximized window keeps its frame, as on Win32, and no
              * configure event follows: its rect becomes what that frame
@@ -1017,6 +1110,15 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
         widget->rect.height = height;
         state->applied_rect = widget->rect;
         if (state->about_resizable) about_text_layout(widget, old_columns, old_rows);
+        state->client_width = content_width;
+        state->client_height = content_height - state->menu_height;
+        xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
+    } else if (!widget->app->syncing && widget->has_frame && gtk_widget_get_mapped(native) &&
+               (content_width != state->client_width || content_height - state->menu_height != state->client_height)) {
+        /* A window laid out in pixels (gtk_place) follows every pixel of a
+         * resize, also one that keeps the cell count. */
+        state->client_width = content_width;
+        state->client_height = content_height - state->menu_height;
         xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
     }
     return FALSE;
@@ -1810,6 +1912,8 @@ static void treeview_mark_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell,
     xxwidgets_widget *widget = data;
     size_t mark = (size_t)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(column), "xxwidgets-mark")) - 1;
     int node = -1;
+    /* The marks take the row's colours, as its text does (B7). */
+    treeview_cell_color(column, cell, model, iter, data);
     gtk_tree_model_get(model, iter, 1, &node, -1);
     g_object_set(cell, "text", node >= 0 && (xxwidgets_treeview_node_marks(widget, (size_t)node) >> mark & 1u)
         ? xxwidgets_treeview_mark_label(widget, mark) : "", NULL);
@@ -2874,6 +2978,20 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
         case XXWIDGETS_BUTTON:
             native = gtk_button_new_with_label(widget->text);
             g_signal_connect(native, "clicked", G_CALLBACK(button_clicked), widget);
+            /* ellipsis_tooltip shows an icon-only button's text. */
+            g_object_set_data(G_OBJECT(native), "xxwidgets-widget", widget);
+            break;
+        case XXWIDGETS_VALUE:
+            /* Read-only but focusable and selectable, as Qt's read-only line
+             * edits; alignment and bold are applied by sync. */
+            native = gtk_entry_new();
+            gtk_editable_set_editable(GTK_EDITABLE(native), FALSE);
+            gtk_entry_set_alignment(GTK_ENTRY(native), 0.5f);
+            break;
+        case XXWIDGETS_GROUP:
+            /* An untitled frame drawn around sibling controls: no input, no focus. */
+            native = gtk_frame_new(NULL);
+            gtk_widget_set_can_focus(native, FALSE);
             break;
         case XXWIDGETS_DIE_SIGNATURE_EDIT: {
             GtkWidget *vertical, *horizontal;
@@ -3205,6 +3323,7 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
     switch (widget->kind) {
         case XXWIDGETS_BUTTON:
         case XXWIDGETS_EDIT:
+        case XXWIDGETS_VALUE:
         case XXWIDGETS_CHECKBOX:
         case XXWIDGETS_COMBOBOX:
         case XXWIDGETS_CHECKCOMBOBOX: cell_control(native); break;
@@ -3340,7 +3459,10 @@ static gboolean grid_fit(gpointer data)
     for (widget = app->widgets; widget; widget = widget->next) {
         gtk_widget_state *control = widget->platform;
         int natural = 0, cells = widget->rect.width, per_cell;
-        if (!widget->parent || !control || !widget->visible || cells <= 0 || (widget->kind != XXWIDGETS_BUTTON && widget->kind != XXWIDGETS_CHECKBOX)) continue;
+        /* Controls placed in pixels (gtk_place) are sized by their program. */
+        if (!widget->parent || !control || !widget->visible || cells <= 0 || widget->has_frame ||
+            (widget->kind != XXWIDGETS_BUTTON && widget->kind != XXWIDGETS_CHECKBOX))
+            continue;
         gtk_widget_get_preferred_width(control->root, NULL, &natural);
         per_cell = (natural + cells - 1) / cells;
         if (per_cell > needed) needed = per_cell;
@@ -3353,7 +3475,7 @@ static gboolean grid_fit(gpointer data)
         state->cell_width = needed;
         for (widget = app->widgets; widget; widget = widget->next) {
             int x, y, width, height;
-            if (widget->platform && pixel_rect(widget, &x, &y, &width, &height)) apply_geometry(widget, x, y, width, height);
+            if (widget->platform && !widget->has_frame && pixel_rect(widget, &x, &y, &width, &height)) apply_geometry(widget, x, y, width, height);
         }
         for (widget = app->widgets; widget; widget = widget->next)
             if (widget->kind == XXWIDGETS_WINDOW && widget->platform) window_update_minimum(widget);
@@ -3367,11 +3489,20 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
     gtk_widget_state *state = widget->platform;
     gtk_app_state *app_state = widget->app->platform;
     int x, y, width, height;
+    /* A control placed in pixels keeps its frame (gtk_place); its cell rect
+     * is no longer its geometry. A window keeps following set_rect. */
+    int framed = widget->has_frame && widget->kind != XXWIDGETS_WINDOW;
     size_t i;
-    if (!g_utf8_validate(widget->text, -1, NULL) || !pixel_rect(widget, &x, &y, &width, &height)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!g_utf8_validate(widget->text, -1, NULL)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (framed) {
+        x = widget->frame.x;
+        y = widget->frame.y;
+        width = widget->frame.width;
+        height = widget->frame.height;
+    } else if (!pixel_rect(widget, &x, &y, &width, &height)) return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; i < widget->item_count; ++i)
         if (!g_utf8_validate(widget->items[i], -1, NULL)) return XXWIDGETS_INVALID_ARGUMENT;
-    if (!state->has_rect || !rect_equal(state->applied_rect, widget->rect)) apply_geometry(widget, x, y, width, height);
+    if (!framed && (!state->has_rect || !rect_equal(state->applied_rect, widget->rect))) apply_geometry(widget, x, y, width, height);
     switch (widget->kind) {
         case XXWIDGETS_DIE_SIGNATURE_EDIT: gtk_die_sync(widget); break;
         case XXWIDGETS_WINDOW:
@@ -3389,7 +3520,7 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
              * more than one line fills the rows from the top; one line stays
              * centred in them, level with the buttons beside it, which keep
              * their height centred in two rows (as on Cocoa). */
-            gboolean wrap = widget->rect.height > 1;
+            gboolean wrap = !framed && widget->rect.height > 1; /* A framed caption is one line. */
             int lines = wrap ? (widget->rect.height < 1000 ? widget->rect.height : 1000) : -1;
             float yalign = 0.5f;
             if (gtk_label_get_ellipsize(GTK_LABEL(native)) != mode) gtk_label_set_ellipsize(GTK_LABEL(native), mode);
@@ -3407,6 +3538,41 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
                 if (text_width > width || strchr(widget->text, '\n')) yalign = 0.0f;
             }
             if (gtk_label_get_yalign(GTK_LABEL(native)) != yalign) gtk_label_set_yalign(GTK_LABEL(native), yalign);
+            {
+                float xalign = widget->alignment == XXWIDGETS_ALIGN_CENTER ? 0.5f : widget->alignment == XXWIDGETS_ALIGN_RIGHT ? 1.0f : 0.0f;
+                if (gtk_label_get_xalign(GTK_LABEL(native)) != xalign) gtk_label_set_xalign(GTK_LABEL(native), xalign);
+                if (gtk_label_get_justify(GTK_LABEL(native)) != (xalign == 0.5f ? GTK_JUSTIFY_CENTER : xalign == 1.0f ? GTK_JUSTIFY_RIGHT : GTK_JUSTIFY_LEFT))
+                    gtk_label_set_justify(GTK_LABEL(native), xalign == 0.5f ? GTK_JUSTIFY_CENTER : xalign == 1.0f ? GTK_JUSTIFY_RIGHT : GTK_JUSTIFY_LEFT);
+            }
+            if (state->bold_applied != widget->bold) {
+                PangoAttrList *attributes = widget->bold ? pango_attr_list_new() : NULL;
+                if (attributes) pango_attr_list_insert(attributes, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+                gtk_label_set_attributes(GTK_LABEL(native), attributes);
+                if (attributes) pango_attr_list_unref(attributes);
+                state->bold_applied = widget->bold;
+            }
+            break;
+        }
+        case XXWIDGETS_VALUE: {
+            float xalign = widget->alignment == XXWIDGETS_ALIGN_LEFT ? 0.0f : widget->alignment == XXWIDGETS_ALIGN_RIGHT ? 1.0f : 0.5f;
+            if (strcmp(gtk_entry_get_text(GTK_ENTRY(native)), widget->text)) {
+                gtk_entry_set_text(GTK_ENTRY(native), widget->text);
+                /* A long value shows its start, as Qt's line edit. */
+                gtk_editable_set_position(GTK_EDITABLE(native), 0);
+            }
+            if (gtk_entry_get_alignment(GTK_ENTRY(native)) != xalign) gtk_entry_set_alignment(GTK_ENTRY(native), xalign);
+            if (state->bold_applied != widget->bold) {
+                PangoAttrList *attributes = pango_attr_list_new();
+                if (attributes && widget->bold) pango_attr_list_insert(attributes, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+                gtk_entry_set_attributes(GTK_ENTRY(native), attributes);
+                if (attributes) pango_attr_list_unref(attributes);
+                state->bold_applied = widget->bold;
+            }
+            break;
+        }
+        case XXWIDGETS_GROUP: {
+            const char *title = widget->text[0] ? widget->text : NULL;
+            if (g_strcmp0(gtk_frame_get_label(GTK_FRAME(native)), title)) gtk_frame_set_label(GTK_FRAME(native), title);
             break;
         }
         case XXWIDGETS_COMBOBOX:
@@ -3451,7 +3617,11 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
             break;
         }
         case XXWIDGETS_BUTTON:
-            if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), widget->text)) {
+            if (icon_only(widget)) {
+                /* The image alone (gtk_set_icon); the text names it. */
+                if (gtk_button_get_label(GTK_BUTTON(native))) gtk_button_set_label(GTK_BUTTON(native), NULL);
+                atk_object_set_name(gtk_widget_get_accessible(native), widget->text);
+            } else if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), widget->text)) {
                 gtk_button_set_label(GTK_BUTTON(native), widget->text);
                 ellipsize_control_label(native);
             }
@@ -3596,6 +3766,8 @@ static xxwidgets_status gtk_read_text_backend(xxwidgets_widget *widget)
         case XXWIDGETS_WINDOW: text = gtk_window_get_title(GTK_WINDOW(native)); break;
         case XXWIDGETS_LABEL: text = gtk_label_get_text(GTK_LABEL(native)); break;
         case XXWIDGETS_BUTTON:
+            if (icon_only(widget)) return XXWIDGETS_OK; /* The label is hidden; the text stays the name. */
+            /* fall through */
         case XXWIDGETS_CHECKBOX: text = gtk_button_get_label(GTK_BUTTON(native)); break;
         case XXWIDGETS_DIE_SIGNATURE_EDIT: return XXWIDGETS_OK; /* Shared source is authoritative. */
         case XXWIDGETS_EDIT: text = gtk_entry_get_text(GTK_ENTRY(native)); break;
@@ -3982,6 +4154,280 @@ static xxwidgets_status gtk_set_tooltip(xxwidgets_widget *widget, const char *te
     return XXWIDGETS_OK;
 }
 
+/* Measured placement (spec 3.1-3.2, B1): layout units are logical pixels.
+ * M, S and the insets are Qt's; H and L are the theme's (measure_frame_metrics). */
+static xxwidgets_status gtk_metrics(xxwidgets_app *app, xxwidgets_metrics *metrics)
+{
+    gtk_app_state *state = app->platform;
+    if (!state) return XXWIDGETS_INVALID_ARGUMENT;
+    if (state->control_height <= 0 || state->label_height <= 0) measure_frame_metrics(state);
+    metrics->unit_is_cell = 0;
+    metrics->cell_width = state->cell_width;
+    metrics->cell_height = state->cell_height;
+    metrics->control_height = state->control_height;
+    metrics->label_height = state->label_height;
+    metrics->spacing = 6;
+    metrics->margin = 9;
+    metrics->small_icon = 16;
+    metrics->frame_inset = 5;
+    metrics->panel_inset = 3;
+    metrics->caption_gap = 3;
+    return XXWIDGETS_OK;
+}
+
+/* Pixel size of text in native's font, bold when asked. */
+static int text_pixel_width(GtkWidget *native, const char *text, int bold, int *height)
+{
+    PangoLayout *layout = gtk_widget_create_pango_layout(native, text);
+    int width = 0, lines = 0;
+    if (!layout) {
+        if (height) *height = 0;
+        return 0;
+    }
+    if (bold) {
+        PangoAttrList *attributes = pango_attr_list_new();
+        pango_attr_list_insert(attributes, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+        pango_layout_set_attributes(layout, attributes);
+        pango_attr_list_unref(attributes);
+    }
+    pango_layout_get_pixel_size(layout, &width, &lines);
+    g_object_unref(layout);
+    if (height) *height = lines;
+    return width;
+}
+
+/* Natural size of a control as its theme draws it: shown (GTK measures a
+ * hidden widget as 0 x 0) and without the size request placement gave it. */
+static void natural_size(GtkWidget *root, int *width, int *height)
+{
+    int request_width = -1, request_height = -1, shown = gtk_widget_get_visible(root), minimum = 0;
+    gtk_widget_get_size_request(root, &request_width, &request_height);
+    if (request_width != -1 || request_height != -1) gtk_widget_set_size_request(root, -1, -1);
+    if (!shown) gtk_widget_show(root);
+    *width = *height = 0;
+    gtk_widget_get_preferred_width(root, &minimum, width);
+    if (*width < minimum) *width = minimum;
+    gtk_widget_get_preferred_height_for_width(root, *width, &minimum, height);
+    if (*height < minimum) *height = minimum;
+    if (!shown) gtk_widget_hide(root);
+    if (request_width != -1 || request_height != -1) gtk_widget_set_size_request(root, request_width, request_height);
+}
+
+static xxwidgets_status gtk_measure(xxwidgets_widget *widget, const char *text, int *width, int *height)
+{
+    gtk_app_state *app = widget->app->platform;
+    gtk_widget_state *state = widget->platform;
+    GtkWidget *native = widget->native;
+    int natural_width = 0, natural_height = 0, text_height = 0, one_row;
+    if (!app || !state || !state->root || !native) return XXWIDGETS_INVALID_ARGUMENT;
+    if (text && !g_utf8_validate(text, -1, NULL)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (app->control_height <= 0 || app->label_height <= 0) measure_frame_metrics(app);
+    one_row = widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_VALUE ||
+              xxwidgets_combo_kind(widget);
+    switch (widget->kind) {
+        case XXWIDGETS_LABEL:
+            *width = text_pixel_width(native, text ? text : widget->text, widget->bold, &text_height);
+            *height = text_height > app->label_height ? text_height : app->label_height;
+            return XXWIDGETS_OK;
+        case XXWIDGETS_EDIT:
+        case XXWIDGETS_VALUE: {
+            /* An entry's natural width ignores its text: text plus the
+             * theme's padding and border, and room for the caret. */
+            GtkStyleContext *context = gtk_widget_get_style_context(native);
+            GtkStateFlags flags = gtk_style_context_get_state(context);
+            GtkBorder padding, border;
+            gtk_style_context_get_padding(context, flags, &padding);
+            gtk_style_context_get_border(context, flags, &border);
+            *width = text_pixel_width(native, text ? text : widget->text, widget->kind == XXWIDGETS_VALUE && widget->bold, NULL) +
+                     padding.left + padding.right + border.left + border.right + 2;
+            natural_size(state->root, &natural_width, &natural_height);
+            *height = natural_height > app->control_height ? natural_height : app->control_height;
+            return XXWIDGETS_OK;
+        }
+        case XXWIDGETS_BUTTON:
+        case XXWIDGETS_CHECKBOX: {
+            GtkLabel *label = control_label(native);
+            if (text && label) {
+                /* The same button with that text. */
+                gchar *saved = g_strdup(gtk_label_get_text(label));
+                gtk_label_set_text(label, text);
+                natural_size(state->root, &natural_width, &natural_height);
+                gtk_label_set_text(label, saved);
+                g_free(saved);
+            } else natural_size(state->root, &natural_width, &natural_height);
+            break;
+        }
+        case XXWIDGETS_COMBOBOX:
+        case XXWIDGETS_CHECKCOMBOBOX: {
+            /* As if the widest record (or the caption) were text. */
+            GtkLabel *label = widget->kind == XXWIDGETS_CHECKCOMBOBOX ? control_label(native) : NULL;
+            GtkWidget *font = label ? GTK_WIDGET(label) : native;
+            const char *suffix = widget->kind == XXWIDGETS_CHECKCOMBOBOX ? " \xe2\x96\xbe" : "";
+            int shown_width = 0, widest = 0, item;
+            size_t index;
+            natural_size(state->root, &natural_width, &natural_height);
+            if (label) shown_width = text_pixel_width(font, gtk_label_get_text(label), 0, NULL);
+            else
+                for (index = 0; index < widget->item_count; ++index)
+                    if ((item = text_pixel_width(font, widget->items[index], 0, NULL)) > shown_width) shown_width = item;
+            if (text) {
+                gchar *with = g_strconcat(text, suffix, NULL);
+                widest = text_pixel_width(font, with, 0, NULL);
+                g_free(with);
+            } else {
+                widest = shown_width;
+                for (index = 0; index < widget->item_count; ++index) {
+                    gchar *with = g_strconcat(widget->items[index], suffix, NULL);
+                    if ((item = text_pixel_width(font, with, 0, NULL)) > widest) widest = item;
+                    g_free(with);
+                }
+            }
+            natural_width += widest - shown_width;
+            break;
+        }
+        case XXWIDGETS_GROUP:
+            natural_size(state->root, &natural_width, &natural_height);
+            if (text) {
+                int title = text_pixel_width(native, text, 0, NULL), shown = widget->text[0] ? text_pixel_width(native, widget->text, 0, NULL) : 0;
+                natural_width += title - shown;
+            }
+            break;
+        default:
+            natural_size(state->root, &natural_width, &natural_height);
+            break;
+    }
+    if (one_row && natural_height < app->control_height) natural_height = app->control_height;
+    *width = natural_width > 0 ? natural_width : 1;
+    *height = natural_height > 0 ? natural_height : 1;
+    return XXWIDGETS_OK;
+}
+
+/* Applies widget->frame: no cell rounding, no "centre in two rows", the given
+ * height also for buttons (B6). GRID_CSS dropped the themes' min-height, so
+ * the allocation equals the frame. */
+static xxwidgets_status gtk_place(xxwidgets_widget *widget)
+{
+    gtk_app_state *app = widget->app->platform;
+    gtk_widget_state *state = widget->platform;
+    if (!app || !state || !widget->native || !state->root) return XXWIDGETS_INVALID_ARGUMENT;
+    if (widget->kind == XXWIDGETS_WINDOW) {
+        int x = 0, y = 0, width = widget->frame.width, height = widget->frame.height, current_width = 0, current_height = 0;
+        if (height > INT_MAX - state->menu_height) return XXWIDGETS_INVALID_ARGUMENT;
+        height += state->menu_height;
+        gtk_window_get_position(GTK_WINDOW(widget->native), &x, &y);
+        window_fit_workarea(widget, &x, &y, &width, &height);
+        gtk_window_get_size(GTK_WINDOW(widget->native), &current_width, &current_height);
+        if (width != current_width || height != current_height) {
+            state->fit_position = 1;
+            gtk_window_resize(GTK_WINDOW(widget->native), width, height);
+        }
+        /* The cell rect follows, so a later sync does not size it back. */
+        widget->rect.width = width / app->cell_width > 0 ? width / app->cell_width : 1;
+        widget->rect.height = (height - state->menu_height) / app->cell_height > 0 ? (height - state->menu_height) / app->cell_height : 1;
+        state->applied_rect = widget->rect;
+        state->has_rect = 1;
+        return XXWIDGETS_OK;
+    }
+    {
+        gtk_widget_state *parent_state = widget->parent ? widget->parent->platform : NULL;
+        if (!parent_state || !parent_state->content) return XXWIDGETS_INVALID_ARGUMENT;
+        gtk_layout_move(GTK_LAYOUT(parent_state->content), state->root, widget->frame.x, widget->frame.y);
+        gtk_widget_set_size_request(state->root, widget->frame.width, widget->frame.height);
+        state->applied_rect = widget->rect;
+        state->has_rect = 1;
+        if (!widget->parent->has_minimum) window_update_minimum(widget->parent);
+        /* A label leaves the cell wrapping rule (gtk_sync_backend). */
+        if (widget->kind == XXWIDGETS_LABEL) return gtk_sync_backend(widget);
+    }
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status gtk_native_frame(const xxwidgets_widget *widget, xxwidgets_rect *frame)
+{
+    gtk_widget_state *state = widget->platform;
+    if (!state || !widget->native || !state->root) return XXWIDGETS_INVALID_ARGUMENT;
+    if (widget->kind == XXWIDGETS_WINDOW) {
+        int width = 0, height = 0;
+        gtk_window_get_size(GTK_WINDOW(widget->native), &width, &height);
+        height -= state->menu_height;
+        frame->x = frame->y = 0;
+        frame->width = width > 0 ? width : 1;
+        frame->height = height > 0 ? height : 1;
+        return XXWIDGETS_OK;
+    }
+    if (gtk_widget_get_mapped(state->root) && widget->parent && widget->parent->platform && ((gtk_widget_state *)widget->parent->platform)->content) {
+        GtkAllocation allocation;
+        int x = 0, y = 0;
+        gtk_widget_get_allocation(state->root, &allocation);
+        if (!gtk_widget_translate_coordinates(state->root, ((gtk_widget_state *)widget->parent->platform)->content, 0, 0, &x, &y)) {
+            x = allocation.x;
+            y = allocation.y;
+        }
+        frame->x = x;
+        frame->y = y;
+        frame->width = allocation.width;
+        frame->height = allocation.height;
+        return XXWIDGETS_OK;
+    }
+    /* Not on screen yet: what was asked for. */
+    if (widget->has_frame) {
+        *frame = widget->frame;
+        return XXWIDGETS_OK;
+    }
+    return pixel_rect((xxwidgets_widget *)widget, &frame->x, &frame->y, &frame->width, &frame->height) ? XXWIDGETS_OK : XXWIDGETS_INVALID_ARGUMENT;
+}
+
+static xxwidgets_status gtk_minimum_frame(xxwidgets_widget *window)
+{
+    gtk_widget_state *state = window->platform;
+    if (!state || !state->content) return XXWIDGETS_INVALID_ARGUMENT;
+    /* The content's size request is the window's minimum; a larger one grows
+     * the window, a smaller one never shrinks it. */
+    state->min_width = state->min_height = -1;
+    window_update_minimum(window);
+    return XXWIDGETS_OK;
+}
+
+static int gtk_supports_kind(xxwidgets_kind kind)
+{
+    return kind == XXWIDGETS_VALUE || kind == XXWIDGETS_GROUP;
+}
+
+/* B2: the icon left of the text, always shown (GNOME hides button images by
+ * default); icon-only buttons keep their text as accessible name and tooltip. */
+static xxwidgets_status gtk_set_icon(xxwidgets_widget *button)
+{
+    GtkWidget *native = button->native;
+    GdkPixbuf *pixbuf;
+    guchar *pixels;
+    int stride;
+    unsigned int row;
+    if (!native || !GTK_IS_BUTTON(native)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!button->icon_rgba) {
+        /* The label back first: a button with neither keeps its old child. */
+        if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), button->text)) gtk_button_set_label(GTK_BUTTON(native), button->text);
+        gtk_button_set_image(GTK_BUTTON(native), NULL);
+        ellipsize_control_label(native);
+        return XXWIDGETS_OK;
+    }
+    pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, (int)button->icon_width, (int)button->icon_height);
+    if (!pixbuf) return XXWIDGETS_OUT_OF_MEMORY;
+    pixels = gdk_pixbuf_get_pixels(pixbuf);
+    stride = gdk_pixbuf_get_rowstride(pixbuf);
+    for (row = 0; row < button->icon_height; ++row)
+        memcpy(pixels + (size_t)row * (size_t)stride, button->icon_rgba + (size_t)row * button->icon_width * 4u, (size_t)button->icon_width * 4u);
+    gtk_button_set_always_show_image(GTK_BUTTON(native), TRUE);
+    gtk_button_set_image_position(GTK_BUTTON(native), GTK_POS_LEFT);
+    gtk_button_set_image(GTK_BUTTON(native), gtk_image_new_from_pixbuf(pixbuf));
+    g_object_unref(pixbuf);
+    if (icon_only(button)) {
+        if (gtk_button_get_label(GTK_BUTTON(native))) gtk_button_set_label(GTK_BUTTON(native), NULL);
+        atk_object_set_name(gtk_widget_get_accessible(native), button->text);
+    } else if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(native)), button->text)) gtk_button_set_label(GTK_BUTTON(native), button->text);
+    ellipsize_control_label(native);
+    return XXWIDGETS_OK;
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_init_backend,
                                                     gtk_shutdown_backend,
@@ -4005,6 +4451,6 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_accept_file_drops,
                                                     gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu, NULL /* about_rich_content */,
                                                     NULL /* translation_changed */, gtk_set_tooltip,
-                                                    NULL /* metrics */, NULL /* measure */, NULL /* place */, NULL /* native_frame */,
-                                                    NULL /* minimum_frame */, NULL /* supports_kind */, NULL /* set_icon */,
-                                                    NULL /* begin_update */, NULL /* end_update */};
+                                                    gtk_metrics, gtk_measure, gtk_place, gtk_native_frame,
+                                                    gtk_minimum_frame, gtk_supports_kind, gtk_set_icon,
+                                                    NULL /* begin_update: nothing to batch */, NULL /* end_update */};

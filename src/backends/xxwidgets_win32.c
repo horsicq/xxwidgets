@@ -130,6 +130,16 @@ typedef struct xxwidgets_win32_widget {
     POINT held_origin;
     xxwidgets_rect held_rect;
     RECT held_frame;
+    /* BUTTON: the image list of its icon (BCM_SETIMAGELIST), owned. */
+    HIMAGELIST icon_images;
+    /* LABEL / VALUE: the bold copy of text_bold_base, owned. */
+    HFONT text_bold_font, text_bold_base;
+    /* WINDOW: WM_SETREDRAW FALSE is in effect (begin_update on a shown window). */
+    int redraw_frozen;
+    /* TREEVIEW: the XXWIDGETS_TREE_* style last applied, plus one (0: none yet). */
+    unsigned int tree_style_applied;
+    /* LABEL: its alignment was set (xxwidgets_widget_set_alignment). */
+    int label_aligned;
 } xxwidgets_win32_widget;
 
 static xxwidgets_status win32_sync(xxwidgets_widget *widget);
@@ -153,6 +163,9 @@ static COLORREF win32_rgb(uint32_t color);
 static xxwidgets_status win32_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted);
 static xxwidgets_status win32_preview_font(xxwidgets_widget *widget, xxwidgets_font_role role, const xxwidgets_font *font);
 static LRESULT CALLBACK win32_browser_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp);
+static HFONT win32_text_font(xxwidgets_widget *widget, HFONT font);
+static xxwidgets_status win32_place(xxwidgets_widget *widget);
+static void win32_tree_style(xxwidgets_widget *widget);
 
 #define XXWIDGETS_BROWSER_UP_ID 1
 #define XXWIDGETS_BROWSER_ADDRESS_ID 2
@@ -525,8 +538,16 @@ static void win32_apply_widget_font(xxwidgets_widget *widget)
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
     HFONT font = native && native->preview_font ? native->preview_font :
         widget->kind == XXWIDGETS_HEXVIEW && native && native->hex_font ? native->hex_font : app->role_fonts[xxwidgets_widget_font_role(widget)];
+    if (native && !native->preview_font) font = win32_text_font(widget, font);
     if (widget->native) SendMessageW((HWND)widget->native, WM_SETFONT, (WPARAM)font, TRUE);
     if (!native) return;
+    /* A combo box resets its field height with the font: a placed one gets
+     * its frame back. */
+    if (widget->has_frame && widget->kind != XXWIDGETS_WINDOW && widget->native) {
+        ++widget->app->syncing;
+        (void)win32_place(widget);
+        --widget->app->syncing;
+    }
     if (native->browser_up) SendMessageW(native->browser_up, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_CONTROLS], TRUE);
     if (native->browser_address) SendMessageW(native->browser_address, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_CONTROLS], TRUE);
     if (native->browser_list) SendMessageW(native->browser_list, WM_SETFONT, (WPARAM)app->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS], TRUE);
@@ -1684,16 +1705,27 @@ static void win32_tree_draw_marks(xxwidgets_widget *control, NMTVCUSTOMDRAW *dra
     int width, height = row.bottom - row.top, left, mode;
     COLORREF text;
     HBRUSH fill;
+    int selected, themed;
     if (!count || !GetClientRect(handle, &client) || height <= 0) return;
     win32_tree_colors(control, index, &foreground, &background);
+    /* A selected row's marks take the selection colors, as its text does. */
+    selected = control->enabled && (draw->nmcd.uItemState & CDIS_SELECTED) != 0;
+    /* The Explorer look (XXWIDGETS_TREE_ARROWS) selects in a light tint of
+     * the highlight with the row's own text color. */
+    themed = selected && (control->tree_style & XXWIDGETS_TREE_ARROWS) != 0;
     text = SetTextColor(dc, !control->enabled ? GetSysColor(COLOR_GRAYTEXT) :
+        selected && !themed ? GetSysColor(GetFocus() == handle ? COLOR_HIGHLIGHTTEXT : COLOR_BTNTEXT) :
         foreground != UINT32_MAX ? win32_rgb(foreground) : GetSysColor(COLOR_WINDOWTEXT));
     mode = SetBkMode(dc, TRANSPARENT);
     width = win32_tree_mark_width(control, dc, height);
     left = client.right - width * (int)count;
     row.left = left; row.right = client.right;
-    fill = background != UINT32_MAX && control->enabled ? CreateSolidBrush(win32_rgb(background)) : NULL;
-    FillRect(dc, &row, fill ? fill : GetSysColorBrush(COLOR_WINDOW));
+    if (themed) {
+        COLORREF tint = GetSysColor(COLOR_HIGHLIGHT), window = GetSysColor(COLOR_WINDOW);
+        fill = CreateSolidBrush(RGB((GetRValue(tint) + 3 * GetRValue(window)) / 4, (GetGValue(tint) + 3 * GetGValue(window)) / 4,
+                                    (GetBValue(tint) + 3 * GetBValue(window)) / 4));
+    } else fill = !selected && background != UINT32_MAX && control->enabled ? CreateSolidBrush(win32_rgb(background)) : NULL;
+    FillRect(dc, &row, fill ? fill : GetSysColorBrush(selected ? (GetFocus() == handle ? COLOR_HIGHLIGHT : COLOR_BTNFACE) : COLOR_WINDOW));
     if (fill) DeleteObject(fill);
     for (mark = 0; mark < count; ++mark) {
         RECT cell = {left + width * (int)mark, row.top, left + width * (int)(mark + 1), row.bottom};
@@ -1758,16 +1790,38 @@ static int win32_minimum_frame(const xxwidgets_widget *widget, HWND handle, int 
     const xxwidgets_win32_app *state = (const xxwidgets_win32_app *)widget->app->platform;
     const xxwidgets_win32_widget *native = (const xxwidgets_win32_widget *)widget->platform;
     int columns = widget->has_minimum ? widget->min_columns : 0, rows = widget->has_minimum ? widget->min_rows : 0;
+    int client_width, client_height;
     RECT frame;
     if (native && native->about_resizable) {
         if (columns < XXWIDGETS_WIN32_TEXT_MIN_COLUMNS) columns = XXWIDGETS_WIN32_TEXT_MIN_COLUMNS;
         if (rows < XXWIDGETS_WIN32_TEXT_MIN_ROWS) rows = XXWIDGETS_WIN32_TEXT_MIN_ROWS;
     }
-    if (!state || widget->kind != XXWIDGETS_WINDOW || (columns <= 0 && rows <= 0)) return 0;
+    if (!state || widget->kind != XXWIDGETS_WINDOW ||
+        (columns <= 0 && rows <= 0 && widget->min_frame_width <= 0 && widget->min_frame_height <= 0)) return 0;
     win32_work_area_cells(widget, handle, &columns, &rows);
+    client_width = columns > 0 ? columns * state->cell_width : 0;
+    client_height = rows > 0 ? rows * state->cell_height : 0;
+    /* A measured minimum (xxwidgets_window_set_minimum_frame) in pixels, held
+     * to the work area the same way. */
+    if (widget->min_frame_width > 0 || widget->min_frame_height > 0) {
+        MONITORINFO monitor;
+        RECT decoration = {0, 0, 0, 0};
+        int frame_width = widget->min_frame_width, frame_height = widget->min_frame_height;
+        ZeroMemory(&monitor, sizeof(monitor));
+        monitor.cbSize = sizeof(monitor);
+        if (GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor) &&
+            AdjustWindowRectEx(&decoration, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE))) {
+            int most_width = monitor.rcWork.right - monitor.rcWork.left - (decoration.right - decoration.left);
+            int most_height = monitor.rcWork.bottom - monitor.rcWork.top - (decoration.bottom - decoration.top);
+            if (most_width > 0 && frame_width > most_width) frame_width = most_width;
+            if (most_height > 0 && frame_height > most_height) frame_height = most_height;
+        }
+        if (client_width < frame_width) client_width = frame_width;
+        if (client_height < frame_height) client_height = frame_height;
+    }
     frame.left = frame.top = 0;
-    frame.right = columns * state->cell_width;
-    frame.bottom = rows * state->cell_height;
+    frame.right = client_width;
+    frame.bottom = client_height;
     if (!AdjustWindowRectEx(&frame, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE)))
         return 0;
     *width = frame.right - frame.left;
@@ -1787,6 +1841,12 @@ static void win32_window_resized(xxwidgets_widget *widget, HWND handle, int noti
     if (widget->rect.width < 1) widget->rect.width = 1;
     if (widget->rect.height < 1) widget->rect.height = 1;
     native->applied_rect = widget->rect;
+    /* A placed window's frame is its client area, also after the user sized it. */
+    if (widget->has_frame && client.right > client.left && client.bottom > client.top) {
+        widget->frame.x = widget->frame.y = 0;
+        widget->frame.width = client.right - client.left > 32767 ? 32767 : client.right - client.left;
+        widget->frame.height = client.bottom - client.top > 32767 ? 32767 : client.bottom - client.top;
+    }
     if (notify) xxwidgets_emit(widget, XXWIDGETS_EVENT_RESIZE, 0);
 }
 
@@ -1903,6 +1963,13 @@ static void win32_cells_relayout(xxwidgets_app *app)
         RECT frame;
         POINT origin;
         int x, y, width, height, on_monitor, requested_width, requested_height, held = 0, give_back = 0;
+        if (widget->has_frame) {
+            /* Placed in pixels (xxwidgets_widget_set_frame): its program
+             * places it again on the RESIZE its window gets (posted below,
+             * or here for a placed window). */
+            if (widget->kind == XXWIDGETS_WINDOW && handle) PostMessageW(handle, XXWIDGETS_WIN32_RESIZED, 0, 0);
+            continue;
+        }
         while (top->parent) top = top->parent;
         if (native && handle && widget->kind == XXWIDGETS_WINDOW && native->held) {
             /* Held by an earlier relayout and neither moved nor resized since:
@@ -2004,7 +2071,9 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                     case XXWIDGETS_CHECKCOMBOBOX: break;
                     case XXWIDGETS_BUTTON:
                         /* "Copied" goes back to "Copy all" in the shared text dialog loop. */
-                        if (HIWORD(wp) == BN_CLICKED) xxwidgets_emit(control, XXWIDGETS_EVENT_CLICK, 0);
+                        /* BM_CLICK clicks a disabled button too (UI Automation, a host's
+                         * own BM_CLICK): no click a user could not make. */
+                        if (HIWORD(wp) == BN_CLICKED && IsWindowEnabled(control_handle)) xxwidgets_emit(control, XXWIDGETS_EVENT_CLICK, 0);
                         break;
                     case XXWIDGETS_CHECKBOX:
                         if (HIWORD(wp) == BN_CLICKED) {
@@ -2028,6 +2097,18 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                         }
                         break;
                     default: break;
+                }
+            }
+            break;
+        case WM_CTLCOLORSTATIC:
+            /* A value field is a read-only edit, which Windows paints on the
+             * dialog face: it keeps the field background, as Qt's line edits. */
+            if (lp) {
+                xxwidgets_widget *control = win32_find_widget(widget->app, (HWND)lp);
+                if (control && control->kind == XXWIDGETS_VALUE && control->parent == widget && IsWindowEnabled((HWND)lp)) {
+                    SetTextColor((HDC)wp, GetSysColor(COLOR_WINDOWTEXT));
+                    SetBkColor((HDC)wp, GetSysColor(COLOR_WINDOW));
+                    return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
                 }
             }
             break;
@@ -3073,6 +3154,51 @@ static LRESULT CALLBACK win32_edit_proc(HWND handle, UINT message, WPARAM wp, LP
     return DefSubclassProc(handle, message, wp, lp);
 }
 
+static DWORD win32_edit_alignment(xxwidgets_alignment alignment)
+{
+    return alignment == XXWIDGETS_ALIGN_CENTER ? ES_CENTER : alignment == XXWIDGETS_ALIGN_RIGHT ? ES_RIGHT : ES_LEFT;
+}
+
+static DWORD win32_static_alignment(xxwidgets_alignment alignment)
+{
+    return alignment == XXWIDGETS_ALIGN_CENTER ? SS_CENTER : alignment == XXWIDGETS_ALIGN_RIGHT ? SS_RIGHT : SS_LEFT;
+}
+
+/* An untitled GROUP is a plain light frame filling its rect, as Qt draws its
+ * frames: a group box would draw its top line half a text line lower. A
+ * titled one is the native group box. */
+static LRESULT CALLBACK win32_group_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
+{
+    (void)data;
+    if ((message == WM_PAINT || message == WM_PRINTCLIENT) && GetWindowTextLengthW(handle) == 0) {
+        PAINTSTRUCT paint;
+        HDC dc = message == WM_PAINT ? BeginPaint(handle, &paint) : (HDC)wp;
+        RECT client;
+        if (dc && GetClientRect(handle, &client)) {
+            COLORREF face = GetSysColor(COLOR_BTNFACE), shadow = GetSysColor(COLOR_BTNSHADOW);
+            HBRUSH brush = CreateSolidBrush(RGB((GetRValue(face) + GetRValue(shadow)) / 2, (GetGValue(face) + GetGValue(shadow)) / 2,
+                                                (GetBValue(face) + GetBValue(shadow)) / 2));
+            FrameRect(dc, &client, brush ? brush : GetSysColorBrush(COLOR_BTNSHADOW));
+            if (brush) DeleteObject(brush);
+        }
+        if (message == WM_PAINT) EndPaint(handle, &paint);
+        return 0;
+    }
+    if (message == WM_SETTEXT) InvalidateRect(handle, NULL, TRUE);
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_group_proc, id);
+    return DefSubclassProc(handle, message, wp, lp);
+}
+
+/* Every GROUP of a window at the bottom of its z-order, in creation order:
+ * the controls inside a frame paint over it, and tabbing never meets it. */
+static void win32_groups_to_bottom(xxwidgets_widget *window)
+{
+    xxwidgets_widget *child;
+    for (child = window->app->widgets; child; child = child->next)
+        if (child->parent == window && child->kind == XXWIDGETS_GROUP && child->native)
+            SetWindowPos((HWND)child->native, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
 static xxwidgets_status win32_create(xxwidgets_widget *widget)
 {
     xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
@@ -3165,6 +3291,16 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
             style |= WS_TABSTOP | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS;
             extended = WS_EX_CLIENTEDGE;
             break;
+        case XXWIDGETS_VALUE:
+            /* Read-only, selectable and focusable: an edit that takes no input. */
+            class_name = L"EDIT";
+            style |= WS_TABSTOP | ES_READONLY | ES_AUTOHSCROLL | win32_edit_alignment(widget->alignment);
+            extended = WS_EX_CLIENTEDGE;
+            break;
+        case XXWIDGETS_GROUP:
+            class_name = L"BUTTON";
+            style |= BS_GROUPBOX;
+            break;
         default: return XXWIDGETS_INVALID_ARGUMENT;
     }
     status = win32_geometry(widget, style, extended, &x, &y, &width, &height);
@@ -3219,6 +3355,11 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_EDIT && !SetWindowSubclass(handle, win32_edit_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_GROUP && !SetWindowSubclass(handle, win32_group_proc, 1, (DWORD_PTR)widget))
+        status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_VALUE) SendMessageW(handle, EM_SETLIMITTEXT, (WPARAM)INT_MAX - 1, 0);
+    /* Frames stay below the controls they surround, also ones made later. */
+    if (status == XXWIDGETS_OK && widget->parent) win32_groups_to_bottom(widget->parent);
     if (status == XXWIDGETS_OK) status = win32_sync(widget);
     if (status != XXWIDGETS_OK) {
         if (native->hex_container) DestroyWindow(native->hex_container);
@@ -3308,6 +3449,9 @@ static void win32_destroy(xxwidgets_widget *widget)
     if (native && native->hex_font) DeleteObject(native->hex_font);
     if (native && native->hex_regular_font) DeleteObject(native->hex_regular_font);
     if (native && native->hex_bold_font) DeleteObject(native->hex_bold_font);
+    /* Freed after the control: neither one is the control's to free. */
+    if (native && native->icon_images) ImageList_Destroy(native->icon_images);
+    if (native && native->text_bold_font) DeleteObject(native->text_bold_font);
     if (native) free(native->font_layout);
     if (native) free(native->tree_items);
     free(widget->platform);
@@ -4430,7 +4574,8 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
         if (widget->rect.width < columns) widget->rect.width = columns;
         if (widget->rect.height < rows) widget->rect.height = rows;
     }
-    if (!win32_same_rect(native->applied_rect, widget->rect)) {
+    /* A placed control keeps its frame (win32_place), whatever its rect says. */
+    if (!(widget->has_frame && widget->kind != XXWIDGETS_WINDOW) && !win32_same_rect(native->applied_rect, widget->rect)) {
         int x, y, width, height;
         status = win32_geometry(widget, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE), &x, &y, &width, &height);
         if (status != XXWIDGETS_OK) return status;
@@ -4513,15 +4658,38 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
          * shown, never taken as a mnemonic. */
         LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
         LONG_PTR wanted = (style & ~(LONG_PTR)SS_ELLIPSISMASK) | SS_NOPREFIX | (widget->keep_end ? SS_PATHELLIPSIS : 0);
+        /* The alignment only once a program set one: a host that styled the
+         * label itself keeps its style. */
+        if (widget->alignment != XXWIDGETS_ALIGN_LEFT || native->label_aligned) {
+            wanted = (wanted & ~(LONG_PTR)SS_TYPEMASK) | win32_static_alignment(widget->alignment);
+            native->label_aligned = 1;
+        }
         if (wanted != style) {
             SetWindowLongPtrW(handle, GWL_STYLE, wanted);
             InvalidateRect(handle, NULL, TRUE);
         }
     }
+    if (widget->kind == XXWIDGETS_VALUE) {
+        LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
+        LONG_PTR wanted = (style & ~(LONG_PTR)(ES_LEFT | ES_CENTER | ES_RIGHT)) | win32_edit_alignment(widget->alignment);
+        if (wanted != style) {
+            SetWindowLongPtrW(handle, GWL_STYLE, wanted);
+            InvalidateRect(handle, NULL, TRUE);
+        }
+    }
+    /* Bold, or no longer bold: a host's own font on a plain label stays. */
+    if ((widget->kind == XXWIDGETS_LABEL || widget->kind == XXWIDGETS_VALUE) && !native->preview_font && (widget->bold || native->text_bold_font)) {
+        HFONT font = win32_text_font(widget, ((xxwidgets_win32_app *)widget->app->platform)->role_fonts[xxwidgets_widget_font_role(widget)]);
+        if ((HFONT)SendMessageW(handle, WM_GETFONT, 0, 0) != font) SendMessageW(handle, WM_SETFONT, (WPARAM)font, TRUE);
+    }
+    if (widget->kind == XXWIDGETS_TREEVIEW && native->tree_style_applied != widget->tree_style + 1) win32_tree_style(widget);
     /* IsWindowVisible also examines ancestors, so use this control's own bit.
      * A window Windows hid with its minimized owner stays hidden until the
      * owner is restored, when Windows shows it again. */
     HWND root = native->hex_container ? native->hex_container : handle;
+    /* WM_SETREDRAW FALSE clears a window's WS_VISIBLE: its visibility is
+     * applied when the batch ends (win32_end_update). */
+    if (native->redraw_frozen) return XXWIDGETS_OK;
     if (!!(GetWindowLongPtrW(root, GWL_STYLE) & WS_VISIBLE) != !!widget->visible && !(widget->visible && native->owner_hidden)) {
         HWND owner = widget->kind == XXWIDGETS_WINDOW && !widget->visible && GetActiveWindow() == handle ? GetWindow(handle, GW_OWNER) : NULL;
         if (owner && !IsWindowEnabled(owner) && IsWindowVisible(owner)) {
@@ -5485,6 +5653,422 @@ static xxwidgets_status win32_about_rich_content(xxwidgets_widget *window, const
     return XXWIDGETS_OK;
 }
 
+/* Measured placement (B1-B7). Units are pixels at the system DPI; the sizes
+ * follow the Controls font (its line height plus 8 for a field, the line for a
+ * caption), so Segoe UI 9 at 96 DPI gives Qt's Windows metrics: 23 px
+ * controls, 15 px captions, 9 px margins, 6 px spacing. */
+
+static int win32_dpi(void)
+{
+    HDC dc = GetDC(NULL);
+    int dpi = dc ? GetDeviceCaps(dc, LOGPIXELSY) : 96;
+    if (dc) ReleaseDC(NULL, dc);
+    return dpi > 0 ? dpi : 96;
+}
+
+static int win32_scaled(int pixels, int dpi)
+{
+    return MulDiv(pixels, dpi, 96);
+}
+
+/* A label's or value's font: bold is a copy of its role font in bold weight,
+ * made again when that font changes. */
+static HFONT win32_text_font(xxwidgets_widget *widget, HFONT font)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    LOGFONTW logfont;
+    HFONT bold;
+    if (!native || !font || !widget->bold || (widget->kind != XXWIDGETS_LABEL && widget->kind != XXWIDGETS_VALUE)) return font;
+    if (native->text_bold_font && native->text_bold_base == font) return native->text_bold_font;
+    if (!GetObjectW(font, sizeof(logfont), &logfont)) return font;
+    logfont.lfWeight = FW_BOLD;
+    bold = CreateFontIndirectW(&logfont);
+    if (!bold) return font;
+    /* The control still holds the previous copy until the caller's WM_SETFONT,
+     * which follows before anything paints. */
+    if (native->text_bold_font) DeleteObject(native->text_bold_font);
+    native->text_bold_font = bold;
+    native->text_bold_base = font;
+    return bold;
+}
+
+/* XXWIDGETS_TREE_ARROWS: the Explorer look, arrows without lines, as Qt's
+ * tree. SetWindowTheme comes from uxtheme at run time, so the library links
+ * nothing new; without it only the lines go. */
+static void win32_tree_style(xxwidgets_widget *widget)
+{
+    typedef HRESULT(WINAPI * set_theme_fn)(HWND, LPCWSTR, LPCWSTR);
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    HWND handle = (HWND)widget->native;
+    int arrows = (widget->tree_style & XXWIDGETS_TREE_ARROWS) != 0;
+    LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
+    LONG_PTR wanted = arrows ? style & ~(LONG_PTR)TVS_HASLINES : style | TVS_HASLINES;
+    if (native->tree_style_applied || arrows) {
+        HMODULE theme = GetModuleHandleW(L"uxtheme.dll");
+        set_theme_fn set_theme;
+        if (!theme) theme = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        set_theme = theme ? (set_theme_fn)(void (*)(void))GetProcAddress(theme, "SetWindowTheme") : NULL;
+        if (set_theme) set_theme(handle, arrows ? L"Explorer" : NULL, NULL);
+    }
+    if (wanted != style) {
+        SetWindowLongPtrW(handle, GWL_STYLE, wanted);
+        SetWindowPos(handle, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+    InvalidateRect(handle, NULL, TRUE);
+    native->tree_style_applied = widget->tree_style + 1;
+}
+
+static xxwidgets_status win32_metrics(xxwidgets_app *app, xxwidgets_metrics *metrics)
+{
+    xxwidgets_win32_app *state = (xxwidgets_win32_app *)app->platform;
+    TEXTMETRICW text;
+    HDC dc;
+    HGDIOBJ previous;
+    int dpi = win32_dpi(), height = 0, icon = GetSystemMetrics(SM_CXSMICON);
+    if (!state) return XXWIDGETS_PLATFORM_ERROR;
+    dc = GetDC(NULL);
+    if (dc) {
+        previous = SelectObject(dc, state->role_fonts[XXWIDGETS_FONT_CONTROLS] ? state->role_fonts[XXWIDGETS_FONT_CONTROLS] : state->font);
+        if (GetTextMetricsW(dc, &text)) height = text.tmHeight;
+        if (previous && previous != HGDI_ERROR) SelectObject(dc, previous);
+        ReleaseDC(NULL, dc);
+    }
+    if (height <= 0) height = state->cell_height > 4 ? state->cell_height - 4 : win32_scaled(16, dpi);
+    metrics->unit_is_cell = 0;
+    metrics->cell_width = state->cell_width;
+    metrics->cell_height = state->cell_height;
+    /* Segoe UI 9 at 96 DPI: a 15 px line, Qt's 23 px fields and 15 px captions. */
+    metrics->control_height = height + 8;
+    metrics->label_height = height;
+    metrics->spacing = win32_scaled(6, dpi);
+    metrics->margin = win32_scaled(9, dpi);
+    metrics->small_icon = icon > 0 ? icon : win32_scaled(16, dpi);
+    metrics->frame_inset = win32_scaled(5, dpi);
+    metrics->panel_inset = win32_scaled(3, dpi);
+    metrics->caption_gap = win32_scaled(3, dpi);
+    return XXWIDGETS_OK;
+}
+
+/* The extent of text (several lines for a label) in the selected font. */
+static int win32_text_extent(HDC dc, const wchar_t *text, int lines, SIZE *size)
+{
+    RECT bounds = {0, 0, 0, 0};
+    size->cx = size->cy = 0;
+    if (!*text) return 1;
+    if (!DrawTextW(dc, text, -1, &bounds, DT_CALCRECT | DT_NOPREFIX | (lines ? 0 : DT_SINGLELINE))) return 0;
+    size->cx = bounds.right - bounds.left;
+    size->cy = bounds.bottom - bounds.top;
+    return 1;
+}
+
+static xxwidgets_status win32_measure(xxwidgets_widget *widget, const char *text, int *width, int *height)
+{
+    xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
+    HWND handle = (HWND)widget->native;
+    HFONT font = handle ? (HFONT)SendMessageW(handle, WM_GETFONT, 0, 0) : NULL;
+    TEXTMETRICW metrics;
+    HDC dc;
+    HGDIOBJ previous = NULL;
+    SIZE extent = {0, 0};
+    wchar_t *wide = NULL;
+    xxwidgets_status status = XXWIDGETS_OK;
+    int dpi = win32_dpi(), control, icon = 0, lines = widget->kind == XXWIDGETS_LABEL;
+    if (!state) return XXWIDGETS_PLATFORM_ERROR;
+    if (!font) font = win32_text_font(widget, state->role_fonts[xxwidgets_widget_font_role(widget)]);
+    dc = GetDC(handle);
+    if (!dc) return XXWIDGETS_PLATFORM_ERROR;
+    if (font) previous = SelectObject(dc, font);
+    if (!GetTextMetricsW(dc, &metrics)) status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && xxwidgets_combo_kind(widget) && !text) {
+        /* As wide as its widest record or caption. */
+        size_t i;
+        status = win32_wide(xxwidgets_combobox_caption(widget), &wide);
+        if (status == XXWIDGETS_OK && !win32_text_extent(dc, wide, 0, &extent)) status = XXWIDGETS_PLATFORM_ERROR;
+        for (i = 0; status == XXWIDGETS_OK && i < widget->item_count; ++i) {
+            SIZE item = {0, 0};
+            free(wide);
+            wide = NULL;
+            status = win32_wide(widget->items[i], &wide);
+            if (status == XXWIDGETS_OK && !win32_text_extent(dc, wide, 0, &item)) status = XXWIDGETS_PLATFORM_ERROR;
+            if (status == XXWIDGETS_OK && item.cx > extent.cx) extent.cx = item.cx;
+        }
+    } else if (status == XXWIDGETS_OK) {
+        status = win32_wide(text ? text : widget->text, &wide);
+        if (status == XXWIDGETS_OK && !win32_text_extent(dc, wide, lines, &extent)) status = XXWIDGETS_PLATFORM_ERROR;
+    }
+    free(wide);
+    if (previous && previous != HGDI_ERROR) SelectObject(dc, previous);
+    ReleaseDC(handle, dc);
+    if (status != XXWIDGETS_OK) return status;
+    control = metrics.tmHeight + 8;
+    if (widget->kind == XXWIDGETS_BUTTON && widget->icon_rgba) icon = win32_scaled((int)widget->icon_width, dpi);
+    switch (widget->kind) {
+        case XXWIDGETS_LABEL:
+            *width = extent.cx;
+            *height = extent.cy > metrics.tmHeight ? extent.cy : metrics.tmHeight;
+            break;
+        case XXWIDGETS_BUTTON:
+            if (icon && (widget->icon_flags & XXWIDGETS_ICON_ONLY)) *width = icon + win32_scaled(8, dpi);
+            else {
+                *width = extent.cx + win32_scaled(16, dpi) + (icon ? icon + win32_scaled(4, dpi) : 0);
+                if (!text && handle) {
+                    /* comctl32 6 knows its own size (and the icon's); 5 answers nothing. */
+                    SIZE ideal = {0, 0};
+                    if (SendMessageW(handle, BCM_GETIDEALSIZE, 0, (LPARAM)&ideal) && ideal.cx > *width) *width = ideal.cx;
+                }
+            }
+            *height = control;
+            break;
+        case XXWIDGETS_EDIT:
+        case XXWIDGETS_VALUE:
+            *width = extent.cx + win32_scaled(12, dpi);
+            *height = control;
+            break;
+        case XXWIDGETS_CHECKBOX:
+            *width = extent.cx + GetSystemMetrics(SM_CXMENUCHECK) + win32_scaled(6, dpi);
+            *height = metrics.tmHeight + 1 > GetSystemMetrics(SM_CYMENUCHECK) + 2 ? metrics.tmHeight + 1 : GetSystemMetrics(SM_CYMENUCHECK) + 2;
+            break;
+        case XXWIDGETS_COMBOBOX:
+        case XXWIDGETS_CHECKCOMBOBOX:
+            *width = extent.cx + GetSystemMetrics(SM_CXVSCROLL) + win32_scaled(12, dpi);
+            *height = control;
+            break;
+        case XXWIDGETS_GROUP:
+            *width = extent.cx + win32_scaled(16, dpi);
+            *height = metrics.tmHeight + win32_scaled(10, dpi);
+            break;
+        case XXWIDGETS_PROGRESS:
+            *width = win32_scaled(100, dpi);
+            *height = control;
+            break;
+        default:
+            /* Views take the room they are given: what they have now. */
+            if (widget->has_frame) {
+                *width = widget->frame.width;
+                *height = widget->frame.height;
+            } else {
+                *width = widget->rect.width * state->cell_width;
+                *height = widget->rect.height * state->cell_height;
+            }
+            break;
+    }
+    return XXWIDGETS_OK;
+}
+
+/* The restored size of a minimized or maximized window. */
+static xxwidgets_status win32_restored_size(HWND handle, int width, int height)
+{
+    WINDOWPLACEMENT placement;
+    placement.length = sizeof(placement);
+    if (!GetWindowPlacement(handle, &placement)) return XXWIDGETS_PLATFORM_ERROR;
+    placement.rcNormalPosition.right = placement.rcNormalPosition.left + width;
+    placement.rcNormalPosition.bottom = placement.rcNormalPosition.top + height;
+    if (IsIconic(handle)) placement.showCmd = (GetWindowLongPtrW(handle, GWL_STYLE) & WS_VISIBLE) ? SW_SHOWMINNOACTIVE : SW_HIDE;
+    return SetWindowPlacement(handle, &placement) ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
+}
+
+static xxwidgets_status win32_place(xxwidgets_widget *widget)
+{
+    xxwidgets_win32_app *state = (xxwidgets_win32_app *)widget->app->platform;
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    HWND handle = (HWND)widget->native, root;
+    xxwidgets_rect frame = widget->frame;
+    if (!state || !native || !handle) return XXWIDGETS_PLATFORM_ERROR;
+    if (widget->kind == XXWIDGETS_WINDOW) {
+        /* The client area: the window keeps its place, and Windows holds it
+         * to its minimum (WM_GETMINMAXINFO). */
+        RECT outer = {0, 0, frame.width, frame.height};
+        if (!AdjustWindowRectEx(&outer, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE)))
+            return XXWIDGETS_PLATFORM_ERROR;
+        if (IsIconic(handle) || IsZoomed(handle)) return win32_restored_size(handle, outer.right - outer.left, outer.bottom - outer.top);
+        if (!SetWindowPos(handle, NULL, 0, 0, outer.right - outer.left, outer.bottom - outer.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+            return XXWIDGETS_PLATFORM_ERROR;
+        win32_window_resized(widget, handle, 0);
+        return XXWIDGETS_OK;
+    }
+    root = native->hex_container ? native->hex_container : handle;
+    if (widget->kind == XXWIDGETS_GROUP)
+        return SetWindowPos(root, HWND_BOTTOM, frame.x, frame.y, frame.width, frame.height, SWP_NOACTIVATE | SWP_NOOWNERZORDER) ? XXWIDGETS_OK
+                                                                                                                                 : XXWIDGETS_PLATFORM_ERROR;
+    /* A drop-down list's window also holds its open list. */
+    if (!SetWindowPos(root, NULL, frame.x, frame.y, frame.width, frame.height + (widget->kind == XXWIDGETS_COMBOBOX ? 10 * state->cell_height : 0),
+                      SWP_NOACTIVATE | SWP_NOZORDER))
+        return XXWIDGETS_PLATFORM_ERROR;
+    if (xxwidgets_combo_kind(widget)) {
+        /* Its field is as high as its item lets it be: the item takes the difference. */
+        RECT field;
+        if (GetWindowRect(handle, &field) && field.bottom - field.top != frame.height) {
+            LRESULT item = SendMessageW(handle, CB_GETITEMHEIGHT, (WPARAM)-1, 0);
+            if (item != CB_ERR && item + frame.height - (field.bottom - field.top) >= 1)
+                SendMessageW(handle, CB_SETITEMHEIGHT, (WPARAM)-1, (LPARAM)(item + frame.height - (field.bottom - field.top)));
+        }
+    }
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status win32_native_frame(const xxwidgets_widget *widget, xxwidgets_rect *frame)
+{
+    const xxwidgets_win32_widget *native = (const xxwidgets_win32_widget *)widget->platform;
+    HWND handle = (HWND)widget->native;
+    RECT rect;
+    if (!native || !handle) return XXWIDGETS_PLATFORM_ERROR;
+    if (widget->kind == XXWIDGETS_WINDOW) {
+        if (!GetClientRect(handle, &rect)) return XXWIDGETS_PLATFORM_ERROR;
+    } else {
+        HWND root = native->hex_container ? native->hex_container : handle;
+        if (!GetWindowRect(root, &rect)) return XXWIDGETS_PLATFORM_ERROR;
+        MapWindowPoints(NULL, GetParent(root), (POINT *)&rect, 2);
+    }
+    frame->x = rect.left;
+    frame->y = rect.top;
+    frame->width = rect.right - rect.left;
+    frame->height = rect.bottom - rect.top;
+    return XXWIDGETS_OK;
+}
+
+/* The minimum is applied by WM_GETMINMAXINFO (win32_minimum_frame); a smaller
+ * window grows to it now, where it is, and never shrinks. */
+static xxwidgets_status win32_set_minimum_frame(xxwidgets_widget *window)
+{
+    HWND handle = (HWND)window->native;
+    RECT outer;
+    int width, height;
+    if (!window->platform || !handle) return XXWIDGETS_PLATFORM_ERROR;
+    if (!win32_minimum_frame(window, handle, &width, &height) || !GetWindowRect(handle, &outer)) return XXWIDGETS_OK;
+    if (IsIconic(handle) || IsZoomed(handle)) {
+        WINDOWPLACEMENT placement;
+        placement.length = sizeof(placement);
+        if (GetWindowPlacement(handle, &placement)) {
+            const RECT *normal = &placement.rcNormalPosition;
+            if (normal->right - normal->left < width || normal->bottom - normal->top < height)
+                return win32_restored_size(handle, normal->right - normal->left > width ? normal->right - normal->left : width,
+                                           normal->bottom - normal->top > height ? normal->bottom - normal->top : height);
+        }
+        return XXWIDGETS_OK;
+    }
+    if (outer.right - outer.left >= width && outer.bottom - outer.top >= height) return XXWIDGETS_OK;
+    if (!SetWindowPos(handle, NULL, 0, 0, outer.right - outer.left > width ? outer.right - outer.left : width,
+                      outer.bottom - outer.top > height ? outer.bottom - outer.top : height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+        return XXWIDGETS_PLATFORM_ERROR;
+    win32_window_resized(window, handle, 0);
+    /* Its program lays it out again on the RESIZE, as after any size change. */
+    PostMessageW(handle, XXWIDGETS_WIN32_RESIZED, 0, 0);
+    return XXWIDGETS_OK;
+}
+
+static int win32_supports_kind(xxwidgets_kind kind)
+{
+    return kind == XXWIDGETS_VALUE || kind == XXWIDGETS_GROUP;
+}
+
+/* The button's icon as a comctl32 6 image list: 32-bit premultiplied, one
+ * image per PBS_* state, the disabled one greyed. comctl32 5 has no image
+ * buttons: the button then shows its text, and that is still success. */
+static xxwidgets_status win32_set_icon(xxwidgets_widget *button)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)button->platform;
+    HWND handle = (HWND)button->native;
+    HIMAGELIST images = NULL, previous;
+    BUTTON_IMAGELIST list;
+    if (!native || !handle) return XXWIDGETS_PLATFORM_ERROR;
+    ZeroMemory(&list, sizeof(list));
+    if (button->icon_rgba) {
+        int dpi = win32_dpi(), width = win32_scaled((int)button->icon_width, dpi), height = win32_scaled((int)button->icon_height, dpi);
+        int state, x, y;
+        BITMAPINFO info;
+        unsigned char *pixels = NULL;
+        HBITMAP bitmap;
+        if (width < 1) width = 1;
+        if (height < 1) height = 1;
+        ZeroMemory(&info, sizeof(info));
+        info.bmiHeader.biSize = sizeof(info.bmiHeader);
+        info.bmiHeader.biWidth = width * 6;
+        info.bmiHeader.biHeight = -height;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        bitmap = CreateDIBSection(NULL, &info, DIB_RGB_COLORS, (void **)&pixels, NULL, 0);
+        if (!bitmap || !pixels) {
+            if (bitmap) DeleteObject(bitmap);
+            return XXWIDGETS_PLATFORM_ERROR;
+        }
+        for (state = 0; state < 6; ++state)
+            for (y = 0; y < height; ++y)
+                for (x = 0; x < width; ++x) {
+                    /* The nearest source pixel: the icon follows the DPI. */
+                    const unsigned char *source = button->icon_rgba +
+                        ((size_t)((unsigned)y * button->icon_height / (unsigned)height) * button->icon_width + (unsigned)x * button->icon_width / (unsigned)width) * 4u;
+                    unsigned char *target = pixels + ((size_t)y * (size_t)width * 6u + (size_t)state * (size_t)width + (size_t)x) * 4u;
+                    unsigned int r = source[0], g = source[1], b = source[2], a = source[3];
+                    if (state == 3) { /* PBS_DISABLED - 1 (vsstyle.h) */
+                        r = g = b = (r * 299u + g * 587u + b * 114u) / 1000u;
+                        a = a * 3u / 5u;
+                    }
+                    target[0] = (unsigned char)(b * a / 255u);
+                    target[1] = (unsigned char)(g * a / 255u);
+                    target[2] = (unsigned char)(r * a / 255u);
+                    target[3] = (unsigned char)a;
+                }
+        images = ImageList_Create(width, height, ILC_COLOR32, 6, 0);
+        if (!images || ImageList_Add(images, bitmap, NULL) < 0) {
+            if (images) ImageList_Destroy(images);
+            DeleteObject(bitmap);
+            return XXWIDGETS_PLATFORM_ERROR;
+        }
+        DeleteObject(bitmap);
+        list.himl = images;
+        /* Icon only: centred, and the text stays the accessible name. */
+        list.uAlign = (button->icon_flags & XXWIDGETS_ICON_ONLY) ? BUTTON_IMAGELIST_ALIGN_CENTER : BUTTON_IMAGELIST_ALIGN_LEFT;
+        if (!(button->icon_flags & XXWIDGETS_ICON_ONLY)) list.margin.left = win32_scaled(3, dpi);
+        if (!SendMessageW(handle, BCM_SETIMAGELIST, 0, (LPARAM)&list)) {
+            ImageList_Destroy(images);
+            images = NULL;
+        }
+    } else if (native->icon_images) {
+        list.himl = NULL;
+        SendMessageW(handle, BCM_SETIMAGELIST, 0, (LPARAM)&list);
+    }
+    {
+        /* comctl32 6 draws the text beside even a centred image: BS_BITMAP
+         * keeps it to the image, while the text stays the window text. */
+        LONG_PTR style = GetWindowLongPtrW(handle, GWL_STYLE);
+        LONG_PTR wanted = images && (button->icon_flags & XXWIDGETS_ICON_ONLY) ? style | BS_BITMAP : style & ~(LONG_PTR)BS_BITMAP;
+        if (wanted != style) SetWindowLongPtrW(handle, GWL_STYLE, wanted);
+    }
+    previous = native->icon_images;
+    native->icon_images = images;
+    if (previous) ImageList_Destroy(previous);
+    InvalidateRect(handle, NULL, TRUE);
+    return XXWIDGETS_OK;
+}
+
+/* A batch of show, hide and placement: one repaint at the end. A hidden
+ * window is not frozen (WM_SETREDRAW TRUE would show it). */
+static xxwidgets_status win32_begin_update(xxwidgets_widget *window)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)window->platform;
+    HWND handle = (HWND)window->native;
+    if (!native || !handle) return XXWIDGETS_PLATFORM_ERROR;
+    if (!native->redraw_frozen && (GetWindowLongPtrW(handle, GWL_STYLE) & WS_VISIBLE)) {
+        SendMessageW(handle, WM_SETREDRAW, FALSE, 0);
+        native->redraw_frozen = 1;
+    }
+    return XXWIDGETS_OK;
+}
+
+static xxwidgets_status win32_end_update(xxwidgets_widget *window)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)window->platform;
+    HWND handle = (HWND)window->native;
+    if (!native || !handle) return XXWIDGETS_PLATFORM_ERROR;
+    if (!native->redraw_frozen) return XXWIDGETS_OK;
+    native->redraw_frozen = 0;
+    SendMessageW(handle, WM_SETREDRAW, TRUE, 0);
+    RedrawWindow(handle, NULL, NULL, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
+    /* Shown or hidden meanwhile: applied now. */
+    return win32_sync(window);
+}
+
 const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_init,
                                                     win32_shutdown,
@@ -5510,12 +6094,12 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_about_rich_content,
                                                     NULL, /* translation_changed */
                                                     win32_set_tooltip,
-                                                    NULL, /* metrics */
-                                                    NULL, /* measure */
-                                                    NULL, /* place */
-                                                    NULL, /* native_frame */
-                                                    NULL, /* minimum_frame */
-                                                    NULL, /* supports_kind */
-                                                    NULL, /* set_icon */
-                                                    NULL, /* begin_update */
-                                                    NULL /* end_update */};
+                                                    win32_metrics,
+                                                    win32_measure,
+                                                    win32_place,
+                                                    win32_native_frame,
+                                                    win32_set_minimum_frame,
+                                                    win32_supports_kind,
+                                                    win32_set_icon,
+                                                    win32_begin_update,
+                                                    win32_end_update};

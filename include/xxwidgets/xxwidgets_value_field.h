@@ -76,7 +76,9 @@ XXWIDGETS_API xxwidgets_status xxwidgets_value_field_get_preferred_size(xxwidget
 /* The value as plain text, not bold. */
 XXWIDGETS_API xxwidgets_status xxwidgets_value_field_set_text(xxwidgets_value_field *field, const char *utf8);
 /* Upper-case hexadecimal zero-padded to digits (1..16: 2, 4, 8 or 16 for 8,
- * 16, 32 or 64 bits); bold when value != 0. */
+ * 16, 32 or 64 bits); a wider value shows all its digits. Bold when
+ * value != 0. COMBO and BUTTONS fields: INVALID_ARGUMENT (also set_text,
+ * set_seg_off). */
 XXWIDGETS_API xxwidgets_status xxwidgets_value_field_set_hex(xxwidgets_value_field *field, uint64_t value, unsigned int digits);
 /* "SSSS:OOOO", e.g. "1000:0000"; bold when either part is nonzero. */
 XXWIDGETS_API xxwidgets_status xxwidgets_value_field_set_seg_off(xxwidgets_value_field *field, uint16_t segment, uint16_t offset);

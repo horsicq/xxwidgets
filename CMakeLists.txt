@@ -227,6 +227,12 @@ add_library(xxwidgets
     src/xxwidgets_icons_internal.h
     src/xxwidgets_icons.c
     src/xxwidgets_icons_data.c
+    src/xxwidgets_components_internal.h
+    src/xxwidgets_value_field.c
+    src/xxwidgets_file_name_bar.c
+    src/xxwidgets_file_header.c
+    src/xxwidgets_side_panel.c
+    src/xxwidgets_shortcuts_dialog.c
     src/xxwidgets_translation.c
     src/xxwidgets_edit.c
     src/xxwidgets_window.c
@@ -685,6 +691,13 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
                 add_test(NAME xxwidgets_dialog_keys_gtk
                     COMMAND "${XXWIDGETS_XVFB_RUN}" -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:xxwidgets_dialog_keys_gtk_tests>)
                 set_tests_properties(xxwidgets_dialog_keys_gtk PROPERTIES TIMEOUT 30)
+                # Measured placement, VALUE/GROUP, icons, tall buttons, tree marks (spec 3b.3 G1-G6, primitives).
+                add_executable(xxwidgets_frames_gtk_tests tests/test_frames_gtk.c)
+                target_link_libraries(xxwidgets_frames_gtk_tests PRIVATE xxwidgets::xxwidgets PkgConfig::XXWIDGETS_GTK3)
+                target_compile_features(xxwidgets_frames_gtk_tests PRIVATE c_std_11)
+                add_test(NAME xxwidgets_frames_gtk
+                    COMMAND "${XXWIDGETS_XVFB_RUN}" -a -s "-screen 0 1600x1200x24" $<TARGET_FILE:xxwidgets_frames_gtk_tests>)
+                set_tests_properties(xxwidgets_frames_gtk PROPERTIES TIMEOUT 60)
                 find_package(Python3 QUIET COMPONENTS Interpreter)
                 find_program(XXWIDGETS_XDOTOOL xdotool)
                 if(Python3_Interpreter_FOUND AND XXWIDGETS_XDOTOOL)
@@ -767,7 +780,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             src/xxwidgets_debugger/xxwidgets_debugger_x86_64.c
             src/xxwidgets_debugger/xxwidgets_debugger_arm32.c
             src/xxwidgets_debugger/xxwidgets_debugger_arm64.c)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_treeview.c src/scan/xxwidgets_scan_panel.c tests/test_scan_panel.c
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_treeview.c src/scan/xxwidgets_scan_panel.c tests/test_scan_panel.c tests/test_scan_panel_options.c
             src/scan/xxwidgets_scan_options.c src/scan/xxwidgets_scan_directory.c ${_xxwidgets_scan_directory_source}
             tests/test_scan_directory.c)
         set(_xxwidgets_scan_fixture "${CMAKE_CURRENT_BINARY_DIR}/scan-directory-fixture")
@@ -814,6 +827,10 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         set_tests_properties(xxwidgets_window_modality PROPERTIES TIMEOUT 15 LABELS "window;modality")
         add_test(NAME xxwidgets_geometry COMMAND xxwidgets_core_tests --geometry-only)
         set_tests_properties(xxwidgets_geometry PROPERTIES TIMEOUT 15 LABELS "layout;frames;icons")
+        target_sources(xxwidgets_core_tests PRIVATE tests/test_main_components.c src/xxwidgets_value_field.c
+            src/xxwidgets_file_name_bar.c src/xxwidgets_file_header.c src/xxwidgets_side_panel.c src/xxwidgets_shortcuts_dialog.c)
+        add_test(NAME xxwidgets_main_components COMMAND xxwidgets_core_tests --main-components-only)
+        set_tests_properties(xxwidgets_main_components PROPERTIES TIMEOUT 15 LABELS "layout;components")
         add_test(NAME xxwidgets_core COMMAND xxwidgets_core_tests)
         set_tests_properties(xxwidgets_core xxwidgets_scan_directory PROPERTIES
             RESOURCE_LOCK xxwidgets_scan_directory_fixture)
@@ -947,6 +964,12 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             set_tests_properties(xxwidgets_win32_data_struct PROPERTIES TIMEOUT 15)
             add_test(NAME xxwidgets_win32_tree_colors COMMAND xxwidgets_win32_tests --tree-colors)
             set_tests_properties(xxwidgets_win32_tree_colors PROPERTIES TIMEOUT 15)
+            # Common Controls 6 (button image lists), as cdie's GUI manifest has it.
+            if(MSVC)
+                target_sources(xxwidgets_win32_tests PRIVATE tests/xxwidgets_win32_tests.manifest)
+            endif()
+            add_test(NAME xxwidgets_win32_die_main_panel COMMAND xxwidgets_win32_tests --die-main-panel)
+            set_tests_properties(xxwidgets_win32_die_main_panel PROPERTIES TIMEOUT 20 LABELS "layout;frames;icons")
             add_test(NAME xxwidgets_memory_map_controls COMMAND xxwidgets_win32_tests --memory-map-controls)
             add_executable(xxwidgets_memory_map_browser_tests tests/test_memory_map_browser.c)
             target_include_directories(xxwidgets_memory_map_browser_tests PRIVATE "${XXWIDGETS_XXFCLIB_DIR}/include")
