@@ -2782,7 +2782,12 @@ static void cocoa_size_table(xxwidgets_widget *widget)
         /* A small read-only text table (for example Shortcuts) has only its
          * model columns. Let the last one take the viewport remainder instead
          * of leaving a header-shaped blank area that looks like a column. */
-        if (widget->kind == XXWIDGETS_TABLE) [table sizeLastColumnToFit];
+        if (widget->kind == XXWIDGETS_TABLE && [[table tableColumns] count]) {
+            /* AppKit only resizes a last column that carries the autoresizing mask. */
+            NSTableColumn *last = [[table tableColumns] lastObject];
+            [last setResizingMask:NSTableColumnUserResizingMask | NSTableColumnAutoresizingMask];
+            [table sizeLastColumnToFit];
+        }
         return;
     }
     /* Tree mark columns stay at the right: the text column takes the rest. */
