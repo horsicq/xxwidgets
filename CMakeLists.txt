@@ -1099,15 +1099,7 @@ foreach(_xxwidgets_type_header
 endforeach()
 install(FILES LICENSE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 install(FILES examples/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/examples)
-install(FILES docs/process-dialog-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/search-dialog-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/strings-viewer-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/extractor-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/disk-write-dialog.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/forms-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/die-signature-editor-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/die-signature-debugger-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
-install(FILES docs/debugger-widget-reference.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
+install(FILES docs/BUILD.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 install(EXPORT xxwidgetsTargets FILE xxwidgetsTargets.cmake
     NAMESPACE xxwidgets:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xxwidgets)
 configure_package_config_file(cmake/xxwidgetsConfig.cmake.in
@@ -1136,6 +1128,4 @@ if(XXWIDGETS_XGETTEXT_EXECUTABLE)
 endif()
 install(DIRECTORY po/ DESTINATION ${CMAKE_INSTALL_DATADIR}/xxwidgets/po
     FILES_MATCHING PATTERN "*.po" PATTERN "*.pot")
-install(FILES docs/translation.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
 
-install(FILES docs/scan-directory.md DESTINATION ${CMAKE_INSTALL_DOCDIR}/docs)
