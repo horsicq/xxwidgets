@@ -207,6 +207,10 @@ struct xxwidgets_widget {
     void *hex_dump_user;
     xxwidgets_hexview_input_fn hex_input_handler;
     void *hex_input_user;
+    xxwidgets_hexview_tooltip_fn hex_tooltip_handler;
+    void *hex_tooltip_user;
+    uint64_t hex_tooltip_offset;      /* Absolute byte of the current tip, UINT64_MAX for none. */
+    unsigned int hex_tooltip_column;
     xxwidgets_hexview_highlight *hex_highlights;
     size_t hex_highlight_count;
     xxwidgets_hexview_highlight *hex_overview_markers;
@@ -471,6 +475,12 @@ size_t xxwidgets_hexview_hit(const xxwidgets_widget *, size_t row, size_t column
  * The hit retains the complete source byte range of a decoded symbol. */
 int xxwidgets_hexview_hit_span(const xxwidgets_widget *, size_t row, size_t column, size_t cell_index, xxwidgets_hex_span *out);
 int xxwidgets_hexview_contains(const xxwidgets_widget *, size_t offset, size_t length);
+/* Hover tip for the window byte offset in column 1 or 2. Returns 1 when the
+ * byte or column changed since the last call (the backend then shows text,
+ * hiding the tip when text is empty), 0 when the same tip stays. */
+int xxwidgets_hexview_tooltip_text(xxwidgets_widget *, size_t offset, unsigned int column, char *text, size_t capacity);
+/* Forget the hovered byte, so the next hover asks the handler again. */
+void xxwidgets_hexview_tooltip_reset(xxwidgets_widget *);
 xxwidgets_status xxwidgets_hexview_pointer(xxwidgets_widget *, size_t offset, int extend);
 xxwidgets_status xxwidgets_hexview_pointer_span(xxwidgets_widget *, size_t offset, size_t bytes, int extend);
 xxwidgets_status xxwidgets_hexview_body_action(xxwidgets_widget *, size_t index);

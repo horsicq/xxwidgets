@@ -209,6 +209,41 @@ void xxwidgets_hexview_dispose(xxwidgets_widget *widget)
     widget->hex_size = 0;
 }
 
+xxwidgets_status xxwidgets_hexview_set_tooltip_handler(xxwidgets_widget *w, xxwidgets_hexview_tooltip_fn handler, void *user_data)
+{
+    if (!w || w->kind != XXWIDGETS_HEXVIEW) return XXWIDGETS_INVALID_ARGUMENT;
+    w->hex_tooltip_handler = handler;
+    w->hex_tooltip_user = handler ? user_data : NULL;
+    w->hex_tooltip_offset = UINT64_MAX;
+    w->hex_tooltip_column = 0;
+    if (!handler && w->native && w->app && w->app->ops->set_tooltip) (void)w->app->ops->set_tooltip(w, NULL);
+    return XXWIDGETS_OK;
+}
+
+void xxwidgets_hexview_tooltip_reset(xxwidgets_widget *w)
+{
+    if (w && w->kind == XXWIDGETS_HEXVIEW) w->hex_tooltip_offset = UINT64_MAX;
+}
+
+int xxwidgets_hexview_tooltip_text(xxwidgets_widget *w, size_t offset, unsigned int column, char *text, size_t capacity)
+{
+    uint64_t at;
+    if (!text || !capacity) return 0;
+    text[0] = '\0';
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !w->hex_tooltip_handler || offset >= w->hex_size || (column != 1U && column != 2U) ||
+        (uint64_t)offset > UINT64_MAX - w->hex_base) {
+        if (w && w->kind == XXWIDGETS_HEXVIEW && w->hex_tooltip_offset != UINT64_MAX) { w->hex_tooltip_offset = UINT64_MAX; return 1; }
+        return 0;
+    }
+    at = w->hex_base + (uint64_t)offset;
+    if (at == w->hex_tooltip_offset && column == w->hex_tooltip_column) return 0;
+    w->hex_tooltip_offset = at;
+    w->hex_tooltip_column = column;
+    w->hex_tooltip_handler(w, at, column, text, capacity, w->hex_tooltip_user);
+    text[capacity - 1U] = '\0';
+    return 1;
+}
+
 int xxwidgets_hexview_highlight_at(const xxwidgets_widget *w, uint64_t at, uint32_t *color)
 {
     int found = 0, priority = 0;

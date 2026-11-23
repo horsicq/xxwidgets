@@ -804,6 +804,17 @@ XXWIDGETS_API int xxwidgets_hexview_highlight_at(const xxwidgets_widget *, uint6
  * reserving terminal space. Invalid colors/overflow and backend failures leave
  * the previous markers intact. Passing NULL/0 clears the strip. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_overview_markers(xxwidgets_widget *, const xxwidgets_hexview_highlight *, size_t count);
+/* Hover text for one byte. The view calls the handler on the UI thread when
+ * the pointer moves onto another byte of the elements (column 1) or symbols
+ * (column 2) column; offset is absolute (layout base + window offset). Write
+ * NUL-terminated UTF-8 into text (capacity bytes, at least 1024); leave it
+ * empty for no tip. The handler must not call hexview setters. Native Win32
+ * shows the text as a tooltip; the other backends keep the handler and show
+ * nothing yet (a TUI host can describe the cursor byte itself). A NULL
+ * handler removes it and any tip it set. */
+typedef void (*xxwidgets_hexview_tooltip_fn)(xxwidgets_widget *widget, uint64_t offset, unsigned int column, char *text, size_t capacity,
+                                             void *user_data);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_tooltip_handler(xxwidgets_widget *, xxwidgets_hexview_tooltip_fn, void *user_data);
 /* Optional read-only, windowed source. Source offsets are absolute and the
  * displayed window starts at the layout base. read must fill exactly length
  * bytes; seek must load a window containing the requested byte and its whole

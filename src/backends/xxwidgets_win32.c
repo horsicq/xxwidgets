@@ -1595,9 +1595,12 @@ static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
     free(wide);
     return CDRF_SKIPDEFAULT;
 }
-static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
+/* activate 0: a hover probe, which leaves the active column alone; column
+ * receives the hit column (1 elements, 2 symbols) when not NULL. */
+static size_t win32_hex_hit_at(xxwidgets_widget *w, POINT point, size_t *bytes, unsigned int *column, int activate)
 {
     *bytes = 1;
+    if (column) *column = 0;
     HWND handle = (HWND)w->native;
     LVHITTESTINFO hit;
     memset(&hit, 0, sizeof(hit));
@@ -1605,6 +1608,7 @@ static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
     int row = ListView_SubItemHitTest(handle, &hit);
     if (row < 0 || hit.iSubItem < 0 || hit.iSubItem > 2)
         return SIZE_MAX;
+    if (column) *column = (unsigned int)hit.iSubItem;
     RECT rect = win32_hex_rect(handle, row, hit.iSubItem);
     const char *text = xxwidgets_hexview_cell(w, (size_t)row, (size_t)hit.iSubItem);
     wchar_t *wide = NULL;
@@ -1627,7 +1631,7 @@ static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
         SelectObject(dc, previous);
         ReleaseDC(handle, dc);
         free(wide);
-        if (offset != SIZE_MAX)
+        if (offset != SIZE_MAX && activate)
             xxwidgets_hexview_activate_column(w, 2);
         return offset;
     }
@@ -1647,9 +1651,13 @@ static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
     ReleaseDC(handle, dc);
     free(wide);
     size_t offset = xxwidgets_hexview_hit(w, (size_t)row, (size_t)hit.iSubItem, index);
-    if (offset != SIZE_MAX)
+    if (offset != SIZE_MAX && activate)
         xxwidgets_hexview_activate_column(w, (unsigned)hit.iSubItem);
     return offset;
+}
+static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
+{
+    return win32_hex_hit_at(w, point, bytes, NULL, 1);
 }
 /* Width of one mark column: every column is as wide as the widest label. */
 static int win32_tree_mark_width(xxwidgets_widget *control, HDC dc, int row_height)
@@ -3685,6 +3693,22 @@ static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp,
                 }
             }
         }
+        if (message == WM_MOUSEMOVE && !widget->hex_dragging && widget->hex_tooltip_handler) {
+            /* A new byte under the pointer: hide the old tip, then show the
+             * handler's text (the tooltip control reappears after its delay). */
+            POINT point = {(short)LOWORD(lp), (short)HIWORD(lp)};
+            size_t bytes;
+            unsigned int column;
+            size_t offset = win32_hex_hit_at(widget, point, &bytes, &column, 0);
+            char tip[1024];
+            if (xxwidgets_hexview_tooltip_text(widget, offset, column, tip, sizeof(tip))) {
+                TOOLINFOW tool;
+                HWND tooltip = win32_tooltip_tool(widget, &tool);
+                if (tooltip) SendMessageW(tooltip, TTM_POP, 0, 0);
+                (void)win32_set_tooltip(widget, tip[0] ? tip : NULL);
+            }
+        }
+        if (message == WM_MOUSELEAVE) xxwidgets_hexview_tooltip_reset(widget);
         if (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK || (message == WM_MOUSEMOVE && widget->hex_dragging)) {
             POINT point = {(short)LOWORD(lp), (short)HIWORD(lp)};
             size_t bytes, offset = win32_hex_hit(widget, point, &bytes);
