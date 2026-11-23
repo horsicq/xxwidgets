@@ -14,7 +14,8 @@ typedef enum xxwidgets_debugger_arch {
     XXWIDGETS_DEBUGGER_ARCH_X86_32,
     XXWIDGETS_DEBUGGER_ARCH_X86_64,
     XXWIDGETS_DEBUGGER_ARCH_ARM32,
-    XXWIDGETS_DEBUGGER_ARCH_ARM64
+    XXWIDGETS_DEBUGGER_ARCH_ARM64,
+    XXWIDGETS_DEBUGGER_ARCH_M68K
 } xxwidgets_debugger_arch;
 
 #define XXWIDGETS_DEBUGGER_X86_NO_DEBUG_REGISTERS 1u
@@ -54,12 +55,19 @@ typedef struct xxwidgets_debugger_arm64_state {
     uint8_t v[32][16];
 } xxwidgets_debugger_arm64_state;
 
+/* MC68000 uses big-endian 32-bit words; A7 is the active stack pointer. */
+typedef struct xxwidgets_debugger_m68k_state {
+    uint32_t d[8], a[8], pc, usp, ssp;
+    uint16_t sr;
+} xxwidgets_debugger_m68k_state;
+
 typedef struct xxwidgets_debugger_cpu_snapshot {
     xxwidgets_debugger_arch arch;
     union {
         xxwidgets_debugger_x86_state x86;
         xxwidgets_debugger_arm32_state arm32;
         xxwidgets_debugger_arm64_state arm64;
+        xxwidgets_debugger_m68k_state m68k;
     } regs;
 } xxwidgets_debugger_cpu_snapshot;
 

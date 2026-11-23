@@ -129,7 +129,8 @@ enum {
     TUI_NORMAL,
     TUI_DISABLED,
     TUI_FOCUS,
-    TUI_TITLE, TUI_RED, TUI_GREEN, TUI_BLUE, TUI_OLIVE, TUI_TEAL, TUI_GRAY, TUI_MALWARE, TUI_FOCUS_DISABLED
+    TUI_TITLE, TUI_RED, TUI_GREEN, TUI_BLUE, TUI_OLIVE, TUI_TEAL, TUI_GRAY, TUI_MALWARE, TUI_FOCUS_DISABLED,
+    TUI_PURPLE
 };
 /* Independent apps cannot safely own the same process terminal concurrently. */
 static int tui_active;
@@ -991,7 +992,8 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                     case 0xff0000: case 0x800000: item_style = TUI_RED; break;
                     case 0x00ff00: case 0x008000: item_style = TUI_GREEN; break;
                     case 0x0000ff: case 0x000080: item_style = TUI_BLUE; break;
-                    case 0xffff00: case 0x808000: item_style = TUI_OLIVE; break;
+                    case 0xffff00: case 0x808000: case 0xffbf00: item_style = TUI_OLIVE; break;
+                    case 0xff00ff: case 0x800080: case 0xd080ff: item_style = TUI_PURPLE; break;
                     case 0x00ffff: case 0x008080: item_style = TUI_TEAL; break;
                     case 0xc0c0c0: case 0x808080: item_style = TUI_GRAY; break;
                     default: break;
@@ -1281,7 +1283,7 @@ static xxwidgets_status tui_present(tui_state *state)
                                   FOREGROUND_BLUE | FOREGROUND_INTENSITY, FOREGROUND_RED | FOREGROUND_GREEN,
                                   FOREGROUND_GREEN | FOREGROUND_BLUE, FOREGROUND_INTENSITY,
                                   FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY | BACKGROUND_RED,
-                                  FOREGROUND_INTENSITY | BACKGROUND_BLUE};
+                                  FOREGROUND_INTENSITY | BACKGROUND_BLUE, FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY};
     size_t count = (size_t)state->columns * (size_t)state->rows, i;
     CHAR_INFO *output = (CHAR_INFO *)malloc(count * sizeof(*output));
     CONSOLE_SCREEN_BUFFER_INFO info;
@@ -1335,8 +1337,8 @@ static xxwidgets_status tui_present(tui_state *state)
         if (!SetConsoleCursorPosition(state->output, position)) return XXWIDGETS_PLATFORM_ERROR;
     }
 #else
-    static const char *styles[] = {"\033[0m", "\033[0;90m", "\033[0;97;44m", "\033[0;97;46m", "\033[0;91m", "\033[0;92m", "\033[0;94m", "\033[0;93m", "\033[0;96m", "\033[0;37m", "\033[0;97;41m", "\033[0;90;44m"};
-    static const char *monochrome[] = {"\033[0m", "\033[0;2m", "\033[0;7m", "\033[0;1m", "\033[0;1m", "\033[0m", "\033[0m", "\033[0m", "\033[0m", "\033[0;2m", "\033[0;1;7m", "\033[0;2;7m"};
+    static const char *styles[] = {"\033[0m", "\033[0;90m", "\033[0;97;44m", "\033[0;97;46m", "\033[0;91m", "\033[0;92m", "\033[0;94m", "\033[0;93m", "\033[0;96m", "\033[0;37m", "\033[0;97;41m", "\033[0;90;44m", "\033[0;95m"};
+    static const char *monochrome[] = {"\033[0m", "\033[0;2m", "\033[0;7m", "\033[0;1m", "\033[0;1m", "\033[0m", "\033[0m", "\033[0m", "\033[0m", "\033[0;2m", "\033[0;1;7m", "\033[0;2;7m", "\033[0m"};
     size_t capacity = (size_t)state->columns * (size_t)state->rows * 64 + (size_t)state->rows * 32 + 128, length = 0;
     char *output = (char *)malloc(capacity);
     int x, y, previous_style = -1, previous_bold = -1;
@@ -1756,7 +1758,8 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
                 if (row + 1 < widget->item_count) next = row + 1;
             }
         } else if (key == TUI_KEY_ENTER) {
-            xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, (int)node);
+            /* A lazy tree's "... N more" item loads its next page instead. */
+            xxwidgets_treeview_user_activate(widget, node);
             return XXWIDGETS_OK;
         } else if (key == ' ') {
             if (xxwidgets_treeview_has_children(widget, node) && xxwidgets_treeview_get_expanded(widget, node, &expanded) == XXWIDGETS_OK)

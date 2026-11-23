@@ -324,7 +324,8 @@ static xxwidgets_status controls_enabled(xxwidgets_extractor *v)
     if (status == XXWIDGETS_OK && selection >= 0 && (size_t)selection < v->offered_mode_count) desired = v->offered_modes[selection];
     if (status == XXWIDGETS_OK && (format < 0 || (v->source->format_count && (size_t)format >= v->source->format_count))) return XXWIDGETS_INVALID_ARGUMENT;
     if (status == XXWIDGETS_OK) status = load_modes(v, (size_t)format, desired);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, TYPES), !all && v->source->type_count && v->source->scan);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_set_enabled(C(v, TYPES), !all && (v->source->type_count || v->source->choose_types) && v->source->scan);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, MAP_SELECTOR), v->source->map_mode_count > 1 && v->source->scan);
     return status;
 }
@@ -413,7 +414,8 @@ xxwidgets_status xxwidgets_extractor_set_page(xxwidgets_extractor *v, uint64_t f
         snprintf(numbers[i][1], 32, "%0*" PRIX64, r->offset > UINT32_MAX ? 16 : 8, r->offset);
         numbers[i][2][0] = 0;
         if (r->has_address) snprintf(numbers[i][2], 32, "%0*" PRIX64, r->address > UINT32_MAX ? 16 : 8, r->address);
-        snprintf(numbers[i][3], 32, "%0*" PRIX64, r->size > UINT32_MAX ? 16 : 8, r->size);
+        if (r->size_unknown) snprintf(numbers[i][3], 32, "?");
+        else snprintf(numbers[i][3], 32, "%0*" PRIX64, r->size > UINT32_MAX ? 16 : 8, r->size);
         cells[i * 9] = numbers[i][0];
         cells[i * 9 + 1] = numbers[i][1];
         cells[i * 9 + 2] = numbers[i][2];
@@ -675,10 +677,10 @@ static xxwidgets_status select_row(xxwidgets_extractor *v)
     if (v->source->device) {
         const xxwidgets_extractor_record *r = v->records + row;
         status = xxwidgets_hexview_seek_device(C(v, HEX), r->offset);
-        if (status == XXWIDGETS_OK) status = xxwidgets_hexview_set_source_selection(C(v, HEX), r->offset, r->size);
+        if (status == XXWIDGETS_OK) status = xxwidgets_hexview_set_source_selection(C(v, HEX), r->offset, r->size_unknown ? 1 : r->size);
         if (status != XXWIDGETS_OK) return status_text(v, XXW_TR(v->owner->app, "Cannot read selected object's source bytes"));
     }
-    return xxwidgets_widget_set_enabled(C(v, DUMP), v->source->dump || v->source->dump_ex);
+    return xxwidgets_widget_set_enabled(C(v, DUMP), (v->source->dump || v->source->dump_ex) && !v->records[row].size_unknown);
 }
 static xxwidgets_status output_view(xxwidgets_extractor *v, int action)
 {
@@ -728,6 +730,13 @@ xxwidgets_status xxwidgets_extractor_process(xxwidgets_extractor *v)
     v->pending = 0;
     if (action == ACTION_SCAN) return v->source->scan ? scan_view(v) : XXWIDGETS_OK;
     if (action == ACTION_SELECT) return select_row(v);
+    if (action == ACTION_TYPES && v->source->choose_types) {
+        int changed = 0;
+        status = v->source->choose_types(v->source->user, v->owner, &changed);
+        (void)xxwidgets_widget_focus(C(v, TYPES));
+        if (status != XXWIDGETS_OK) return status_text(v, provider_error(v, XXW_TR(v->owner->app, "Cannot choose extractor types")));
+        return changed ? status_text(v, XXW_TR(v->owner->app, "Type selection changed; press Scan")) : XXWIDGETS_OK;
+    }
     if (action == ACTION_TYPES) return choose_types(v);
     if (action >= ACTION_SAVE && action <= ACTION_DUMP) return output_view(v, action);
     if (action < ACTION_PREVIOUS || action > ACTION_GO) return XXWIDGETS_OK;

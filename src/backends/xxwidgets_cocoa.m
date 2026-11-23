@@ -1273,6 +1273,7 @@ static int cocoa_signature_utf16_bytes(NSString *source, NSRange range, size_t *
 - (void)browserActivated:(id)sender;
 - (void)treeActivated:(id)sender;
 - (void)treeClicked:(id)sender;
+- (void)treeLoad:(id)argument;
 - (void)tableActivated:(id)sender;
 @end
 
@@ -1745,7 +1746,8 @@ static void cocoa_size_table(xxwidgets_widget *widget);
         xxwidgets_focusable(tree_widget) && tree_widget->value >= 0) {
         unsigned short code = [event keyCode];
         if (code == 36 || code == 76) {
-            xxwidgets_emit(tree_widget, XXWIDGETS_EVENT_ACTIVATE, tree_widget->value);
+            /* A lazy tree's "... N more" item loads its next page instead. */
+            xxwidgets_treeview_user_activate(tree_widget, (size_t)tree_widget->value);
             return;
         }
         if (code == 49) {
@@ -2159,17 +2161,13 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
     }
 }
 
+/* Children are walked through the sibling links, so a parent of many
+ * children (a lazy source's loaded pages) is listed in linear time. */
 - (NSInteger)outlineView:(NSOutlineView *)outline numberOfChildrenOfItem:(id)item
 {
     (void)outline;
     if (!widget) return 0;
-    size_t parent = item ? (size_t)[item unsignedLongLongValue] : SIZE_MAX, count = 0;
-    for (size_t node = 0; node < xxwidgets_treeview_count(widget); ++node) {
-        xxwidgets_tree_node entry;
-        xxwidgets_treeview_get_node(widget, node, &entry);
-        if (entry.parent == parent) ++count;
-    }
-    return (NSInteger)count;
+    return (NSInteger)xxwidgets_treeview_child_count(widget, item ? (size_t)[item unsignedLongLongValue] : SIZE_MAX);
 }
 
 - (id)outlineView:(NSOutlineView *)outline child:(NSInteger)index ofItem:(id)item
@@ -2177,14 +2175,20 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
     (void)outline;
     if (!widget || index < 0) return nil;
     cocoa_widget_state *state = widget->platform;
-    size_t parent = item ? (size_t)[item unsignedLongLongValue] : SIZE_MAX;
-    for (size_t node = 0; node < xxwidgets_treeview_count(widget); ++node) {
-        xxwidgets_tree_node entry;
-        xxwidgets_treeview_get_node(widget, node, &entry);
-        if (entry.parent == parent && index-- == 0)
-            return node < [state->tree_items count] ? [state->tree_items objectAtIndex:(NSUInteger)node] : nil;
-    }
-    return nil;
+    size_t node = xxwidgets_treeview_child_at(widget, item ? (size_t)[item unsignedLongLongValue] : SIZE_MAX, (size_t)index);
+    return node < [state->tree_items count] ? [state->tree_items objectAtIndex:(NSUInteger)node] : nil;
+}
+
+/* Deferred from shouldExpandItem: fetch a lazy node's children (or the page
+ * behind a "... N more" item) and open it, unless the tree changed since. */
+- (void)treeLoad:(id)argument
+{
+    NSArray *values = argument;
+    if (!widget || widget->app->syncing || [values count] != 2) return;
+    size_t node = (size_t)[[values objectAtIndex:0] unsignedLongLongValue];
+    uint64_t revision = (uint64_t)[[values objectAtIndex:1] unsignedLongLongValue];
+    if (revision == widget->tree_content_revision && xxwidgets_treeview_pending(widget, node))
+        (void)xxwidgets_treeview_user_expand(widget, node, 1);
 }
 
 - (BOOL)outlineView:(NSOutlineView *)outline isItemExpandable:(id)item
@@ -2247,8 +2251,17 @@ static void cocoa_tree_expansion(xxwidgets_widget *widget, NSNotification *notif
 
 - (BOOL)outlineView:(NSOutlineView *)outline shouldExpandItem:(id)item
 {
-    (void)outline; (void)item;
-    return widget && (widget->app->syncing || xxwidgets_focusable(widget));
+    (void)outline;
+    if (!widget || (!widget->app->syncing && !xxwidgets_focusable(widget))) return NO;
+    if (!widget->app->syncing && item && xxwidgets_treeview_pending(widget, (size_t)[item unsignedLongLongValue])) {
+        /* A lazy source's children are fetched after this delegate call
+         * returns (treeLoad:), which then opens the item. */
+        NSArray *argument = [NSArray arrayWithObjects:item,
+            [NSNumber numberWithUnsignedLongLong:(unsigned long long)widget->tree_content_revision], nil];
+        [self performSelector:@selector(treeLoad:) withObject:argument afterDelay:0];
+        return NO;
+    }
+    return YES;
 }
 
 - (BOOL)outlineView:(NSOutlineView *)outline shouldCollapseItem:(id)item
@@ -3289,6 +3302,7 @@ static void cocoa_destroy_backend(xxwidgets_widget *widget)
             if (widget->kind == XXWIDGETS_TREEVIEW && native) {
                 ((XXWidgetsTree *)native)->tree_widget = NULL;
                 [(NSOutlineView *)native setTarget:nil];
+                if (state->delegate) [NSObject cancelPreviousPerformRequestsWithTarget:state->delegate];
             }
             if (widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_combo_kind(widget))
                 [(NSButton *)native setTarget:nil];

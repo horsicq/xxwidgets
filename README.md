@@ -3,6 +3,9 @@
 C11 widgets for native desktop and terminal applications, with a shared API.
 Includes basic controls, tables, trees, hex and disassembly views, binary
 inspectors, scan panels, and optional debugger and emulator adapters.
+Trees can also load lazily from a callback source, a page at a time
+(`xxwidgets_treeview_set_source`), which the snapshot tree-diff viewer
+(`xxwidgets/xxwidget_treediffviewer.h`) builds on.
 
 - Windows: WinAPI controls.
 - Linux: GTK 3.16+ controls.

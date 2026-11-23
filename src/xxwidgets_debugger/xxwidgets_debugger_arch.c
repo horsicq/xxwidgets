@@ -4,6 +4,38 @@
 
 static const char hex_digits[] = "0123456789ABCDEF";
 
+static xxwidgets_status format_m68k(const xxwidgets_debugger_m68k_state *state,
+                                  xxwidgets_debugger_register_rows *rows)
+{
+    static const char *const flags[] = {"T", "S", "IPL", "X", "N", "Z", "V", "C"};
+    static const unsigned shifts[] = {15, 13, 8, 4, 3, 2, 1, 0};
+    xxwidgets_status status;
+    size_t i;
+    char name[3] = {'D', '0', 0};
+    for (i = 0; i < 8u; ++i) {
+        name[1] = (char)('0' + i);
+        status = xxwidgets_debugger_add_scalar(rows, name, state->d[i], 8u);
+        if (status != XXWIDGETS_OK) return status;
+    }
+    name[0] = 'A';
+    for (i = 0; i < 8u; ++i) {
+        name[1] = (char)('0' + i);
+        status = xxwidgets_debugger_add_scalar(rows, name, state->a[i], 8u);
+        if (status != XXWIDGETS_OK) return status;
+    }
+    status = xxwidgets_debugger_add_scalar(rows, "PC", state->pc, 8u);
+    if (status != XXWIDGETS_OK) return status;
+    status = xxwidgets_debugger_add_scalar(rows, "SR", state->sr, 4u);
+    if (status != XXWIDGETS_OK) return status;
+    for (i = 0; i < sizeof(shifts) / sizeof(shifts[0]); ++i) {
+        status = xxwidgets_debugger_add_scalar(rows, flags[i], (state->sr >> shifts[i]) & (i == 2u ? 7u : 1u), 1u);
+        if (status != XXWIDGETS_OK) return status;
+    }
+    status = xxwidgets_debugger_add_scalar(rows, "USP", state->usp, 8u);
+    if (status != XXWIDGETS_OK) return status;
+    return xxwidgets_debugger_add_scalar(rows, "SSP", state->ssp, 8u);
+}
+
 static xxwidgets_status begin_row(xxwidgets_debugger_register_rows *rows, const char *name)
 {
     size_t length;
@@ -66,6 +98,7 @@ xxwidgets_status xxwidgets_debugger_format_registers(const xxwidgets_debugger_cp
         case XXWIDGETS_DEBUGGER_ARCH_X86_64: status = xxwidgets_debugger_format_x86_64(&cpu->regs.x86, &staged); break;
         case XXWIDGETS_DEBUGGER_ARCH_ARM32: status = xxwidgets_debugger_format_arm32(&cpu->regs.arm32, &staged); break;
         case XXWIDGETS_DEBUGGER_ARCH_ARM64: status = xxwidgets_debugger_format_arm64(&cpu->regs.arm64, &staged); break;
+        case XXWIDGETS_DEBUGGER_ARCH_M68K: status = format_m68k(&cpu->regs.m68k, &staged); break;
         default: return XXWIDGETS_INVALID_ARGUMENT;
     }
     if (status != XXWIDGETS_OK) return status;
@@ -104,6 +137,7 @@ size_t xxwidgets_debugger_arch_word_size(xxwidgets_debugger_arch arch)
     switch (arch) {
         case XXWIDGETS_DEBUGGER_ARCH_X86_16: return 2;
         case XXWIDGETS_DEBUGGER_ARCH_X86_32:
+        case XXWIDGETS_DEBUGGER_ARCH_M68K:
         case XXWIDGETS_DEBUGGER_ARCH_ARM32: return 4;
         case XXWIDGETS_DEBUGGER_ARCH_X86_64:
         case XXWIDGETS_DEBUGGER_ARCH_ARM64: return 8;

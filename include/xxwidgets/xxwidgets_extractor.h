@@ -25,6 +25,7 @@ typedef struct xxwidgets_extractor_record {
     int has_address;
     const char *region, *method, *type, *info, *name;
     uint64_t number; /* original zero-based scan ordinal, stable under filters */
+    int size_unknown; /* 1: the size is not known; shown as "?", "Dump selected" is disabled */
 } xxwidgets_extractor_record;
 typedef struct xxwidgets_extractor_source {
     uint64_t count;
@@ -62,6 +63,12 @@ typedef struct xxwidgets_extractor_source {
     xxwidgets_status (*save_ex)(void *user, const char *path, xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter);
     xxwidgets_status (*dump_ex)(void *user, const char *destination, int directory, const uint64_t *indices, size_t count,
         xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter);
+    /* Optional: the host's own type selection, for more types than the 64-bit
+     * mask holds (see xxwidgets_type_picker_dialog). When set, "Options..."
+     * calls it on the UI thread instead of the built-in check box dialog;
+     * type_count may then be 0 and options.type_mask is not used. Set
+     * *changed when the selection changed (the next Scan uses it). */
+    xxwidgets_status (*choose_types)(void *user, xxwidgets_widget *owner, int *changed);
 } xxwidgets_extractor_source;
 typedef enum xxwidgets_extractor_control_id {
     XXWIDGETS_EXTRACTOR_FORMAT_SELECTOR,

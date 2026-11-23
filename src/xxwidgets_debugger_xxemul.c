@@ -145,6 +145,20 @@ static xxwidgets_status get_target(void *context, uint64_t tid, xxwidgets_debugg
         } else {
             return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
         }
+    } else if (xxemul_get_arch(adapter->emulator) == XXEMUL_ARCH_M68K) {
+        xxemul_m68k_state native;
+        xxwidgets_debugger_m68k_state *regs = &value.cpu.regs.m68k;
+        code = xxemul_get_m68k_state(adapter->emulator, &native);
+        if (code != XXEMUL_STATUS_OK) return emul_result(adapter, code);
+        value.cpu.arch = XXWIDGETS_DEBUGGER_ARCH_M68K;
+        memcpy(regs->d, native.d, sizeof(regs->d));
+        memcpy(regs->a, native.a, sizeof(regs->a));
+        regs->pc = native.pc;
+        regs->sr = native.sr;
+        regs->usp = native.usp;
+        regs->ssp = native.ssp;
+        value.sp = native.a[7];
+        value.big_endian = 1;
     } else {
         return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     }
@@ -216,7 +230,7 @@ static xxwidgets_status disassemble(void *context, uint64_t tid, uint64_t addres
     uint8_t bytes[15];
     xxemul_mode mode = xxemul_get_mode(adapter->emulator);
     xxemul_arch arch = xxemul_get_arch(adapter->emulator);
-    size_t wanted = arch == XXEMUL_ARCH_X86 ? 15u : 4u, available, formatted;
+    size_t wanted = arch == XXEMUL_ARCH_X86 ? 15u : arch == XXEMUL_ARCH_M68K ? 10u : 4u, available, formatted;
     uint32_t decoded;
     xxemul_status code;
     if (text != NULL && capacity != 0) text[0] = '\0';
@@ -250,6 +264,13 @@ static xxwidgets_status disassemble(void *context, uint64_t tid, uint64_t addres
         decoded = cdisasm_arm_decode(CDISASM_ARM_CPU_ANY, decode_mode, bytes, available, address, NULL, &instruction);
         if (decoded == 0) return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
         formatted = cdisasm_arm_format(&instruction, CDISASM_FORMAT_SYNTAX_ARM_CANONICAL, text, capacity);
+    } else if (arch == XXEMUL_ARCH_M68K) {
+        cdisasm_m68k_instruction instruction;
+        if (mode != XXEMUL_MODE_M68K_68000 || (address & 1u) || address > UINT32_MAX)
+            return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
+        decoded = cdisasm_m68k_decode(CDISASM_M68K_CPU_68000, 0, bytes, available, address, NULL, &instruction);
+        if (decoded == 0) return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
+        formatted = cdisasm_m68k_format(&instruction, 0, text, capacity);
     } else {
         return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     }
@@ -278,6 +299,8 @@ static xxwidgets_status set_breakpoint(void *context, uint64_t address, uint64_t
     xxwidgets_debugger_xxemul *adapter = context;
     size_t index;
     if (id == NULL) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
+    if (xxemul_get_arch(adapter->emulator) == XXEMUL_ARCH_M68K && ((address & 1u) || address > UINT32_MAX))
+        return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     for (index = 0; index < adapter->breakpoint_count; ++index) {
         if (adapter->breakpoints[index].address == address) {
             *id = adapter->breakpoints[index].id;
@@ -487,7 +510,8 @@ xxwidgets_status xxwidgets_debugger_xxemul_create(xxemul *emulator, uint64_t ins
     arch = xxemul_get_arch(emulator);
     mode = xxemul_get_mode(emulator);
     if (!((arch == XXEMUL_ARCH_X86 && (mode == XXEMUL_MODE_X86_16 || mode == XXEMUL_MODE_X86_32 || mode == XXEMUL_MODE_X86_64))
-        || (arch == XXEMUL_ARCH_ARM && (mode == XXEMUL_MODE_ARM_A32 || mode == XXEMUL_MODE_ARM_T32 || mode == XXEMUL_MODE_ARM_A64))))
+        || (arch == XXEMUL_ARCH_ARM && (mode == XXEMUL_MODE_ARM_A32 || mode == XXEMUL_MODE_ARM_T32 || mode == XXEMUL_MODE_ARM_A64))
+        || (arch == XXEMUL_ARCH_M68K && mode == XXEMUL_MODE_M68K_68000)))
         return XXWIDGETS_UNAVAILABLE;
     result = calloc(1u, sizeof(*result));
     if (result == NULL) return XXWIDGETS_OUT_OF_MEMORY;

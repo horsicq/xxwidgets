@@ -31,6 +31,12 @@ option(XXWIDGETS_BUILD_DEBUGGER "Build the optional xxdebug session adapter" OFF
 option(XXWIDGETS_BUILD_EMULATOR "Build the optional direct xxemul session adapter" OFF)
 option(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER "Build the optional DIE signature debugger" OFF)
 option(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE "Build the actual DIE engine adapter for the signature debugger" ON)
+# A host that already links a full xxfclib (for example the shared library)
+# can let xxwidgets use it instead of compiling its private xx_io / xx_pd /
+# strings / threads / codepage / translation / history slices. Two copies
+# of that code in one program clash at link time (LNK2005) and split global
+# state such as the progress observer between them.
+option(XXWIDGETS_USE_XXFCLIB_TARGET "Use the existing xxfclib::xxfclib target instead of private xxfclib slices" OFF)
 set(XXWIDGETS_DEBUGGER_MACHO_FIXTURE "" CACHE FILEPATH "Unoptimized ARM64 C++ hello Mach-O for optional debugger runtime tests")
 set(XXWIDGETS_XXDEBUG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xxdebug" CACHE PATH "xxdebug source tree for the optional debugger adapter")
 set(XXWIDGETS_XXEMUL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xxemul" CACHE PATH "xxemul source tree for the optional emulator adapter")
@@ -152,13 +158,23 @@ target_compile_definitions(xxwidgets_scan_colors PRIVATE XXFC_STATIC)
 target_include_directories(xxwidgets_scan_colors PRIVATE "${XXWIDGETS_XXFCLIB_DIR}/include")
 set_target_properties(xxwidgets_scan_colors PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_library(xxwidgets
+set(_xxwidgets_slice_objects
     $<TARGET_OBJECTS:xxwidgets_io>
     $<TARGET_OBJECTS:xxwidgets_history>
     $<TARGET_OBJECTS:xxwidgets_translation>
     $<TARGET_OBJECTS:xxwidgets_threads>
     $<TARGET_OBJECTS:xxwidgets_scan_colors>
-    $<TARGET_OBJECTS:xxwidgets_codepages>
+    $<TARGET_OBJECTS:xxwidgets_codepages>)
+set(_xxwidgets_use_xxfclib OFF)
+if(XXWIDGETS_USE_XXFCLIB_TARGET)
+    if(NOT TARGET xxfclib::xxfclib)
+        message(FATAL_ERROR "XXWIDGETS_USE_XXFCLIB_TARGET needs an xxfclib::xxfclib target added before xxwidgets")
+    endif()
+    set(_xxwidgets_use_xxfclib ON)
+    set(_xxwidgets_slice_objects)
+endif()
+add_library(xxwidgets
+    ${_xxwidgets_slice_objects}
     include/xxwidgets/xxwidgets.h
     include/xxwidgets/xxwidgets_translation.h
     include/xxwidgets/die_engine/xxwidgets_die_signature_edit.h
@@ -194,6 +210,7 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_hex_options.h
     include/xxwidgets/xxwidgets_process.h
     include/xxwidgets/xxwidget_systemprocessesviewer.h
+    include/xxwidgets/xxwidget_treediffviewer.h
     include/xxwidgets/xxwidget_binaryviewer.h
     include/xxwidgets/xxwidget_resourcesviewer.h
     include/xxwidgets/xxwidget_importsviewer.h
@@ -205,6 +222,8 @@ add_library(xxwidgets
     include/xxwidgets/xxwidgets_search.h
     include/xxwidgets/xxwidgets_strings.h
     include/xxwidgets/xxwidgets_extractor.h
+    include/xxwidgets/xxwidgets_type_picker.h
+    include/xxwidgets/xxwidgets_sort_panel.h
     include/xxwidgets/xxwidgets_disk_write.h
     include/xxwidgets/xxwidgets_forms.h
     include/xxwidgets/xxwidgets_font_options.h
@@ -282,6 +301,7 @@ add_library(xxwidgets
     src/xxwidgets_file_options.c
     src/xxwidget_systemprocessesviewer.c
     src/xxwidget_systemprocessesviewer_hexview.c
+    src/xxwidget_treediffviewer.c
     ${_xxwidgets_process_memory_source}
     src/platform/xxwidget_systemprocessesviewer_platform.c
     ${_xxwidgets_process_dump_source}
@@ -295,6 +315,7 @@ add_library(xxwidgets
     src/xxwidgets_data_struct_view.c
     src/xxwidgets_file_information.c
     src/xxwidgets_extractor.c
+    src/xxwidgets_type_picker.c
     src/xxwidgets_debugger.c
     src/xxwidgets_debugger_tables.c
     src/xxwidgets_debugger_session.c
@@ -322,6 +343,7 @@ add_library(xxwidgets
     src/xxwidgets_forms.c
     src/xxwidgets_font_options.c
     src/xxwidgets_database_paths.c
+    src/xxwidgets_sort_panel.c
     src/xxwidgets_context_options.c
     src/xxwidgets_optimization_options.c
     src/xxwidgets_options_pages.c
@@ -341,11 +363,18 @@ target_include_directories(xxwidgets
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE src "${XXWIDGETS_XXFCLIB_DIR}/include"
 )
-target_compile_definitions(xxwidgets PRIVATE XXWIDGETS_BUILDING_LIBRARY XXFC_STATIC)
+if(_xxwidgets_use_xxfclib)
+    target_compile_definitions(xxwidgets PRIVATE XXWIDGETS_BUILDING_LIBRARY)
+    target_link_libraries(xxwidgets PUBLIC $<BUILD_INTERFACE:xxfclib::xxfclib>)
+else()
+    target_compile_definitions(xxwidgets PRIVATE XXWIDGETS_BUILDING_LIBRARY XXFC_STATIC)
+endif()
 if(NOT _xxwidgets_native STREQUAL "none")
     target_compile_definitions(xxwidgets PRIVATE XXWIDGETS_HAS_NATIVE)
 endif()
-if(NOT BUILD_SHARED_LIBS)
+if(NOT BUILD_SHARED_LIBS AND _xxwidgets_use_xxfclib)
+    target_compile_definitions(xxwidgets PUBLIC XXWIDGETS_STATIC)
+elseif(NOT BUILD_SHARED_LIBS)
     target_compile_definitions(xxwidgets PUBLIC XXWIDGETS_STATIC XXFC_STATIC)
 endif()
 target_link_libraries(xxwidgets PRIVATE ${_xxwidgets_backend_libs} ${XXIO_LIBRARIES} Threads::Threads)
@@ -635,6 +664,7 @@ if(XXWIDGETS_BUILD_EXAMPLES)
         xxwidgets_add_demo(xxwidgets_${_xxwidgets_view}_demo examples/${_xxwidgets_view}_demo.c)
     endforeach()
     xxwidgets_add_demo(xxwidget_systemprocessesviewer_demo examples/systemprocessesviewer_demo.c)
+    xxwidgets_add_demo(xxwidget_treediffviewer_demo examples/treediffviewer_demo.c)
     if(XXWIDGETS_BUILD_INSPECTORS)
         xxwidgets_add_demo(xxwidgets_binaryviewer_demo examples/binaryviewer_demo.c)
         target_link_libraries(xxwidgets_binaryviewer_demo PRIVATE xxwidgets::inspect)
@@ -793,6 +823,8 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             src/xxwidgets_debugger/xxwidgets_debugger_x86_64.c
             src/xxwidgets_debugger/xxwidgets_debugger_arm32.c
             src/xxwidgets_debugger/xxwidgets_debugger_arm64.c)
+        # Lazy tree source paging and the tree-diff viewer on the mock backend.
+        target_sources(xxwidgets_core_tests PRIVATE tests/test_lazy_tree.c src/xxwidget_treediffviewer.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_treeview.c src/scan/xxwidgets_scan_panel.c tests/test_scan_panel.c tests/test_scan_panel_options.c
             src/scan/xxwidgets_scan_options.c src/scan/xxwidgets_scan_directory.c ${_xxwidgets_scan_directory_source}
             tests/test_scan_directory.c)
@@ -811,7 +843,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         target_sources(xxwidgets_core_tests PRIVATE tests/test_file_drops.c tests/test_canvas.c src/xxwidgets_canvas.c src/xxwidgets_entropy.c tests/test_entropy.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_strings.c src/xxwidgets_strings_dialog.c
             tests/test_strings.c tests/test_strings_source.c tests/test_table.c)
-        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_extractor.c tests/test_extractor.c)
+        target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_extractor.c src/xxwidgets_type_picker.c tests/test_extractor.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_disk_write.c tests/test_disk_write.c)
         target_sources(xxwidgets_core_tests PRIVATE tests/test_disk_sources.c)
         target_sources(xxwidgets_core_tests PRIVATE tests/test_signature_disk_write.c)
@@ -847,6 +879,8 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
         set_tests_properties(xxwidgets_main_components PROPERTIES TIMEOUT 15 LABELS "layout;components")
         add_test(NAME xxwidgets_die_main_panel COMMAND xxwidgets_core_tests --die-main-panel-only)
         set_tests_properties(xxwidgets_die_main_panel PROPERTIES TIMEOUT 15 LABELS "layout;components")
+        add_test(NAME xxwidgets_lazy_tree COMMAND xxwidgets_core_tests --lazy-tree-only)
+        set_tests_properties(xxwidgets_lazy_tree PROPERTIES TIMEOUT 30 LABELS "tree;lazy")
         add_test(NAME xxwidgets_core COMMAND xxwidgets_core_tests)
         set_tests_properties(xxwidgets_core xxwidgets_scan_directory PROPERTIES
             RESOURCE_LOCK xxwidgets_scan_directory_fixture)
@@ -1021,6 +1055,25 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             set_tests_properties(xxwidgets_tui_data_struct PROPERTIES TIMEOUT 15)
             add_test(NAME xxwidgets_tui_die_main_panel COMMAND xxwidgets_tui_tests --die-main-panel)
             set_tests_properties(xxwidgets_tui_die_main_panel PROPERTIES TIMEOUT 15 LABELS "layout;components;tui")
+            # Lazy tree paging (300000 children under one node) and the tree-diff
+            # viewer on the real console backend and, with WinAPI, on hidden windows.
+            add_executable(xxwidgets_treediffviewer_tests tests/test_treediffviewer.c)
+            target_include_directories(xxwidgets_treediffviewer_tests PRIVATE
+                "${XXWIDGETS_XXFCLIB_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src")
+            target_compile_definitions(xxwidgets_treediffviewer_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+            target_compile_features(xxwidgets_treediffviewer_tests PRIVATE c_std_11)
+            target_link_libraries(xxwidgets_treediffviewer_tests PRIVATE xxwidgets::xxwidgets user32 comctl32)
+            if(MSVC)
+                target_compile_options(xxwidgets_treediffviewer_tests PRIVATE /W4 /utf-8)
+            endif()
+            add_test(NAME xxwidgets_treediffviewer_tui COMMAND xxwidgets_treediffviewer_tests --tui)
+            # Serial: its console (like a window) must not take the focus from tests that check it.
+            set_tests_properties(xxwidgets_treediffviewer_tui PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS "tree;lazy;tui")
+            if(_xxwidgets_native STREQUAL "win32")
+                target_compile_definitions(xxwidgets_treediffviewer_tests PRIVATE XXWIDGETS_TEST_WIN32_NATIVE)
+                add_test(NAME xxwidgets_treediffviewer_win32 COMMAND xxwidgets_treediffviewer_tests --win32)
+                set_tests_properties(xxwidgets_treediffviewer_win32 PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "tree;lazy;win32")
+            endif()
         endif()
     endif()
 endif()

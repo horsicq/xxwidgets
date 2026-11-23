@@ -268,6 +268,7 @@ struct xxwidgets_widget {
     uint64_t table_filter_revision, table_rows_key, table_rows_filter;
     int table_rows_valid;
     struct xxwidgets_tree_state *tree;
+    int tree_loading; /* TREEVIEW: a lazy source fetches for a tree not shown yet (set_source, refresh). */
     uint64_t tree_revision;
     uint64_t tree_content_revision;
     struct xxwidgets_shortcut_binding *shortcuts;
@@ -514,8 +515,38 @@ int xxwidgets_treeview_mark_key(xxwidgets_widget *widget, unsigned int key);
 xxwidgets_status xxwidgets_treeview_select(xxwidgets_widget *widget, int index);
 xxwidgets_status xxwidgets_treeview_user_expand(xxwidgets_widget *widget, size_t index, int expanded);
 /* Cache native expansion without syncing/emitting. Caller follows the cached
- * selection when collapse hides it, suppressing native selection signals. */
+ * selection when collapse hides it, suppressing native selection signals.
+ * With a lazy source, expanding a node whose children are not loaded (or a
+ * "more" item) is refused: backends load those before (source_fetch) or
+ * route them to user_expand. */
 xxwidgets_status xxwidgets_treeview_expansion_input(xxwidgets_widget *widget, size_t index, int expanded);
+/* Lazy source (xxwidgets_treeview_set_source) helpers for the backends.
+ * pending: expanding the node fetches (children not loaded yet, or a "more"
+ * item); more: a "... N more" item; children_loaded: the node has loaded
+ * children (in the node mode the same as has_children). */
+int xxwidgets_treeview_pending(const xxwidgets_widget *widget, size_t index);
+int xxwidgets_treeview_is_more(const xxwidgets_widget *widget, size_t index);
+int xxwidgets_treeview_children_loaded(const xxwidgets_widget *widget, size_t index);
+/* Fetches the first page of a pending node's children without syncing the
+ * backend or expanding it (the projection is rebuilt). OK when nothing was
+ * pending. A backend loading inside its own expand notification calls this,
+ * applies the change with source_delta, then lets the expansion proceed. */
+xxwidgets_status xxwidgets_treeview_source_fetch(xxwidgets_widget *widget, size_t index);
+/* 1 when the only content changes since content revision applied are pages
+ * a lazy source fetched into the shown tree: nodes [*first, count) were
+ * appended, and the *changed_count nodes in *changed (all below *first;
+ * borrowed until the next fetch) were rewritten in place (text, colors, id,
+ * pending state), so a backend can patch its view instead of rebuilding it.
+ * Appended nodes follow their earlier siblings in index order. */
+int xxwidgets_treeview_source_delta(const xxwidgets_widget *widget, uint64_t applied, size_t *first, const size_t **changed,
+                                    size_t *changed_count);
+/* User activation (Enter, double click): a "more" item loads its next page
+ * (user_expand); any other node emits ACTIVATE. */
+void xxwidgets_treeview_user_activate(xxwidgets_widget *widget, size_t index);
+/* Children of parent (SIZE_MAX: the roots) in order, for data-source views.
+ * child_at keeps a cursor, so walking a parent's children in order is linear. */
+size_t xxwidgets_treeview_child_count(xxwidgets_widget *widget, size_t parent);
+size_t xxwidgets_treeview_child_at(xxwidgets_widget *widget, size_t parent, size_t position);
 const char *xxwidgets_scanresults_cell(const xxwidgets_widget *widget, size_t row, size_t column);
 size_t xxwidgets_scanresults_column_width(const xxwidgets_widget *widget, size_t column);
 void xxwidgets_data_struct_table_dispose(xxwidgets_widget *widget);

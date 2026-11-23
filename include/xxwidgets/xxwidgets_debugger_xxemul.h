@@ -32,7 +32,8 @@ typedef struct xxwidgets_debugger_xxemul xxwidgets_debugger_xxemul;
  * backend_kind and the diagnostic accessors. A successful step/interrupt has
  * backend_kind XXEMUL_STATUS_OK. HALTED retains readable final CPU/memory.
  *
- * All five architecture views are supported, including ARM A32/T32 switches.
+ * All six architecture views are supported, including ARM A32/T32 switches
+ * and MC68000 registers with big-endian 32-bit stack words.
  * x86 debug registers are not exposed by xxemul (marked unavailable), and
  * ARM32 VFP is unavailable. Memory/disassembly use xxemul's public memory view;
  * DOS protected-mode paging translation is not provided by that public API.

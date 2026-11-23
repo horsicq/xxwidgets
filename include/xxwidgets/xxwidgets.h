@@ -322,7 +322,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_wi
                                                                   const xxwidgets_tree_color *colors, size_t count);
 XXWIDGETS_API xxwidgets_tree_color xxwidgets_treeview_node_color(const xxwidgets_widget *widget, size_t index);
 /* Small buttons at the right end of rows, like the S and ? columns of a DIE
- * result tree. labels holds 1..XXWIDGETS_TREE_MARKS_MAX short UTF-8 labels
+ * result tree (not with a lazy source, see xxwidgets_treeview_set_source).
+ * labels holds 1..XXWIDGETS_TREE_MARKS_MAX short UTF-8 labels
  * without control characters, one column each; masks holds one bit set per
  * current node (count is the node count), bit k showing labels[k] there.
  * Copied. Replacing or clearing the nodes removes them, as do NULL labels.
@@ -345,6 +346,85 @@ XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_node(const xxwidgets_widge
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_selection(xxwidgets_widget *widget, size_t *index, xxwidgets_tree_node *node);
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_expanded(xxwidgets_widget *widget, size_t index, int expanded);
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_get_expanded(const xxwidgets_widget *widget, size_t index, int *expanded);
+
+/* Lazy tree source: the tree asks for nodes when it needs them instead of
+ * copying a complete hierarchy up front, so it can browse trees of millions
+ * of nodes and parents with hundreds of thousands of children.
+ *
+ * children(user, parent, offset, items, capacity, total) lists the children
+ * of parent (its id, 0 for the roots) starting at child number offset: it
+ * writes at most capacity items, sets *total to the parent's child count and
+ * returns the number written, or SIZE_MAX on failure. Item text is UTF-8 and
+ * must stay valid until the next call of the callback (it is copied after
+ * the callback returns; invalid bytes and control characters show as \xNN,
+ * NULL is ""). ids are the caller's: nonzero and unique within the
+ * tree; a zero id fails the request with INVALID_ARGUMENT. Colors are as for
+ * set_colored_nodes; an out-of-range component keeps the system color.
+ *
+ * Paging: the roots are fetched by set_source, the children of a node when it
+ * is first expanded (by the user or set_expanded), page_size items per
+ * request. When a parent has more children than were fetched, its last child
+ * is a "... N more" item: expanding or activating it (Enter, double click,
+ * Space, Right, a click on its expander, or set_expanded) replaces it with
+ * the next page, followed by a new "... N more" item while children remain,
+ * and emits CHANGE with the parent's node index (-1 for the roots); ACTIVATE
+ * is not emitted for it. A parent of 300000 children thus opens with its
+ * first page at once and loads the rest a page per request. Loaded nodes stay
+ * until set_source, refresh, set_nodes or clear; collapsing keeps them.
+ *
+ * Node indexes (widget values, event values, get_node, set_expanded) number
+ * the loaded nodes in load order, a parent before its children; they hold
+ * until the tree is replaced (set_source, refresh). ids survive a refresh.
+ * Counts, get_node, get_selection, set_value and set_expanded work on the
+ * loaded nodes; marks are unavailable (set_marks returns UNAVAILABLE).
+ * Callbacks run synchronously on the UI thread, inside set_source, refresh,
+ * set_expanded, source_select and user expansion. As in an event callback,
+ * they cannot change this tree, destroy widgets or the app, or poll (all
+ * return BUSY). The source is borrowed until it is replaced. */
+typedef struct xxwidgets_tree_item {
+    uint64_t id;                /* Caller id, nonzero. */
+    const char *text;           /* UTF-8, valid until the callback's next call. */
+    int has_children;           /* Nonzero: an expander that fetches the children. */
+    xxwidgets_tree_color color; /* UINT32_MAX components: system colors. */
+} xxwidgets_tree_item;
+typedef size_t (*xxwidgets_tree_children_fn)(void *user, uint64_t parent, size_t offset, xxwidgets_tree_item *items,
+                                             size_t capacity, size_t *total);
+#define XXWIDGETS_TREE_PAGE_DEFAULT 1000
+#define XXWIDGETS_TREE_PAGE_MAX 65536
+typedef struct xxwidgets_tree_source {
+    xxwidgets_tree_children_fn children;
+    void *user;
+    size_t page_size; /* Children per request: 0 is XXWIDGETS_TREE_PAGE_DEFAULT, at most XXWIDGETS_TREE_PAGE_MAX. */
+} xxwidgets_tree_source;
+/* Replaces the tree with the source's first page of roots and selects the
+ * first root (-1 when there is none); the struct is copied. NULL returns to
+ * the node mode with an empty tree. Transactional: a failed fetch keeps the
+ * previous tree. Emits no input events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_source(xxwidgets_widget *widget, const xxwidgets_tree_source *source);
+XXWIDGETS_API int xxwidgets_treeview_has_source(const xxwidgets_widget *widget);
+/* Reloads from the source after its data or filter changed: the first page
+ * of the roots and of every node whose id was expanded is fetched again (and
+ * expanded again), and the selected id stays selected when it still exists
+ * (else its nearest surviving ancestor, else the first root). Further pages
+ * are fetched only on the way to the selected id, at most as far as they had
+ * been loaded before, so a refresh costs about a page per open node.
+ * Transactional; emits no input events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_source_refresh(xxwidgets_widget *widget);
+/* id of the selected node; 0 without a selection or on a "... N more" item.
+ * INVALID_ARGUMENT (and 0) without a source. */
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_source_selection(xxwidgets_widget *widget, uint64_t *id);
+/* id of a loaded node (0: a "... N more" item, out of range, or no source). */
+XXWIDGETS_API uint64_t xxwidgets_treeview_source_id(const xxwidgets_widget *widget, size_t index);
+/* Loaded node with this id, or SIZE_MAX. Linear in the loaded nodes. */
+XXWIDGETS_API size_t xxwidgets_treeview_source_find(const xxwidgets_widget *widget, uint64_t id);
+/* Children still behind a "... N more" item (N), 0 for any other node. */
+XXWIDGETS_API size_t xxwidgets_treeview_source_more_count(const xxwidgets_widget *widget, size_t index);
+/* Selects the node reached by ids, path[0] a root and each next id a child of
+ * the one before, fetching first pages and further pages along the way as
+ * needed, and expands its ancestors. UNAVAILABLE when an id is not found (the
+ * pages fetched while searching stay loaded; the selection is unchanged).
+ * Emits no input events. */
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_source_select(xxwidgets_widget *widget, const uint64_t *path, size_t count);
 
 /* A table of text cells, XXWIDGETS_TABLE: 1..XXWIDGETS_TABLE_MAX_COLUMNS
  * columns with the titles given (copied, shown as given), no rows. The cells

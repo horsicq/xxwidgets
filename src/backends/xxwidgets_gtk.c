@@ -126,6 +126,11 @@ typedef struct gtk_widget_state {
     size_t tree_count;
     uint64_t tree_content_revision;
     int tree_collapsing, tree_before_collapse;
+    /* Lazy tree source: an idle fetch of tree_load_node's children, queued by
+     * test-expand-row for the content revision it saw. */
+    guint tree_load_source;
+    int tree_load_node;
+    uint64_t tree_load_revision;
     GtkWidget *about_text; /* Owned by the window's content container. */
     GtkWidget *about_image; /* Owned by the window's content container; NULL without an image. */
     int about_resizable;   /* WINDOW: the copyable text dialog, whose text follows the window size. */
@@ -1847,6 +1852,38 @@ static void treeview_expansion(GtkTreeView *native, GtkTreeIter *iter, GtkTreePa
     xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, node);
 }
 
+static gboolean treeview_load_idle(gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    gtk_widget_state *state = widget->platform;
+    size_t node = (size_t)state->tree_load_node;
+    state->tree_load_source = 0;
+    if (!widget->app->syncing && state->tree_load_revision == widget->tree_content_revision && xxwidgets_treeview_pending(widget, node))
+        (void)xxwidgets_treeview_user_expand(widget, node, 1);
+    return FALSE;
+}
+
+/* A lazy source's unloaded node (or "... N more" item) has a placeholder
+ * child row: its expansion is refused here and the children are fetched from
+ * an idle callback (the model must not change under this signal), which then
+ * opens the row. */
+static gboolean treeview_test_expand(GtkTreeView *native, GtkTreeIter *iter, GtkTreePath *path, gpointer data)
+{
+    xxwidgets_widget *widget = data;
+    gtk_widget_state *state = widget->platform;
+    int node = -1;
+    (void)path;
+    if (widget->app->syncing) return FALSE;
+    gtk_tree_model_get(gtk_tree_view_get_model(native), iter, 1, &node, -1);
+    if (node < 0 || !xxwidgets_treeview_pending(widget, (size_t)node)) return FALSE;
+    if (xxwidgets_focusable(widget) && !state->tree_load_source) {
+        state->tree_load_node = node;
+        state->tree_load_revision = widget->tree_content_revision;
+        state->tree_load_source = g_idle_add(treeview_load_idle, widget);
+    }
+    return TRUE;
+}
+
 static void treeview_expanded(GtkTreeView *native, GtkTreeIter *iter, GtkTreePath *path, gpointer data)
 {
     treeview_expansion(native, iter, path, data, 1);
@@ -1864,7 +1901,8 @@ static gboolean treeview_key(GtkWidget *native, GdkEventKey *key, gpointer data)
     (void)native;
     if (widget->app->syncing || !xxwidgets_focusable(widget) || widget->value < 0) return FALSE;
     if (key->keyval == GDK_KEY_Return || key->keyval == GDK_KEY_KP_Enter) {
-        xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
+        /* A lazy tree's "... N more" item loads its next page instead. */
+        xxwidgets_treeview_user_activate(widget, (size_t)widget->value);
         return TRUE;
     }
     /* A mark's first character presses it on the selected row (S, ?). */
@@ -1988,6 +2026,12 @@ static xxwidgets_status treeview_sync(xxwidgets_widget *widget)
             xxwidgets_treeview_get_node(widget, node, &entry);
             gtk_tree_store_append(store, &iters[node], entry.parent == SIZE_MAX ? NULL : &iters[entry.parent]);
             gtk_tree_store_set(store, &iters[node], 0, xxwidgets_treeview_display_text(widget, node), 1, (int)node, -1);
+            if (xxwidgets_treeview_pending(widget, node)) {
+                /* Unloaded lazy children: a placeholder row (node -1) shows the expander. */
+                GtkTreeIter placeholder;
+                gtk_tree_store_append(store, &placeholder, &iters[node]);
+                gtk_tree_store_set(store, &placeholder, 0, "", 1, -1, -1);
+            }
         }
         free(state->tree_iters);
         state->tree_iters = iters;
@@ -3130,6 +3174,7 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             g_signal_connect(native, "row-expanded", G_CALLBACK(treeview_expanded), widget);
             g_signal_connect(native, "row-collapsed", G_CALLBACK(treeview_collapsed), widget);
             g_signal_connect(native, "test-collapse-row", G_CALLBACK(treeview_before_collapse), widget);
+            g_signal_connect(native, "test-expand-row", G_CALLBACK(treeview_test_expand), widget);
             g_signal_connect(native, "key-press-event", G_CALLBACK(treeview_key), widget);
             g_signal_connect(native, "row-activated", G_CALLBACK(treeview_activated), widget);
             gtk_widget_show(native);
@@ -3400,6 +3445,7 @@ static void gtk_destroy_backend(xxwidgets_widget *widget)
     if (state->preview_css) g_object_unref(state->preview_css);
     if (state->hex_font) pango_font_description_free(state->hex_font);
     if (state->hex_font_css) g_object_unref(state->hex_font_css);
+    if (state->tree_load_source) g_source_remove(state->tree_load_source);
     free(state->tree_iters);
     free(state);
     widget->platform = NULL;

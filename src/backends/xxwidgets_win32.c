@@ -166,6 +166,8 @@ static LRESULT CALLBACK win32_browser_proc(HWND handle, UINT message, WPARAM wp,
 static HFONT win32_text_font(xxwidgets_widget *widget, HFONT font);
 static xxwidgets_status win32_place(xxwidgets_widget *widget);
 static void win32_tree_style(xxwidgets_widget *widget);
+static xxwidgets_status win32_tree_apply_delta(xxwidgets_widget *widget);
+static xxwidgets_status win32_sync_tree(xxwidgets_widget *widget);
 
 #define XXWIDGETS_BROWSER_UP_ID 1
 #define XXWIDGETS_BROWSER_ADDRESS_ID 2
@@ -173,6 +175,9 @@ static void win32_tree_style(xxwidgets_widget *widget);
 /* Posted to a dialog win32_modal_owner resized while events were held back,
  * and to every window win32_cells_relayout re-laid out. */
 #define XXWIDGETS_WIN32_RESIZED (WM_APP + 0x581)
+/* Posted to a lazy tree whose "more" item was expanded: wp is the node,
+ * lp the content revision it belongs to (or wp (WPARAM)-1: rebuild it). */
+#define XXWIDGETS_WIN32_TREE_MORE (WM_APP + 0x582)
 #define XXWIDGETS_WIN32_TEXT_MIN_COLUMNS 40
 #define XXWIDGETS_WIN32_TEXT_MIN_ROWS 10
 /* The cells grow with the Controls font only as far as a dialog this many
@@ -2165,6 +2170,29 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                     } else if (notification->code == NM_DBLCLK) {
                         if (win32_read_value(control) == XXWIDGETS_OK && control->value >= 0 && !xxwidgets_treeview_has_children(control, (size_t)control->value))
                             xxwidgets_emit(control, XXWIDGETS_EVENT_ACTIVATE, control->value);
+                    } else if ((notification->code == TVN_ITEMEXPANDINGW || notification->code == TVN_ITEMEXPANDINGA) &&
+                               (((const NMTREEVIEWW *)lp)->action & (TVE_EXPAND | TVE_COLLAPSE)) == TVE_EXPAND) {
+                        /* Lazy source: a node's first page is fetched and inserted
+                         * before it opens; a "more" item opens nothing and loads
+                         * its next page once this notification has returned. */
+                        size_t index = (size_t)((const NMTREEVIEWW *)lp)->itemNew.lParam;
+                        if (xxwidgets_treeview_is_more(control, index)) {
+                            PostMessageW((HWND)control->native, XXWIDGETS_WIN32_TREE_MORE, (WPARAM)index,
+                                         (LPARAM)(uintptr_t)control->tree_content_revision);
+                            return TRUE;
+                        }
+                        if (xxwidgets_treeview_pending(control, index)) {
+                            xxwidgets_status loaded = xxwidgets_treeview_source_fetch(control, index);
+                            if (loaded == XXWIDGETS_OK) {
+                                ++widget->app->syncing;
+                                loaded = win32_tree_apply_delta(control);
+                                --widget->app->syncing;
+                                /* Not patched: rebuilt once this notification returned. */
+                                if (loaded != XXWIDGETS_OK) PostMessageW((HWND)control->native, XXWIDGETS_WIN32_TREE_MORE, (WPARAM)-1, 0);
+                            }
+                            /* It opens only with children to show. */
+                            if (loaded != XXWIDGETS_OK || !xxwidgets_treeview_children_loaded(control, index)) return TRUE;
+                        }
                     }
                 }
             }
@@ -3505,8 +3533,20 @@ static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LP
             if (wp == VK_SPACE && xxwidgets_treeview_has_children(widget, index)) {
                 int expanded;
                 if (xxwidgets_treeview_get_expanded(widget, index, &expanded) == XXWIDGETS_OK) xxwidgets_treeview_user_expand(widget, index, !expanded);
-            } else if (wp == VK_RETURN) xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
+            } else if (wp == VK_RETURN) xxwidgets_treeview_user_activate(widget, index);
         }
+        return 0;
+    }
+    if (message == XXWIDGETS_WIN32_TREE_MORE) {
+        /* Ignored once the tree changed or a sync runs: the item it names may be gone.
+         * wp (WPARAM)-1 asks for a rebuild after a page could not be inserted. */
+        if (widget->app->syncing) return 0;
+        if (wp == (WPARAM)-1) {
+            ++widget->app->syncing;
+            (void)win32_sync_tree(widget);
+            --widget->app->syncing;
+        } else if (lp == (LPARAM)(uintptr_t)widget->tree_content_revision && xxwidgets_treeview_is_more(widget, (size_t)wp))
+            (void)xxwidgets_treeview_user_expand(widget, (size_t)wp, 1);
         return 0;
     }
     if (xxwidgets_treeview_mark_count(widget) && widget->platform) {
@@ -4489,19 +4529,107 @@ finish:
     return status;
 }
 
+/* A lazy tree source appended nodes [first, count) and rewrote node changed
+ * since the content revision this control shows: patch the control instead
+ * of rebuilding it. UNAVAILABLE when the change is not such a patch; on a
+ * control failure the next sync rebuilds. Call with app->syncing raised. */
+static xxwidgets_status win32_tree_apply_delta(xxwidgets_widget *widget)
+{
+    xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
+    HWND handle = (HWND)widget->native;
+    size_t count = xxwidgets_treeview_count(widget), first, changed_count, i, k, after_parent = SIZE_MAX;
+    const size_t *changed;
+    HTREEITEM *items, after = NULL;
+    xxwidgets_status status = XXWIDGETS_OK;
+    if (!native->tree_initialized ||
+        !xxwidgets_treeview_source_delta(widget, native->tree_content_revision, &first, &changed, &changed_count) ||
+        first != native->tree_count || first > count)
+        return XXWIDGETS_UNAVAILABLE;
+    for (k = 0; k < changed_count; ++k)
+        if (changed[k] >= first) return XXWIDGETS_UNAVAILABLE;
+    if (count > SIZE_MAX / sizeof(*items)) return XXWIDGETS_OUT_OF_MEMORY;
+    if (count > first) {
+        items = (HTREEITEM *)realloc(native->tree_items, count * sizeof(*items));
+        if (!items) return XXWIDGETS_OUT_OF_MEMORY;
+        native->tree_items = items;
+    }
+    items = native->tree_items;
+    if (count - first > 64) SendMessageW(handle, WM_SETREDRAW, FALSE, 0);
+    for (k = 0; status == XXWIDGETS_OK && k < changed_count; ++k) {
+        TVITEMW item;
+        wchar_t *text;
+        xxwidgets_tree_node node;
+        /* New siblings of a replaced "more" item go after it (constant time;
+         * TVI_LAST would walk every loaded sibling for each one). */
+        xxwidgets_treeview_get_node(widget, changed[k], &node);
+        after = items[changed[k]];
+        after_parent = node.parent;
+        status = win32_wide(xxwidgets_treeview_display_text(widget, changed[k]), &text);
+        if (status == XXWIDGETS_OK) {
+            memset(&item, 0, sizeof(item));
+            item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_STATE;
+            item.hItem = items[changed[k]];
+            item.pszText = text;
+            item.cChildren = xxwidgets_treeview_has_children(widget, changed[k]) ? 1 : 0;
+            /* A replaced "more" item notifies its first expansion again. */
+            item.stateMask = TVIS_EXPANDEDONCE;
+            item.state = 0;
+            if (!SendMessageW(handle, TVM_SETITEMW, 0, (LPARAM)&item)) status = XXWIDGETS_PLATFORM_ERROR;
+            free(text);
+        }
+    }
+    for (i = first; status == XXWIDGETS_OK && i < count; ++i) {
+        xxwidgets_tree_node node;
+        TVINSERTSTRUCTW insertion;
+        wchar_t *text;
+        xxwidgets_treeview_get_node(widget, i, &node);
+        status = win32_wide(xxwidgets_treeview_display_text(widget, i), &text);
+        if (status != XXWIDGETS_OK) break;
+        memset(&insertion, 0, sizeof(insertion));
+        insertion.hParent = node.parent == SIZE_MAX ? TVI_ROOT : items[node.parent];
+        insertion.hInsertAfter = after && node.parent == after_parent ? after : TVI_LAST;
+        insertion.item.mask = TVIF_TEXT | TVIF_PARAM | TVIF_CHILDREN;
+        insertion.item.pszText = text;
+        insertion.item.lParam = (LPARAM)i;
+        insertion.item.cChildren = xxwidgets_treeview_has_children(widget, i) ? 1 : 0;
+        items[i] = (HTREEITEM)SendMessageW(handle, TVM_INSERTITEMW, 0, (LPARAM)&insertion);
+        free(text);
+        if (!items[i]) status = XXWIDGETS_PLATFORM_ERROR;
+        after = items[i];
+        after_parent = node.parent;
+    }
+    if (count - first > 64) {
+        SendMessageW(handle, WM_SETREDRAW, TRUE, 0);
+        InvalidateRect(handle, NULL, TRUE);
+    }
+    if (status != XXWIDGETS_OK) {
+        native->tree_initialized = 0; /* Partly patched: the next sync rebuilds. */
+        return status;
+    }
+    native->tree_count = count;
+    native->tree_content_revision = widget->tree_content_revision;
+    return XXWIDGETS_OK;
+}
+
 static xxwidgets_status win32_sync_tree(xxwidgets_widget *widget)
 {
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
     HWND handle = (HWND)widget->native;
     size_t count = xxwidgets_treeview_count(widget), i;
     int rebuild = !native->tree_initialized || native->tree_content_revision != widget->tree_content_revision;
+    int lazy = xxwidgets_treeview_has_source(widget);
     wchar_t **texts = NULL;
-    HTREEITEM *items = NULL;
+    HTREEITEM *items = NULL, *last = NULL;
     xxwidgets_status status = XXWIDGETS_OK;
+    /* A lazy source's page is inserted into the control as it is. */
+    if (rebuild && lazy && win32_tree_apply_delta(widget) == XXWIDGETS_OK) rebuild = 0;
     if (rebuild && count) {
         texts = (wchar_t **)calloc(count, sizeof(*texts));
         items = (HTREEITEM *)calloc(count, sizeof(*items));
-        if (!texts || !items) {
+        /* Last child inserted per parent (count: the roots). Inserting after
+         * it is constant time; TVI_LAST walks the sibling list each time. */
+        last = (HTREEITEM *)calloc(count + 1, sizeof(*last));
+        if (!texts || !items || !last) {
             status = XXWIDGETS_OUT_OF_MEMORY;
             goto finish;
         }
@@ -4519,16 +4647,23 @@ static xxwidgets_status win32_sync_tree(xxwidgets_widget *widget)
             TVINSERTSTRUCTW insertion;
             xxwidgets_treeview_get_node(widget, i, &node);
             memset(&insertion, 0, sizeof(insertion));
+            size_t slot = node.parent == SIZE_MAX ? count : node.parent;
             insertion.hParent = node.parent == SIZE_MAX ? TVI_ROOT : items[node.parent];
-            insertion.hInsertAfter = TVI_LAST;
+            insertion.hInsertAfter = last[slot] ? last[slot] : TVI_LAST;
             insertion.item.mask = TVIF_TEXT | TVIF_PARAM;
             insertion.item.pszText = texts[i];
             insertion.item.lParam = (LPARAM)i;
+            if (lazy) {
+                /* Unloaded children still show an expander. */
+                insertion.item.mask |= TVIF_CHILDREN;
+                insertion.item.cChildren = xxwidgets_treeview_has_children(widget, i) ? 1 : 0;
+            }
             items[i] = (HTREEITEM)SendMessageW(handle, TVM_INSERTITEMW, 0, (LPARAM)&insertion);
             if (!items[i]) {
                 status = XXWIDGETS_PLATFORM_ERROR;
                 break;
             }
+            last[slot] = items[i];
         }
         SendMessageW(handle, WM_SETREDRAW, TRUE, 0);
         InvalidateRect(handle, NULL, TRUE);
@@ -4542,7 +4677,8 @@ static xxwidgets_status win32_sync_tree(xxwidgets_widget *widget)
     }
     for (i = 0; i < count; ++i) {
         int expanded;
-        if (!xxwidgets_treeview_has_children(widget, i)) continue;
+        /* The same as has_children without a lazy source. */
+        if (!xxwidgets_treeview_children_loaded(widget, i)) continue;
         xxwidgets_treeview_get_expanded(widget, i, &expanded);
         SendMessageW(handle, TVM_EXPAND, expanded ? TVE_EXPAND : TVE_COLLAPSE, (LPARAM)native->tree_items[i]);
     }
@@ -4554,6 +4690,7 @@ finish:
         for (i = 0; i < count; ++i) free(texts[i]);
     free(texts);
     free(items);
+    free(last);
     return status;
 }
 
