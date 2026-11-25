@@ -13,6 +13,7 @@ static xxwidgets_status canvas_sync(xxwidgets_widget *w)
 }
 void xxwidgets_canvas_dispose(xxwidgets_widget *w)
 {
+    xxwidgets_imageview_dispose(w);
     free(w->canvas_pixels);
     w->canvas_pixels = NULL;
     for (size_t i = 0; i < w->canvas_label_count; ++i) free((char *)w->canvas_labels[i].text);
@@ -130,7 +131,12 @@ void xxwidgets_canvas_fit(const xxwidgets_widget *w, double width, double height
 }
 void xxwidgets_canvas_input(xxwidgets_widget *w, double x, double y, double width, double height)
 {
-    if (!xxwidgets_focusable(w) || !w->canvas_width || !w->canvas_height) return;
+    if (!xxwidgets_focusable(w)) return;
+    if (w->imageview) {
+        xxwidgets_imageview_input(w, x, y, width, height);
+        return;
+    }
+    if (!w->canvas_width || !w->canvas_height) return;
     double ox, oy, rw, rh;
     xxwidgets_canvas_fit(w, width, height, &ox, &oy, &rw, &rh);
     if (x < ox || y < oy || x >= ox + rw || y >= oy + rh || rw <= 0 || rh <= 0) return;
@@ -139,6 +145,7 @@ void xxwidgets_canvas_input(xxwidgets_widget *w, double x, double y, double widt
 }
 int xxwidgets_canvas_key(xxwidgets_widget *w, int key)
 {
+    if (w && w->kind == XXWIDGETS_CANVAS && w->imageview) return xxwidgets_imageview_key(w, key);
     if (!w || w->kind != XXWIDGETS_CANVAS || !w->canvas_width || !w->canvas_height) return 0;
     int value = w->value < 0 ? 0 : w->value, total = (int)(w->canvas_width * w->canvas_height);
     if (key == XXWIDGETS_KEY_LEFT) --value;

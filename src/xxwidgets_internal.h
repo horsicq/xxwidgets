@@ -294,6 +294,7 @@ struct xxwidgets_widget {
     uint64_t canvas_revision;
     xxwidgets_canvas_label *canvas_labels;
     size_t canvas_label_count;
+    struct xxwidgets_imageview *imageview; /* CANVAS turned into an image view (owned). */
     int value;
     int visible;
     int enabled;
@@ -334,6 +335,16 @@ void xxwidgets_canvas_dispose(xxwidgets_widget *);
 void xxwidgets_canvas_fit(const xxwidgets_widget *, double, double, double *, double *, double *, double *);
 void xxwidgets_canvas_input(xxwidgets_widget *, double, double, double, double);
 int xxwidgets_canvas_key(xxwidgets_widget *, int);
+/* Image view (xxwidgets_imageview.c). prepare renders the visible region for a
+ * widget of width x height units before a paint; backends call it first.  The
+ * terminal backend sets the cell aspect (2) before painting. */
+typedef struct xxwidgets_imageview xxwidgets_imageview;
+void xxwidgets_imageview_dispose(xxwidgets_widget *);
+void xxwidgets_imageview_prepare(xxwidgets_widget *, double width, double height);
+void xxwidgets_imageview_set_cell_aspect(xxwidgets_widget *, double aspect);
+int xxwidgets_imageview_input(xxwidgets_widget *, double x, double y, double width, double height);
+int xxwidgets_imageview_wheel(xxwidgets_widget *, int steps, double x, double y, double width, double height);
+int xxwidgets_imageview_key(xxwidgets_widget *, int key);
 void xxwidgets_splitter_input(xxwidgets_widget *, double, double, double, double);
 int xxwidgets_splitter_key(xxwidgets_widget *, int);
 void xxwidgets_emit_point(xxwidgets_widget *, xxwidgets_event_type, int, int, int);

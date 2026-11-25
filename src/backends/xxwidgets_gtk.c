@@ -2666,6 +2666,7 @@ static gboolean gtk_canvas_paint(GtkWidget *native, cairo_t *cr, gpointer data)
         cairo_paint(cr);
         return FALSE;
     }
+    xxwidgets_imageview_prepare(w, width, height);
     if (!w->canvas_pixels || !w->canvas_width || !w->canvas_height) return FALSE;
     size_t n = (size_t)w->canvas_width * w->canvas_height;
     uint32_t *pixels = malloc(n * 4);

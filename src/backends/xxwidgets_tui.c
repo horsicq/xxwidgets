@@ -811,6 +811,8 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                 for (col = 0; col < widget->rect.width; ++col) tui_put(state, clip, x + col, y + row, widget->rect.height > widget->rect.width ? '|' : '=', style);
             break;
         case XXWIDGETS_CANVAS: {
+            xxwidgets_imageview_set_cell_aspect(widget, 2.0);
+            xxwidgets_imageview_prepare(widget, widget->rect.width, widget->rect.height);
             if (!widget->canvas_pixels || !widget->canvas_width || !widget->canvas_height) break;
             double ox, oy, rw, rh;
             xxwidgets_canvas_fit(widget, widget->rect.width, widget->rect.height, &ox, &oy, &rw, &rh);

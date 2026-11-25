@@ -28,6 +28,11 @@ option(XXWIDGETS_BUILD_TESTS "Build xxwidgets tests" ${_xxwidgets_top_level})
 option(XXWIDGETS_BUILD_SETTINGS "Build the xxfclib settings adapter for options dialogs" OFF)
 option(XXWIDGETS_BUILD_INSPECTORS "Build native binary inspection using xxfclib" ${_xxwidgets_top_level})
 option(XXWIDGETS_BUILD_DEBUGGER "Build the optional xxdebug session adapter" OFF)
+option(XXWIDGETS_BUILD_IMAGE_EDITOR "Build the optional image editor widget (needs xxvis and XXWIDGETS_USE_XXFCLIB_TARGET)" OFF)
+option(XXWIDGETS_BUILD_IMAGE_EDITOR_TESTS "Build and register the image editor widget test" OFF)
+option(XXWIDGETS_BUILD_VISUALIZATION "Build the optional binary visualization widget (needs xxvis and XXWIDGETS_USE_XXFCLIB_TARGET)" OFF)
+option(XXWIDGETS_BUILD_VISUALIZATION_TESTS "Build and register the visualization widget test" OFF)
+set(XXWIDGETS_XXVIS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xxvis" CACHE PATH "xxvis source tree for the optional image editor")
 option(XXWIDGETS_BUILD_EMULATOR "Build the optional direct xxemul session adapter" OFF)
 option(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER "Build the optional DIE signature debugger" OFF)
 option(XXWIDGETS_BUILD_SIGNATURE_DEBUGGER_DIE_ENGINE "Build the actual DIE engine adapter for the signature debugger" ON)
@@ -197,6 +202,7 @@ add_library(xxwidgets
     include/xxwidgets/debugger/xxwidgets_debugger_trace_dialog.h
     include/xxwidgets/debugger/xxwidgets_debugger_arguments.h
     include/xxwidgets/xxwidgets_canvas.h
+    include/xxwidgets/xxwidgets_imageview.h
     include/xxwidgets/xxwidgets_hash.h
     include/xxwidgets/xxwidgets_entropy.h
     include/xxwidgets/xxwidgets_resources.h
@@ -327,6 +333,7 @@ add_library(xxwidgets
     src/xxwidgets_debugger/xxwidgets_debugger_arm32.c
     src/xxwidgets_debugger/xxwidgets_debugger_arm64.c
     src/xxwidgets_canvas.c
+    src/xxwidgets_imageview.c
     src/xxwidgets_hash.c
     src/xxwidgets_hash_dialog.c
     src/xxwidgets_entropy_dialog.c
@@ -516,6 +523,72 @@ if(XXWIDGETS_BUILD_INSPECTORS)
         target_compile_options(xxwidgets_inspect PRIVATE /W4 /utf-8)
     else()
         target_compile_options(xxwidgets_inspect PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
+if(XXWIDGETS_BUILD_IMAGE_EDITOR)
+    # xxvis links the full formats xxfclib; the editor must share it with
+    # xxwidgets, or the private xxfclib slices would be linked twice.
+    if(NOT XXWIDGETS_USE_XXFCLIB_TARGET)
+        message(FATAL_ERROR "XXWIDGETS_BUILD_IMAGE_EDITOR needs XXWIDGETS_USE_XXFCLIB_TARGET=ON")
+    endif()
+    if(NOT TARGET xxvis::xxvis)
+        add_subdirectory("${XXWIDGETS_XXVIS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/xxvis-editor" EXCLUDE_FROM_ALL)
+    endif()
+    add_library(xxwidgets_imageeditor STATIC src/xxwidget_imageeditor.c include/xxwidgets/xxwidget_imageeditor.h)
+    add_library(xxwidgets::imageeditor ALIAS xxwidgets_imageeditor)
+    set_target_properties(xxwidgets_imageeditor PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    target_link_libraries(xxwidgets_imageeditor PUBLIC xxwidgets::xxwidgets xxvis::xxvis)
+    if(MSVC)
+        target_compile_options(xxwidgets_imageeditor PRIVATE /W4 /utf-8)
+        target_compile_definitions(xxwidgets_imageeditor PRIVATE _CRT_SECURE_NO_WARNINGS)
+    else()
+        target_compile_options(xxwidgets_imageeditor PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    if(XXWIDGETS_BUILD_IMAGE_EDITOR_TESTS)
+        enable_testing()
+        add_executable(xxwidgets_imageeditor_tests tests/test_imageeditor.c)
+        target_link_libraries(xxwidgets_imageeditor_tests PRIVATE xxwidgets::imageeditor)
+        if(MSVC)
+            target_compile_options(xxwidgets_imageeditor_tests PRIVATE /W4 /utf-8)
+            target_compile_definitions(xxwidgets_imageeditor_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+        endif()
+        set(_xxwidgets_editor_work "${CMAKE_CURRENT_BINARY_DIR}/imageeditor-test")
+        file(MAKE_DIRECTORY "${_xxwidgets_editor_work}")
+        add_test(NAME xxwidgets.imageeditor COMMAND xxwidgets_imageeditor_tests "${_xxwidgets_editor_work}")
+        set_tests_properties(xxwidgets.imageeditor PROPERTIES SKIP_RETURN_CODE 77 LABELS private)
+    endif()
+endif()
+
+if(XXWIDGETS_BUILD_VISUALIZATION)
+    if(NOT XXWIDGETS_USE_XXFCLIB_TARGET)
+        message(FATAL_ERROR "XXWIDGETS_BUILD_VISUALIZATION needs XXWIDGETS_USE_XXFCLIB_TARGET=ON")
+    endif()
+    if(NOT TARGET xxvis::xxvis)
+        add_subdirectory("${XXWIDGETS_XXVIS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/xxvis-visualization" EXCLUDE_FROM_ALL)
+    endif()
+    add_library(xxwidgets_visualization STATIC src/xxwidget_visualization.c include/xxwidgets/xxwidget_visualization.h)
+    add_library(xxwidgets::visualization ALIAS xxwidgets_visualization)
+    set_target_properties(xxwidgets_visualization PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    target_link_libraries(xxwidgets_visualization PUBLIC xxwidgets::xxwidgets xxvis::xxvis)
+    if(MSVC)
+        target_compile_options(xxwidgets_visualization PRIVATE /W4 /utf-8)
+        target_compile_definitions(xxwidgets_visualization PRIVATE _CRT_SECURE_NO_WARNINGS)
+    else()
+        target_compile_options(xxwidgets_visualization PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    if(XXWIDGETS_BUILD_VISUALIZATION_TESTS)
+        enable_testing()
+        add_executable(xxwidgets_visualization_tests tests/test_visualization_widget.c)
+        target_link_libraries(xxwidgets_visualization_tests PRIVATE xxwidgets::visualization)
+        if(MSVC)
+            target_compile_options(xxwidgets_visualization_tests PRIVATE /W4 /utf-8)
+            target_compile_definitions(xxwidgets_visualization_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+        endif()
+        set(_xxwidgets_vis_work "${CMAKE_CURRENT_BINARY_DIR}/visualization-test")
+        file(MAKE_DIRECTORY "${_xxwidgets_vis_work}")
+        add_test(NAME xxwidgets.visualization COMMAND xxwidgets_visualization_tests "${_xxwidgets_vis_work}")
+        set_tests_properties(xxwidgets.visualization PROPERTIES SKIP_RETURN_CODE 77 LABELS private)
     endif()
 endif()
 
@@ -840,7 +913,7 @@ if(XXWIDGETS_BUILD_TESTS AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
             XXWIDGETS_SCAN_FIXTURE="${_xxwidgets_scan_fixture}"
             XXWIDGETS_SCAN_BULK="${CMAKE_CURRENT_BINARY_DIR}/scan-directory-bulk")
         target_sources(xxwidgets_core_tests PRIVATE tests/test_shortcuts.c tests/test_hex_columns.c)
-        target_sources(xxwidgets_core_tests PRIVATE tests/test_file_drops.c tests/test_canvas.c src/xxwidgets_canvas.c src/xxwidgets_entropy.c tests/test_entropy.c)
+        target_sources(xxwidgets_core_tests PRIVATE tests/test_file_drops.c tests/test_canvas.c tests/test_imageview.c src/xxwidgets_canvas.c src/xxwidgets_imageview.c src/xxwidgets_entropy.c tests/test_entropy.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_strings.c src/xxwidgets_strings_dialog.c
             tests/test_strings.c tests/test_strings_source.c tests/test_table.c)
         target_sources(xxwidgets_core_tests PRIVATE src/xxwidgets_extractor.c src/xxwidgets_type_picker.c tests/test_extractor.c)

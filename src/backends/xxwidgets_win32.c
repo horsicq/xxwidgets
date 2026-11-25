@@ -2499,6 +2499,7 @@ static LRESULT CALLBACK win32_canvas_proc(HWND handle, UINT message, WPARAM wp, 
         HDC dc = BeginPaint(handle, &paint);
         GetClientRect(handle, &rect);
         FillRect(dc, &rect, GetSysColorBrush(COLOR_3DFACE));
+        if (w->kind == XXWIDGETS_CANVAS) xxwidgets_imageview_prepare(w, rect.right, rect.bottom);
         if (w->kind == XXWIDGETS_CANVAS && w->canvas_pixels && w->canvas_width && w->canvas_height) {
             size_t n = (size_t)w->canvas_width * w->canvas_height;
             uint32_t *pixels = malloc(n * 4);
@@ -2554,6 +2555,16 @@ static LRESULT CALLBACK win32_canvas_proc(HWND handle, UINT message, WPARAM wp, 
     }
     if (message == WM_LBUTTONUP) {
         ReleaseCapture();
+        return 0;
+    }
+    if (message == WM_MOUSEWHEEL && w->kind == XXWIDGETS_CANVAS && w->imageview && xxwidgets_focusable(w)) {
+        RECT r;
+        POINT pt = {(short)LOWORD(lp), (short)HIWORD(lp)};
+        int steps = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA;
+        ScreenToClient(handle, &pt);
+        GetClientRect(handle, &r);
+        if (!steps) steps = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
+        xxwidgets_imageview_wheel(w, steps, pt.x, pt.y, r.right, r.bottom);
         return 0;
     }
     if (message == WM_KEYDOWN) {

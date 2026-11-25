@@ -672,6 +672,7 @@ static void cocoa_plot_draw(void *user, int kind, double x, double y, double x2,
 - (void)drawRect:(NSRect)dirty {
     (void)dirty;NSRect bounds=[self bounds];[[NSColor colorWithCalibratedWhite:0.95 alpha:1] setFill];NSRectFill(bounds);
     if(widget->kind==XXWIDGETS_SPLITTER){[[NSColor separatorColor] setFill];NSRectFill(bounds);return;}
+    xxwidgets_imageview_prepare(widget,bounds.size.width,bounds.size.height);
     if(!widget->canvas_pixels||!widget->canvas_width||!widget->canvas_height)return;
     if(!cachedImage||imageRevision!=widget->canvas_revision){[cachedImage release];cachedImage=nil;
         NSBitmapImageRep *rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:widget->canvas_width pixelsHigh:widget->canvas_height bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bitmapFormat:NSBitmapFormatAlphaNonpremultiplied bytesPerRow:widget->canvas_width*4 bitsPerPixel:32];

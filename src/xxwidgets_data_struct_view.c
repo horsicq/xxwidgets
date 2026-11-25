@@ -91,7 +91,7 @@ static xxwidgets_status copy_items(const xxwidgets_data_struct_item *items, size
         xxwidgets_data_struct_field *fields = NULL;
         if (!xxwidgets_valid_utf8(safe_string(items[item].name)) || (!items[item].fields && items[item].field_count) || items[item].field_count > INT_MAX ||
             items[item].field_count > SIZE_MAX / sizeof(*fields) || items[item].data_struct.type < XX_DATA_STRUCT_TYPE_UNKNOWN ||
-            items[item].data_struct.type > XX_DATA_STRUCT_TYPE_RAW_DATA) {
+            items[item].data_struct.type > XX_DATA_STRUCT_TYPE_SPEC) {
             free_items(copies, count);
             return XXWIDGETS_INVALID_ARGUMENT;
         }
@@ -145,6 +145,7 @@ static const char *data_struct_type_name(xx_data_struct_type_t type)
         case XX_DATA_STRUCT_TYPE_FOOTER: return "footer";
         case XX_DATA_STRUCT_TYPE_LOCATOR: return "locator";
         case XX_DATA_STRUCT_TYPE_RAW_DATA: return "raw_data";
+        case XX_DATA_STRUCT_TYPE_SPEC: return "spec";
         default: return "unknown";
     }
 }
