@@ -38,8 +38,7 @@ struct xxwidgets_data_struct_view {
 
 static int valid_bounds(xxwidgets_rect bounds)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 48 && bounds.height >= 4 && bounds.x <= INT_MAX - bounds.width &&
-           bounds.y <= INT_MAX - bounds.height;
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 48 && bounds.height >= 4 && bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
 }
 
 static void control_rects(xxwidgets_rect bounds, xxwidgets_rect rects[XXWIDGETS_DATA_STRUCT_VIEW_CONTROL_COUNT])
@@ -90,9 +89,9 @@ static xxwidgets_status copy_items(const xxwidgets_data_struct_item *items, size
     if (!copies) return XXWIDGETS_OUT_OF_MEMORY;
     for (item = 0; item < count; ++item) {
         xxwidgets_data_struct_field *fields = NULL;
-        if (!xxwidgets_valid_utf8(safe_string(items[item].name)) || (!items[item].fields && items[item].field_count) ||
-            items[item].field_count > INT_MAX || items[item].field_count > SIZE_MAX / sizeof(*fields) ||
-            items[item].data_struct.type < XX_DATA_STRUCT_TYPE_UNKNOWN || items[item].data_struct.type > XX_DATA_STRUCT_TYPE_RAW_DATA) {
+        if (!xxwidgets_valid_utf8(safe_string(items[item].name)) || (!items[item].fields && items[item].field_count) || items[item].field_count > INT_MAX ||
+            items[item].field_count > SIZE_MAX / sizeof(*fields) || items[item].data_struct.type < XX_DATA_STRUCT_TYPE_UNKNOWN ||
+            items[item].data_struct.type > XX_DATA_STRUCT_TYPE_RAW_DATA) {
             free_items(copies, count);
             return XXWIDGETS_INVALID_ARGUMENT;
         }
@@ -113,10 +112,9 @@ static xxwidgets_status copy_items(const xxwidgets_data_struct_item *items, size
         }
         for (field = 0; field < items[item].field_count; ++field) {
             const xxwidgets_data_struct_field *source = items[item].fields + field;
-            if (!xxwidgets_valid_utf8(safe_string(source->name)) || !xxwidgets_valid_utf8(safe_string(source->type)) ||
-                !xxwidgets_valid_utf8(safe_string(source->raw)) || !xxwidgets_valid_utf8(safe_string(source->value)) ||
-                !xxwidgets_valid_utf8(safe_string(source->comment)) ||
-                source->relative_offset < -1 || source->file_offset < -1 || source->size < -1) {
+            if (!xxwidgets_valid_utf8(safe_string(source->name)) || !xxwidgets_valid_utf8(safe_string(source->type)) || !xxwidgets_valid_utf8(safe_string(source->raw)) ||
+                !xxwidgets_valid_utf8(safe_string(source->value)) || !xxwidgets_valid_utf8(safe_string(source->comment)) || source->relative_offset < -1 ||
+                source->file_offset < -1 || source->size < -1) {
                 free_items(copies, count);
                 return XXWIDGETS_INVALID_ARGUMENT;
             }
@@ -169,8 +167,7 @@ static xxwidgets_status replace_list_rows(xxwidgets_widget *widget, char **rows,
     size_t previous_count;
     int previous_value;
     xxwidgets_status status;
-    if (!widget || widget->kind != XXWIDGETS_LISTBOX || count > INT_MAX || value < -1 || (value >= 0 && (size_t)value >= count))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!widget || widget->kind != XXWIDGETS_LISTBOX || count > INT_MAX || value < -1 || (value >= 0 && (size_t)value >= count)) return XXWIDGETS_INVALID_ARGUMENT;
     previous_rows = widget->items;
     previous_count = widget->item_count;
     previous_value = widget->value;
@@ -363,8 +360,8 @@ xxwidgets_status xxwidgets_data_struct_view_set_items(xxwidgets_data_struct_view
             }
         }
     }
-    status = replace_list_rows(view->controls[XXWIDGETS_DATA_STRUCT_VIEW_LIST], labels, count, count ? 0 : -1, &previous_labels,
-                               &previous_label_count, &previous_list_value);
+    status =
+        replace_list_rows(view->controls[XXWIDGETS_DATA_STRUCT_VIEW_LIST], labels, count, count ? 0 : -1, &previous_labels, &previous_label_count, &previous_list_value);
     if (status != XXWIDGETS_OK) {
         free_string_rows(labels, count);
         free_items(copies, count);

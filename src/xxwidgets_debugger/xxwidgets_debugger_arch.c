@@ -4,8 +4,7 @@
 
 static const char hex_digits[] = "0123456789ABCDEF";
 
-static xxwidgets_status format_m68k(const xxwidgets_debugger_m68k_state *state,
-                                  xxwidgets_debugger_register_rows *rows)
+static xxwidgets_status format_m68k(const xxwidgets_debugger_m68k_state *state, xxwidgets_debugger_register_rows *rows)
 {
     static const char *const flags[] = {"T", "S", "IPL", "X", "N", "Z", "V", "C"};
     static const unsigned shifts[] = {15, 13, 8, 4, 3, 2, 1, 0};
@@ -39,8 +38,7 @@ static xxwidgets_status format_m68k(const xxwidgets_debugger_m68k_state *state,
 static xxwidgets_status begin_row(xxwidgets_debugger_register_rows *rows, const char *name)
 {
     size_t length;
-    if (!rows || !name || rows->count >= XXWIDGETS_DEBUGGER_REGISTER_ROW_CAPACITY)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!rows || !name || rows->count >= XXWIDGETS_DEBUGGER_REGISTER_ROW_CAPACITY) return XXWIDGETS_INVALID_ARGUMENT;
     length = strlen(name);
     if (length >= XXWIDGETS_DEBUGGER_REGISTER_NAME_CAPACITY) return XXWIDGETS_INVALID_ARGUMENT;
     memcpy(rows->names[rows->count], name, length + 1);
@@ -50,8 +48,7 @@ static xxwidgets_status begin_row(xxwidgets_debugger_register_rows *rows, const 
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_add_scalar(xxwidgets_debugger_register_rows *rows, const char *name,
-                                              uint64_t value, unsigned digits)
+xxwidgets_status xxwidgets_debugger_add_scalar(xxwidgets_debugger_register_rows *rows, const char *name, uint64_t value, unsigned digits)
 {
     xxwidgets_status status;
     unsigned i;
@@ -67,8 +64,7 @@ xxwidgets_status xxwidgets_debugger_add_scalar(xxwidgets_debugger_register_rows 
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_add_vector(xxwidgets_debugger_register_rows *rows, const char *name,
-                                              const uint8_t value[16])
+xxwidgets_status xxwidgets_debugger_add_vector(xxwidgets_debugger_register_rows *rows, const char *name, const uint8_t value[16])
 {
     xxwidgets_status status;
     size_t i;
@@ -84,8 +80,7 @@ xxwidgets_status xxwidgets_debugger_add_vector(xxwidgets_debugger_register_rows 
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_format_registers(const xxwidgets_debugger_cpu_snapshot *cpu,
-                                                     xxwidgets_debugger_register_rows *output)
+xxwidgets_status xxwidgets_debugger_format_registers(const xxwidgets_debugger_cpu_snapshot *cpu, xxwidgets_debugger_register_rows *output)
 {
     xxwidgets_debugger_register_rows staged;
     xxwidgets_status status;
@@ -110,8 +105,7 @@ xxwidgets_status xxwidgets_debugger_format_registers(const xxwidgets_debugger_cp
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_registers_set_cpu(xxwidgets_widget *widget,
-                                                      const xxwidgets_debugger_cpu_snapshot *cpu)
+xxwidgets_status xxwidgets_debugger_registers_set_cpu(xxwidgets_widget *widget, const xxwidgets_debugger_cpu_snapshot *cpu)
 {
     xxwidgets_debugger_register_rows rows;
     xxwidgets_status status;
@@ -121,8 +115,7 @@ xxwidgets_status xxwidgets_debugger_registers_set_cpu(xxwidgets_widget *widget,
     return xxwidgets_debugger_registers_set_rows(widget, rows.rows, rows.count);
 }
 
-xxwidgets_status xxwidgets_debugger_set_cpu_registers(xxwidgets_debugger *view,
-                                                      const xxwidgets_debugger_cpu_snapshot *cpu)
+xxwidgets_status xxwidgets_debugger_set_cpu_registers(xxwidgets_debugger *view, const xxwidgets_debugger_cpu_snapshot *cpu)
 {
     xxwidgets_debugger_register_rows rows;
     xxwidgets_status status;
@@ -145,9 +138,7 @@ size_t xxwidgets_debugger_arch_word_size(xxwidgets_debugger_arch arch)
     }
 }
 
-xxwidgets_status xxwidgets_debugger_format_stack_word(xxwidgets_debugger_arch arch, int big_endian,
-                                                      const unsigned char *bytes, size_t available,
-                                                      char value[17])
+xxwidgets_status xxwidgets_debugger_format_stack_word(xxwidgets_debugger_arch arch, int big_endian, const unsigned char *bytes, size_t available, char value[17])
 {
     size_t word_size = xxwidgets_debugger_arch_word_size(arch), i;
     char staged[17];

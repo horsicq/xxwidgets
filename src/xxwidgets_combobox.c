@@ -172,15 +172,13 @@ static void dispose_items(char **items, size_t count)
     free(items);
 }
 
-static xxwidgets_status prepare_state(const xx_meta_string *records, size_t count,
-    struct xxwidgets_combo_state **out_state, char ***out_items)
+static xxwidgets_status prepare_state(const xx_meta_string *records, size_t count, struct xxwidgets_combo_state **out_state, char ***out_items)
 {
     struct xxwidgets_combo_state *state = NULL;
     char **items = NULL;
     size_t i;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!out_state || !out_items || (!records && count) || count > INT_MAX ||
-        count > SIZE_MAX / sizeof(*records) || count > SIZE_MAX / sizeof(*items))
+    if (!out_state || !out_items || (!records && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*records) || count > SIZE_MAX / sizeof(*items))
         return XXWIDGETS_INVALID_ARGUMENT;
     *out_state = NULL;
     *out_items = NULL;
@@ -271,8 +269,7 @@ xxwidgets_status xxwidgets_combobox_set_records(xxwidgets_widget *widget, const 
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_checkcombobox_set_shared_records(xxwidgets_widget *first, xxwidgets_widget *second,
-    const xx_meta_string *records, size_t count, int enabled)
+xxwidgets_status xxwidgets_checkcombobox_set_shared_records(xxwidgets_widget *first, xxwidgets_widget *second, const xx_meta_string *records, size_t count, int enabled)
 {
     xxwidgets_widget *widgets[2] = {first, second};
     struct xxwidgets_combo_state *states[2] = {NULL, NULL}, *previous[2];
@@ -281,8 +278,7 @@ xxwidgets_status xxwidgets_checkcombobox_set_shared_records(xxwidgets_widget *fi
     int old_value[2], old_enabled[2], attempted = 0;
     uint64_t revision[2];
     xxwidgets_status status;
-    if (!first || !second || first == second || first->kind != XXWIDGETS_CHECKCOMBOBOX ||
-        second->kind != XXWIDGETS_CHECKCOMBOBOX || first->app != second->app)
+    if (!first || !second || first == second || first->kind != XXWIDGETS_CHECKCOMBOBOX || second->kind != XXWIDGETS_CHECKCOMBOBOX || first->app != second->app)
         return XXWIDGETS_INVALID_ARGUMENT;
     status = prepare_state(records, count, states, items);
     if (status != XXWIDGETS_OK) return status;

@@ -16,16 +16,19 @@ struct xxwidgets_debugger {
 };
 
 static int pane_id(xxwidgets_debugger_control_id pane)
-{ return pane >= XXWIDGETS_DEBUGGER_CONTROL_DISASM && pane <= XXWIDGETS_DEBUGGER_CONTROL_STACK; }
+{
+    return pane >= XXWIDGETS_DEBUGGER_CONTROL_DISASM && pane <= XXWIDGETS_DEBUGGER_CONTROL_STACK;
+}
 
 static int valid_bounds(xxwidgets_rect b)
 {
-    return b.x >= 0 && b.y >= 0 && b.width >= 65 && b.height >= 13 &&
-        b.width <= 32767 && b.height <= 32767 && b.x <= 32767 - b.width && b.y <= 32767 - b.height;
+    return b.x >= 0 && b.y >= 0 && b.width >= 65 && b.height >= 13 && b.width <= 32767 && b.height <= 32767 && b.x <= 32767 - b.width && b.y <= 32767 - b.height;
 }
 
 static int clamp(int value, int low, int high)
-{ return value < low ? low : value > high ? high : value; }
+{
+    return value < low ? low : value > high ? high : value;
+}
 
 static void restore_widget(xxwidgets_widget *widget, xxwidgets_rect rect, int visible)
 {
@@ -36,8 +39,8 @@ static void restore_widget(xxwidgets_widget *widget, xxwidgets_rect rect, int vi
     --widget->app->syncing;
 }
 
-static void layout_rects(xxwidgets_rect b, unsigned left, unsigned top, const int panes[4],
-    int visible, xxwidgets_rect rects[XXWIDGETS_DEBUGGER_CONTROL_COUNT], int shown[XXWIDGETS_DEBUGGER_CONTROL_COUNT])
+static void layout_rects(xxwidgets_rect b, unsigned left, unsigned top, const int panes[4], int visible, xxwidgets_rect rects[XXWIDGETS_DEBUGGER_CONTROL_COUNT],
+                         int shown[XXWIDGETS_DEBUGGER_CONTROL_COUNT])
 {
     int upper = panes[0] || panes[1], lower = panes[2] || panes[3];
     int split_x = clamp((int)((unsigned)(b.width - 1) * left / 100), 36, b.width - 29);
@@ -60,8 +63,10 @@ static void layout_rects(xxwidgets_rect b, unsigned left, unsigned top, const in
     }
     if ((panes[0] && panes[1]) || (panes[2] && panes[3])) {
         int y = b.y, height = b.height;
-        if (upper && lower && !(panes[0] && panes[1])) { y += split_y + 1; height -= split_y + 1; }
-        else if (upper && lower && !(panes[2] && panes[3])) height = split_y;
+        if (upper && lower && !(panes[0] && panes[1])) {
+            y += split_y + 1;
+            height -= split_y + 1;
+        } else if (upper && lower && !(panes[2] && panes[3])) height = split_y;
         rects[XXWIDGETS_DEBUGGER_SPLIT_VERTICAL] = (xxwidgets_rect){b.x + split_x, y, 1, height};
         shown[XXWIDGETS_DEBUGGER_SPLIT_VERTICAL] = visible;
     }
@@ -71,8 +76,7 @@ static void layout_rects(xxwidgets_rect b, unsigned left, unsigned top, const in
     }
 }
 
-static xxwidgets_status apply_layout(xxwidgets_debugger *view, xxwidgets_rect bounds,
-    unsigned left, unsigned top, const int panes[4], int visible)
+static xxwidgets_status apply_layout(xxwidgets_debugger *view, xxwidgets_rect bounds, unsigned left, unsigned top, const int panes[4], int visible)
 {
     xxwidgets_rect rects[XXWIDGETS_DEBUGGER_CONTROL_COUNT], previous[XXWIDGETS_DEBUGGER_CONTROL_COUNT];
     int shown[XXWIDGETS_DEBUGGER_CONTROL_COUNT], old_visible[XXWIDGETS_DEBUGGER_CONTROL_COUNT];
@@ -88,8 +92,7 @@ static xxwidgets_status apply_layout(xxwidgets_debugger *view, xxwidgets_rect bo
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(view->controls[i], shown[i]);
         if (status != XXWIDGETS_OK) {
             size_t j;
-            for (j = 0; j < XXWIDGETS_DEBUGGER_CONTROL_COUNT; ++j)
-                restore_widget(view->controls[j], previous[j], old_visible[j]);
+            for (j = 0; j < XXWIDGETS_DEBUGGER_CONTROL_COUNT; ++j) restore_widget(view->controls[j], previous[j], old_visible[j]);
             return status;
         }
     }
@@ -99,13 +102,18 @@ static xxwidgets_status apply_layout(xxwidgets_debugger *view, xxwidgets_rect bo
 xxwidgets_status xxwidgets_debugger_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_debugger **out)
 {
     static const xxwidgets_kind kinds[XXWIDGETS_DEBUGGER_CONTROL_COUNT] = {
-        XXWIDGETS_DEBUGGER_DISASM, XXWIDGETS_DEBUGGER_REGISTERS, XXWIDGETS_HEXVIEW, XXWIDGETS_DEBUGGER_STACK,
-        XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_SPLITTER, XXWIDGETS_SPLITTER
-    };
-    static const char *const titles[XXWIDGETS_DEBUGGER_CONTROL_COUNT] = {
-        XXW_N_("Disassembly"), XXW_N_("Registers"), XXW_N_("Hex"), XXW_N_("Stack"), XXW_N_("Disassembly"), XXW_N_("Registers"), XXW_N_("Hex"), XXW_N_("Stack"),
-        XXW_N_("Resize left and right panes"), XXW_N_("Resize upper and lower panes")
-    };
+        XXWIDGETS_DEBUGGER_DISASM, XXWIDGETS_DEBUGGER_REGISTERS, XXWIDGETS_HEXVIEW, XXWIDGETS_DEBUGGER_STACK, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL,
+        XXWIDGETS_LABEL,           XXWIDGETS_SPLITTER,           XXWIDGETS_SPLITTER};
+    static const char *const titles[XXWIDGETS_DEBUGGER_CONTROL_COUNT] = {XXW_N_("Disassembly"),
+                                                                         XXW_N_("Registers"),
+                                                                         XXW_N_("Hex"),
+                                                                         XXW_N_("Stack"),
+                                                                         XXW_N_("Disassembly"),
+                                                                         XXW_N_("Registers"),
+                                                                         XXW_N_("Hex"),
+                                                                         XXW_N_("Stack"),
+                                                                         XXW_N_("Resize left and right panes"),
+                                                                         XXW_N_("Resize upper and lower panes")};
     xxwidgets_debugger *view;
     xxwidgets_status status;
     size_t i;
@@ -117,11 +125,12 @@ xxwidgets_status xxwidgets_debugger_create(xxwidgets_widget *owner, xxwidgets_re
     if (!view) return XXWIDGETS_OUT_OF_MEMORY;
     view->owner = owner;
     view->bounds = bounds;
-    view->left = 65; view->top = 60; view->visible = 1;
+    view->left = 65;
+    view->top = 60;
+    view->visible = 1;
     for (i = 0; i < 4; ++i) view->panels[i] = 1;
     for (i = 0; i < XXWIDGETS_DEBUGGER_CONTROL_COUNT; ++i) {
-        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, titles[i]),
-            (xxwidgets_rect){bounds.x, bounds.y, 1, 1}, &view->controls[i]);
+        status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, titles[i]), (xxwidgets_rect){bounds.x, bounds.y, 1, 1}, &view->controls[i]);
         if (status != XXWIDGETS_OK) goto failed;
         if (i < 4) view->defaults[i] = view->controls[i];
     }
@@ -161,7 +170,9 @@ xxwidgets_status xxwidgets_debugger_destroy(xxwidgets_debugger *view)
 }
 
 xxwidgets_widget *xxwidgets_debugger_control(const xxwidgets_debugger *view, xxwidgets_debugger_control_id id)
-{ return view && id >= 0 && id < XXWIDGETS_DEBUGGER_CONTROL_COUNT ? view->controls[id] : NULL; }
+{
+    return view && id >= 0 && id < XXWIDGETS_DEBUGGER_CONTROL_COUNT ? view->controls[id] : NULL;
+}
 
 xxwidgets_status xxwidgets_debugger_set_rect(xxwidgets_debugger *view, xxwidgets_rect bounds)
 {
@@ -184,14 +195,18 @@ xxwidgets_status xxwidgets_debugger_set_split(xxwidgets_debugger *view, unsigned
     xxwidgets_status status;
     if (!view || left < 1 || left > 99 || top < 1 || top > 99) return XXWIDGETS_INVALID_ARGUMENT;
     status = apply_layout(view, view->bounds, left, top, view->panels, view->visible);
-    if (status == XXWIDGETS_OK) { view->left = left; view->top = top; }
+    if (status == XXWIDGETS_OK) {
+        view->left = left;
+        view->top = top;
+    }
     return status;
 }
 
 xxwidgets_status xxwidgets_debugger_get_split(const xxwidgets_debugger *view, unsigned *left, unsigned *top)
 {
     if (!view || !left || !top) return XXWIDGETS_INVALID_ARGUMENT;
-    *left = view->left; *top = view->top;
+    *left = view->left;
+    *top = view->top;
     return XXWIDGETS_OK;
 }
 
@@ -239,22 +254,29 @@ xxwidgets_status xxwidgets_debugger_set_panel(xxwidgets_debugger *view, xxwidget
         if (i != (size_t)pane && view->controls[i] == replacement) return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; i < 4; ++i)
         if (i != (size_t)pane && view->defaults[i] == replacement) return XXWIDGETS_INVALID_ARGUMENT;
-    previous_rect = previous->rect; previous_visible = previous->visible;
-    replacement_rect = replacement->rect; replacement_visible = replacement->visible;
-    saved_rect = view->external_rect[pane]; saved_visible = view->external_visible[pane];
+    previous_rect = previous->rect;
+    previous_visible = previous->visible;
+    replacement_rect = replacement->rect;
+    replacement_visible = replacement->visible;
+    saved_rect = view->external_rect[pane];
+    saved_visible = view->external_visible[pane];
     if (previous == view->defaults[pane]) status = xxwidgets_widget_set_visible(previous, 0);
     else {
         status = xxwidgets_widget_set_rect(previous, saved_rect);
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(previous, saved_visible);
     }
-    if (status != XXWIDGETS_OK) { restore_widget(previous, previous_rect, previous_visible); return status; }
+    if (status != XXWIDGETS_OK) {
+        restore_widget(previous, previous_rect, previous_visible);
+        return status;
+    }
     view->controls[pane] = replacement;
     view->external_rect[pane] = replacement_rect;
     view->external_visible[pane] = replacement_visible;
     status = apply_layout(view, view->bounds, view->left, view->top, view->panels, view->visible);
     if (status != XXWIDGETS_OK) {
         view->controls[pane] = previous;
-        view->external_rect[pane] = saved_rect; view->external_visible[pane] = saved_visible;
+        view->external_rect[pane] = saved_rect;
+        view->external_visible[pane] = saved_visible;
         restore_widget(replacement, replacement_rect, replacement_visible);
         restore_widget(previous, previous_rect, previous_visible);
     }
@@ -314,7 +336,8 @@ xxwidgets_status xxwidgets_debugger_set_pane_status(xxwidgets_debugger *view, xx
     if (!view || !pane_id(pane) || (message && !xxwidgets_valid_utf8(message))) return XXWIDGETS_INVALID_ARGUMENT;
     name = XXW_TR(view->owner->app, names[pane]);
     if (!message || !*message) return xxwidgets_widget_set_text(view->controls[pane + 4], name);
-    a = strlen(name); b = strlen(message);
+    a = strlen(name);
+    b = strlen(message);
     if (b > SIZE_MAX - a - 5) return XXWIDGETS_INVALID_ARGUMENT;
     caption = malloc(a + b + 5);
     if (!caption) return XXWIDGETS_OUT_OF_MEMORY;

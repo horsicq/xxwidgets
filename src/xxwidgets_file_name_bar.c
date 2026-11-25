@@ -46,14 +46,11 @@ static xxwidgets_status apply_texts(xxwidgets_file_name_bar *bar)
     /* Icon-only buttons; without icons they show Qt 3.11's ">" and "...". */
     int icons = status == XXWIDGETS_OK && metrics.small_icon > 0;
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(bar->controls[XXWIDGETS_FILE_NAME_BAR_CAPTION], XXW_TR(app, caption_text));
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_text(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT], icons ? XXW_TR(app, recent_text) : ">");
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT], icons ? XXW_TR(app, recent_text) : ">");
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_tooltip(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT], XXW_TR(app, recent_text));
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_text(bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE], icons ? XXW_TR(app, browse_text) : "...");
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE], icons ? XXW_TR(app, browse_text) : "...");
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_tooltip(bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE], XXW_TR(app, browse_text));
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_tooltip(bar->controls[XXWIDGETS_FILE_NAME_BAR_PATH], bar->loaded ? bar->loaded : XXW_TR(app, caption_text));
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_tooltip(bar->controls[XXWIDGETS_FILE_NAME_BAR_PATH], bar->loaded ? bar->loaded : XXW_TR(app, caption_text));
     return status;
 }
 
@@ -77,13 +74,11 @@ xxwidgets_status xxwidgets_file_name_bar_create(xxwidgets_widget *owner, unsigne
         status = xxwidgets_widget_create(app, owner, XXWIDGETS_GROUP, "", start, &bar->controls[XXWIDGETS_FILE_NAME_BAR_FRAME]);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, owner, XXWIDGETS_BUTTON, XXW_TR(app, recent_text), start, &bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT]);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_set_icon_id(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT], XXWIDGETS_ICON_LIST, XXWIDGETS_ICON_ONLY);
+    if (status == XXWIDGETS_OK) status = xxwidgets_button_set_icon_id(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT], XXWIDGETS_ICON_LIST, XXWIDGETS_ICON_ONLY);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, owner, XXWIDGETS_EDIT, "", start, &bar->controls[XXWIDGETS_FILE_NAME_BAR_PATH]);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, owner, XXWIDGETS_BUTTON, XXW_TR(app, browse_text), start, &bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE]);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_set_icon_id(bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE], XXWIDGETS_ICON_OPEN, XXWIDGETS_ICON_ONLY);
+    if (status == XXWIDGETS_OK) status = xxwidgets_button_set_icon_id(bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE], XXWIDGETS_ICON_OPEN, XXWIDGETS_ICON_ONLY);
     /* The recent list starts empty. */
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT], 0);
     if (status == XXWIDGETS_OK) status = apply_texts(bar);
@@ -151,20 +146,18 @@ xxwidgets_status xxwidgets_file_name_bar_set_bounds(xxwidgets_file_name_bar *bar
     items[1].stretch = 1;
     items[2].minimum = items[2].preferred = browse;
     xxwidgets_layout_line(items, 3, units.x + inset, units.width - 2 * inset, metrics.spacing);
-    status = xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_CAPTION],
-                                    xxwidgets_layout_rect(units.x, units.y, units.width, metrics.label_height));
+    status = xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_CAPTION], xxwidgets_layout_rect(units.x, units.y, units.width, metrics.label_height));
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_FRAME],
-                                        xxwidgets_layout_rect(units.x, units.y + top, units.width, units.height - top));
+        status = xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_FRAME], xxwidgets_layout_rect(units.x, units.y + top, units.width, units.height - top));
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT],
-                                        xxwidgets_layout_rect(items[0].position, row, items[0].size, metrics.control_height));
+        status =
+            xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_RECENT], xxwidgets_layout_rect(items[0].position, row, items[0].size, metrics.control_height));
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_PATH],
-                                        xxwidgets_layout_rect(items[1].position, row, items[1].size, metrics.control_height));
+        status =
+            xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_PATH], xxwidgets_layout_rect(items[1].position, row, items[1].size, metrics.control_height));
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE],
-                                        xxwidgets_layout_rect(items[2].position, row, items[2].size, metrics.control_height));
+        status =
+            xxwidgets_layout_place(bar->controls[XXWIDGETS_FILE_NAME_BAR_BROWSE], xxwidgets_layout_rect(items[2].position, row, items[2].size, metrics.control_height));
     if (status == XXWIDGETS_OK) {
         bar->bounds = units;
         bar->has_bounds = 1;
@@ -178,8 +171,7 @@ xxwidgets_status xxwidgets_file_name_bar_get_preferred_height(xxwidgets_file_nam
     xxwidgets_status status;
     if (!bar || !height) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_app_get_metrics(bar->owner->app, &metrics);
-    if (status == XXWIDGETS_OK)
-        *height = metrics.label_height + metrics.caption_gap + 2 * metrics.panel_inset + metrics.control_height;
+    if (status == XXWIDGETS_OK) *height = metrics.label_height + metrics.caption_gap + 2 * metrics.panel_inset + metrics.control_height;
     return status;
 }
 
@@ -273,8 +265,7 @@ int xxwidgets_file_name_bar_handle_event(xxwidgets_file_name_bar *bar, const xxw
             if (event->type == XXWIDGETS_EVENT_ACTIVATE) result = XXWIDGETS_FILE_NAME_BAR_ACTION_OPEN;
             else if (event->type == XXWIDGETS_EVENT_CHANGE) result = XXWIDGETS_FILE_NAME_BAR_ACTION_EDITED;
         }
-    } else if (widget != bar->controls[XXWIDGETS_FILE_NAME_BAR_CAPTION] && widget != bar->controls[XXWIDGETS_FILE_NAME_BAR_FRAME])
-        return 0;
+    } else if (widget != bar->controls[XXWIDGETS_FILE_NAME_BAR_CAPTION] && widget != bar->controls[XXWIDGETS_FILE_NAME_BAR_FRAME]) return 0;
     if (action) *action = result;
     return 1;
 }

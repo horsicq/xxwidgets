@@ -25,7 +25,8 @@ static size_t text_columns(const char *text)
 {
     const unsigned char *p = (const unsigned char *)text;
     size_t count = 0;
-    while (*p) if ((*p++ & 0xc0) != 0x80) ++count;
+    while (*p)
+        if ((*p++ & 0xc0) != 0x80) ++count;
     return count;
 }
 
@@ -48,7 +49,8 @@ static xxwidgets_status escaped(const char *text, char **out)
     size_t length = 0, position = 0, controls = 0;
     char *copy;
     *out = NULL;
-    for (; *p; ++p, ++length) if (*p < 32 || *p == 127) ++controls;
+    for (; *p; ++p, ++length)
+        if (*p < 32 || *p == 127) ++controls;
     if (!controls) return XXWIDGETS_OK;
     if (length > (SIZE_MAX - 1) / 4) return XXWIDGETS_INVALID_ARGUMENT;
     copy = (char *)malloc(length + 3 * controls + 1);
@@ -68,13 +70,15 @@ static xxwidgets_status escaped(const char *text, char **out)
 
 static void free_cells(char **cells, size_t count)
 {
-    if (cells) for (size_t i = 0; i < count; ++i) free(cells[i]);
+    if (cells)
+        for (size_t i = 0; i < count; ++i) free(cells[i]);
     free(cells);
 }
 
 static void dispose_rows(char **rows, size_t count)
 {
-    if (rows) for (size_t i = 0; i < count; ++i) free(rows[i]);
+    if (rows)
+        for (size_t i = 0; i < count; ++i) free(rows[i]);
     free(rows);
 }
 
@@ -98,9 +102,15 @@ xxwidgets_status xxwidgets_text_table_init(xxwidgets_widget *widget)
     for (;;) {
         const char *end = strchr(title, '\t');
         size_t length = end ? (size_t)(end - title) : strlen(title);
-        if (state->columns == XXWIDGETS_TABLE_MAX_COLUMNS) { status = XXWIDGETS_INVALID_ARGUMENT; break; }
+        if (state->columns == XXWIDGETS_TABLE_MAX_COLUMNS) {
+            status = XXWIDGETS_INVALID_ARGUMENT;
+            break;
+        }
         state->titles[state->columns] = (char *)malloc(length + 1);
-        if (!state->titles[state->columns]) { status = XXWIDGETS_OUT_OF_MEMORY; break; }
+        if (!state->titles[state->columns]) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            break;
+        }
         memcpy(state->titles[state->columns], title, length);
         state->titles[state->columns][length] = 0;
         state->widths[state->columns] = text_columns(state->titles[state->columns]);
@@ -112,7 +122,10 @@ xxwidgets_status xxwidgets_text_table_init(xxwidgets_widget *widget)
     if (status == XXWIDGETS_OK) {
         char *empty = xxwidgets_strdup("");
         if (!empty) status = XXWIDGETS_OUT_OF_MEMORY;
-        else { free(widget->text); widget->text = empty; }
+        else {
+            free(widget->text);
+            widget->text = empty;
+        }
     }
     if (status != XXWIDGETS_OK) {
         for (size_t i = 0; i < state->columns; ++i) free(state->titles[i]);
@@ -140,8 +153,7 @@ static xxwidgets_status format_row(const struct xxwidgets_text_table_state *stat
     char *line;
     for (size_t column = 0; column < state->columns; ++column) {
         size_t bytes = strlen(shown_cell(state, row * state->columns + column));
-        if (bytes > SIZE_MAX / 2 - widths[column] - 3 || length > SIZE_MAX / 2 - bytes - widths[column] - 3)
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (bytes > SIZE_MAX / 2 - widths[column] - 3 || length > SIZE_MAX / 2 - bytes - widths[column] - 3) return XXWIDGETS_INVALID_ARGUMENT;
         length += bytes + widths[column] + 2;
     }
     line = (char *)malloc(length + 1);
@@ -153,7 +165,10 @@ static xxwidgets_status format_row(const struct xxwidgets_text_table_state *stat
         size_t bytes = clipped ? prefix_bytes(cell, shown > 3 ? shown - 3 : shown) : strlen(cell);
         memcpy(line + position, cell, bytes);
         position += bytes;
-        if (clipped && shown > 3) { memcpy(line + position, "...", 3); position += 3; }
+        if (clipped && shown > 3) {
+            memcpy(line + position, "...", 3);
+            position += 3;
+        }
         if (column + 1 < state->columns) {
             size_t padding = widths[column] - shown + 2;
             memset(line + position, ' ', padding);
@@ -165,8 +180,7 @@ static xxwidgets_status format_row(const struct xxwidgets_text_table_state *stat
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_table_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const char *const *titles, size_t columns,
-                                       xxwidgets_widget **out)
+xxwidgets_status xxwidgets_table_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const char *const *titles, size_t columns, xxwidgets_widget **out)
 {
     size_t length = 0, position = 0;
     char *text;
@@ -216,12 +230,18 @@ xxwidgets_status xxwidgets_text_table_replace(xxwidgets_widget *widget, const ch
         copies = (char **)calloc(count, sizeof(char *));
         display = (char **)calloc(count, sizeof(char *));
         lines = (char **)calloc(rows, sizeof(char *));
-        if (!copies || !display || !lines) { status = XXWIDGETS_OUT_OF_MEMORY; goto failed; }
+        if (!copies || !display || !lines) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto failed;
+        }
     }
     for (size_t i = 0; i < count; ++i) {
         size_t width;
         copies[i] = xxwidgets_strdup(cells[i] ? cells[i] : "");
-        if (!copies[i]) { status = XXWIDGETS_OUT_OF_MEMORY; goto failed; }
+        if (!copies[i]) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto failed;
+        }
         status = escaped(copies[i], &display[i]);
         if (status != XXWIDGETS_OK) goto failed;
         if (display[i]) displayed = 1;
@@ -229,18 +249,30 @@ xxwidgets_status xxwidgets_text_table_replace(xxwidgets_widget *widget, const ch
         if (width > CELL_MAXIMUM) width = CELL_MAXIMUM;
         if (width > widths[i % columns]) widths[i % columns] = width;
     }
-    if (!displayed) { free(display); display = NULL; }
+    if (!displayed) {
+        free(display);
+        display = NULL;
+    }
     for (size_t column = 0; column < columns; ++column) line_columns += widths[column] + (column + 1 < columns ? 2 : 0);
     /* The rows below read these cells through the state. */
-    previous_cells = state->cells; previous_display = state->display; previous_rows = state->rows;
+    previous_cells = state->cells;
+    previous_display = state->display;
+    previous_rows = state->rows;
     memcpy(previous_widths, state->widths, sizeof(previous_widths));
-    state->cells = copies; state->display = display; state->rows = rows;
+    state->cells = copies;
+    state->display = display;
+    state->rows = rows;
     memcpy(state->widths, widths, sizeof(widths));
     for (size_t row = 0; row < rows && status == XXWIDGETS_OK; ++row) status = format_row(state, widths, row, &lines[row]);
     if (status == XXWIDGETS_OK) {
-        previous_lines = widget->items; previous_count = widget->item_count; previous_line_columns = widget->archive_columns;
-        revision = widget->debugger_revision; value = widget->value;
-        widget->items = lines; widget->item_count = rows; widget->archive_columns = line_columns;
+        previous_lines = widget->items;
+        previous_count = widget->item_count;
+        previous_line_columns = widget->archive_columns;
+        revision = widget->debugger_revision;
+        value = widget->value;
+        widget->items = lines;
+        widget->item_count = rows;
+        widget->archive_columns = line_columns;
         widget->debugger_revision = revision + 1;
         /* The row asked for when the filters show it, else the first one shown. */
         if (selection >= 0 && (size_t)selection < rows && xxwidgets_tabular_row(widget, selection) >= 0) widget->value = selection;
@@ -254,10 +286,15 @@ xxwidgets_status xxwidgets_text_table_replace(xxwidgets_widget *widget, const ch
             dispose_rows(previous_lines, previous_count);
             return XXWIDGETS_OK;
         }
-        widget->items = previous_lines; widget->item_count = previous_count; widget->archive_columns = previous_line_columns;
-        widget->debugger_revision = revision; widget->value = value;
+        widget->items = previous_lines;
+        widget->item_count = previous_count;
+        widget->archive_columns = previous_line_columns;
+        widget->debugger_revision = revision;
+        widget->value = value;
     }
-    state->cells = previous_cells; state->display = previous_display; state->rows = previous_rows;
+    state->cells = previous_cells;
+    state->display = previous_display;
+    state->rows = previous_rows;
     memcpy(state->widths, previous_widths, sizeof(previous_widths));
     ++widget->app->syncing;
     (void)widget->app->ops->sync(widget);

@@ -144,8 +144,7 @@ finish:
 
 /* The same modal shell as the options dialog: labels instead of checkboxes,
  * yes where OK is and no where Cancel is, so options_event serves both. */
-xxwidgets_status xxwidgets_question_dialog(xxwidgets_widget *owner, const char *title, const char *text,
-                                           const char *yes_label, const char *no_label, int *accepted)
+xxwidgets_status xxwidgets_question_dialog(xxwidgets_widget *owner, const char *title, const char *text, const char *yes_label, const char *no_label, int *accepted)
 {
     xxwidgets_widget *previous_focus = NULL, *widget, *previous_modal, *previous_default, *label;
     int owner_enabled, owner_disabled = 0, modal_attached = 0;
@@ -190,7 +189,8 @@ xxwidgets_status xxwidgets_question_dialog(xxwidgets_widget *owner, const char *
     app->modal_window = state.window;
     for (i = 0, start = text; i < lines; ++i) {
         size_t bytes;
-        for (cursor = start; *cursor && *cursor != '\n'; ++cursor) {}
+        for (cursor = start; *cursor && *cursor != '\n'; ++cursor) {
+        }
         bytes = (size_t)(cursor - start);
         if (bytes >= sizeof(line)) {
             bytes = sizeof(line) - 1;
@@ -252,8 +252,8 @@ xxwidgets_status xxwidgets_file_dialog(xxwidgets_widget *owner, xxwidgets_file_d
     xxwidgets_app *app;
     if (path) *path = NULL;
     if (accepted) *accepted = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !path || !accepted || (mode != XXWIDGETS_FILE_DIALOG_OPEN && mode != XXWIDGETS_FILE_DIALOG_SAVE && mode != XXWIDGETS_FILE_DIALOG_FOLDER) ||
-        (title && !xxwidgets_valid_utf8(title)))
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !path || !accepted ||
+        (mode != XXWIDGETS_FILE_DIALOG_OPEN && mode != XXWIDGETS_FILE_DIALOG_SAVE && mode != XXWIDGETS_FILE_DIALOG_FOLDER) || (title && !xxwidgets_valid_utf8(title)))
         return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->quit || (app->modal_window && app->modal_window != owner)) return XXWIDGETS_BUSY;

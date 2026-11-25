@@ -67,17 +67,15 @@ XXWIDGETS_API xxwidgets_status xxwidgets_file_header_get_minimum_size(xxwidgets_
 XXWIDGETS_API xxwidgets_value_field *xxwidgets_file_header_field(const xxwidgets_file_header *header, xxwidgets_file_header_field_id field);
 /* The file's concrete types (xxwidgets_combobox_set_records; values are
  * UINT64 type ids), selecting record selected (the most specific type). */
-XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_file_types(xxwidgets_file_header *header, const xx_meta_string *records, size_t count,
-                                                                  size_t selected);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_file_types(xxwidgets_file_header *header, const xx_meta_string *records, size_t count, size_t selected);
 /* "0 Bytes", "1023 Bytes", "1.00 KiB", "31.46 MiB" (1024-based), not bold. */
 XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_file_size(xxwidgets_file_header *header, uint64_t bytes);
 /* BASE_ADDRESS or ENTRY_POINT as hex padded to bits / 4 digits (bits 8, 16,
  * 32 or 64), bold when nonzero; or as "SSSS:OOOO" (MSDOS). Other ids:
  * INVALID_ARGUMENT. */
-XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_address(xxwidgets_file_header *header, xxwidgets_file_header_field_id field,
-                                                               uint64_t value, unsigned int bits);
-XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_address_seg_off(xxwidgets_file_header *header, xxwidgets_file_header_field_id field,
-                                                                       uint16_t segment, uint16_t offset);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_address(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint64_t value, unsigned int bits);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_address_seg_off(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint16_t segment,
+                                                                         uint16_t offset);
 /* Shows (1) or hides (0) Base address and Entry point and lays out again. */
 XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_advanced(xxwidgets_file_header *header, int advanced);
 /* 0: no file, every field disabled; 1: enabled. */
@@ -86,8 +84,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_loaded(xxwidgets_file_h
 XXWIDGETS_API xxwidgets_status xxwidgets_file_header_clear(xxwidgets_file_header *header);
 XXWIDGETS_API xxwidgets_status xxwidgets_file_header_set_visible(xxwidgets_file_header *header, int visible);
 XXWIDGETS_API xxwidgets_status xxwidgets_file_header_retranslate(xxwidgets_file_header *header);
-XXWIDGETS_API int xxwidgets_file_header_handle_event(xxwidgets_file_header *header, const xxwidgets_event *event,
-                                                   xxwidgets_file_header_action *action);
+XXWIDGETS_API int xxwidgets_file_header_handle_event(xxwidgets_file_header *header, const xxwidgets_event *event, xxwidgets_file_header_action *action);
 
 #ifdef __cplusplus
 }

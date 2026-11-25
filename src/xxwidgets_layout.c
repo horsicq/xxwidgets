@@ -171,14 +171,13 @@ int xxwidgets_layout_caption_box_width(const xxwidgets_metrics *metrics, int con
     return control_width + 2 * metrics->frame_inset;
 }
 
-void xxwidgets_layout_caption_box_split(const xxwidgets_metrics *metrics, xxwidgets_rect box, int control_height,
-                                        xxwidgets_layout_caption_box *out)
+void xxwidgets_layout_caption_box_split(const xxwidgets_metrics *metrics, xxwidgets_rect box, int control_height, xxwidgets_layout_caption_box *out)
 {
     int top = metrics->label_height + metrics->caption_gap, inset = metrics->frame_inset;
     out->caption = xxwidgets_layout_rect(box.x, box.y, box.width, metrics->label_height);
     out->frame = xxwidgets_layout_rect(box.x, box.y + top, box.width, box.height - top > 1 ? box.height - top : 1);
-    out->control = xxwidgets_layout_rect(box.x + inset, out->frame.y + inset, box.width - 2 * inset > 1 ? box.width - 2 * inset : 1,
-                                         control_height > 1 ? control_height : 1);
+    out->control =
+        xxwidgets_layout_rect(box.x + inset, out->frame.y + inset, box.width - 2 * inset > 1 ? box.width - 2 * inset : 1, control_height > 1 ? control_height : 1);
 }
 
 xxwidgets_status xxwidgets_layout_place(xxwidgets_widget *widget, xxwidgets_rect rect)

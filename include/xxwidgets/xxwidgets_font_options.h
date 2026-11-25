@@ -94,8 +94,7 @@ typedef enum xxwidgets_font_options_control_id {
     XXWIDGETS_FONT_OPTIONS_PREVIEW,
     XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT
 } xxwidgets_font_options_control_id;
-XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-                                                                    xxwidgets_font_options_widget **out_widget);
+XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_font_options_widget **out_widget);
 XXWIDGETS_API xxwidgets_status xxwidgets_font_options_widget_destroy(xxwidgets_font_options_widget *widget);
 XXWIDGETS_API xxwidgets_widget *xxwidgets_font_options_widget_control(const xxwidgets_font_options_widget *widget, xxwidgets_font_role role,
                                                                       xxwidgets_font_options_control_id control);

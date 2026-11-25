@@ -127,7 +127,11 @@ xxwidgets_status xxwidgets_memory_map_set_rect(xxwidgets_memory_map *v, xxwidget
     if (top > b.height - 6) top = b.height - 6;
     field = left - 31;
     for (size_t i = 0; i < XXWIDGETS_MEMORY_MAP_CONTROL_COUNT; ++i) r[i] = (xxwidgets_rect){b.x, b.y, 1, 1};
-#define R(id, dx, dy, w, h) r[XXWIDGETS_MEMORY_MAP_##id] = (xxwidgets_rect){b.x + (dx), b.y + (dy), w, h}
+#define R(id, dx, dy, w, h)                         \
+    r[XXWIDGETS_MEMORY_MAP_##id] = (xxwidgets_rect) \
+    {                                               \
+        b.x + (dx), b.y + (dy), w, h                \
+    }
     R(FORMAT, 0, 0, 13, 2);
     R(MODE, 14, 0, 14, 2);
     R(SHOW_ALL, 29, 0, 13, 2);
@@ -834,8 +838,7 @@ xxwidgets_status xxwidgets_memory_map_process(xxwidgets_memory_map *v)
     } else if (action == RELOAD || action == FORMAT || action == MODE) s = reload_map(v, action);
     else if (action >= SEARCH_OFFSET && action <= SEARCH_RVA) s = search_value(v, action - SEARCH_OFFSET);
     else if (action == SAVE || action == DUMP) {
-        s = xxwidgets_file_dialog(v->owner, XXWIDGETS_FILE_DIALOG_SAVE,
-                                  action == SAVE ? XXW_TR(v->owner->app, "Save Memory Map") : XXW_TR(v->owner->app, "Dump region"),
+        s = xxwidgets_file_dialog(v->owner, XXWIDGETS_FILE_DIALOG_SAVE, action == SAVE ? XXW_TR(v->owner->app, "Save Memory Map") : XXW_TR(v->owner->app, "Dump region"),
                                   action == SAVE ? "Memory map.txt" : "region.bin", &path, &accepted);
         if (s == XXWIDGETS_OK && accepted) {
             if (action == SAVE) s = xxwidgets_memory_map_save(v, path);

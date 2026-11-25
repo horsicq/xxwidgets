@@ -47,7 +47,8 @@ static int contains(const char *text, const char *needle)
     size_t i, j;
     if (!needle[0]) return 1;
     for (i = 0; text[i]; ++i) {
-        for (j = 0; needle[j] && text[i + j] && lower_ascii((unsigned char)text[i + j]) == lower_ascii((unsigned char)needle[j]); ++j) {}
+        for (j = 0; needle[j] && text[i + j] && lower_ascii((unsigned char)text[i + j]) == lower_ascii((unsigned char)needle[j]); ++j) {
+        }
         if (!needle[j]) return 1;
     }
     return 0;
@@ -94,8 +95,7 @@ xxwidgets_status xxwidgets_shortcuts_dialog(xxwidgets_widget *owner, const xxwid
     size_t i;
     if (!owner || owner->kind != XXWIDGETS_WINDOW || (!entries && count) || count > SHORTCUTS_MAX_ENTRIES) return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; i < count; ++i)
-        if (!entries[i].name || !xxwidgets_valid_utf8(entries[i].name) || (entries[i].key && !xxwidgets_valid_utf8(entries[i].key)))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!entries[i].name || !xxwidgets_valid_utf8(entries[i].name) || (entries[i].key && !xxwidgets_valid_utf8(entries[i].key))) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || (app->modal_window && app->modal_window != owner) || app->quit) return XXWIDGETS_BUSY;
     memset(&state, 0, sizeof(state));

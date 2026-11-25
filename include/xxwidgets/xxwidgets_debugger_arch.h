@@ -90,17 +90,14 @@ typedef struct xxwidgets_debugger_register_rows {
  * fixed-width hexadecimal without a prefix; row flags start at zero. Unknown
  * architectures and NULL arguments return INVALID_ARGUMENT. Failure leaves
  * output unchanged. Hosts may add CHANGED markers before setting the rows. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_format_registers(const xxwidgets_debugger_cpu_snapshot *cpu,
-                                                                  xxwidgets_debugger_register_rows *output);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_format_registers(const xxwidgets_debugger_cpu_snapshot *cpu, xxwidgets_debugger_register_rows *output);
 
 /* Convenience setters for a standalone Registers widget or the currently
  * installed Registers pane. They format and deep-copy a snapshot on the UI
  * thread, following the normal table/composite setter rules. Other panes,
  * including the architecture-independent Hex view, are unaffected. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_registers_set_cpu(xxwidgets_widget *widget,
-                                                                 const xxwidgets_debugger_cpu_snapshot *cpu);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_set_cpu_registers(xxwidgets_debugger *view,
-                                                                 const xxwidgets_debugger_cpu_snapshot *cpu);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_registers_set_cpu(xxwidgets_widget *widget, const xxwidgets_debugger_cpu_snapshot *cpu);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_set_cpu_registers(xxwidgets_debugger *view, const xxwidgets_debugger_cpu_snapshot *cpu);
 
 /* Returns 2, 4 or 8 bytes, or zero for an unknown architecture. */
 XXWIDGETS_API size_t xxwidgets_debugger_arch_word_size(xxwidgets_debugger_arch arch);
@@ -111,9 +108,8 @@ XXWIDGETS_API size_t xxwidgets_debugger_arch_word_size(xxwidgets_debugger_arch a
  * is zero. big_endian is zero for little-endian, nonzero for big-endian.
  * value needs 17 bytes (including NUL), even for narrower words. Invalid
  * arguments leave value unchanged. No UI/backend access is performed. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_format_stack_word(xxwidgets_debugger_arch arch, int big_endian,
-                                                                  const unsigned char *bytes, size_t available,
-                                                                  char value[17]);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_format_stack_word(xxwidgets_debugger_arch arch, int big_endian, const unsigned char *bytes, size_t available,
+                                                                    char value[17]);
 
 #ifdef __cplusplus
 }

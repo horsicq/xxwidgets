@@ -39,8 +39,8 @@ enum {
     ACTION_DUMP,
     ACTION_TYPES
 };
-static const char *const titles[9] = {"#", XXW_N_("Offset"), XXW_N_("Address"), XXW_N_("Region"), XXW_N_("Size"), XXW_N_("Method"),
-                                      XXW_N_("Type"), XXW_N_("Info"), XXW_N_("Name")};
+static const char *const titles[9] = {
+    "#", XXW_N_("Offset"), XXW_N_("Address"), XXW_N_("Region"), XXW_N_("Size"), XXW_N_("Method"), XXW_N_("Type"), XXW_N_("Info"), XXW_N_("Name")};
 static const char *const modes[] = {XXW_N_("Heuristic"), XXW_N_("Format"), XXW_N_("Raw")};
 
 void xxwidgets_extractor_options_init(xxwidgets_extractor_options *o)
@@ -113,8 +113,7 @@ static xxwidgets_status extractor_disk_worker(void *user, xx_pd_struct *pd, xxwi
     xxwidgets_status status;
     (void)xxwidgets_disk_write_set_file(reporter, j->path, 0, files, 1);
     if (j->action == ACTION_SAVE)
-        status = j->source->save_ex ? j->source->save_ex(j->source->user, j->path, pd, reporter)
-                                    : j->source->save(j->source->user, j->path, pd);
+        status = j->source->save_ex ? j->source->save_ex(j->source->user, j->path, pd, reporter) : j->source->save(j->source->user, j->path, pd);
     else {
         /* Opaque legacy callbacks have no promised byte-counter layout.
          * Leave unreported progress undetermined instead of guessing units. */
@@ -123,12 +122,9 @@ static xxwidgets_status extractor_disk_worker(void *user, xx_pd_struct *pd, xxwi
     }
     /* Legacy callbacks signal cancellation through pd alone. Disk-aware
      * callbacks return UNAVAILABLE on cancellation and OK after commit. */
-    if (status == XXWIDGETS_OK && xx_pd_is_stopped(pd) &&
-        ((j->action == ACTION_SAVE && !j->source->save_ex) ||
-         (j->action != ACTION_SAVE && !j->source->dump_ex)))
+    if (status == XXWIDGETS_OK && xx_pd_is_stopped(pd) && ((j->action == ACTION_SAVE && !j->source->save_ex) || (j->action != ACTION_SAVE && !j->source->dump_ex)))
         status = XXWIDGETS_UNAVAILABLE;
-    if (status == XXWIDGETS_OK)
-        (void)xxwidgets_disk_write_set_file(reporter, j->path, files, files, 1);
+    if (status == XXWIDGETS_OK) (void)xxwidgets_disk_write_set_file(reporter, j->path, files, files, 1);
     return status;
 }
 static xxwidgets_status run_job(xxwidgets_widget *owner, extractor_job *j, int *cancelled)
@@ -142,8 +138,8 @@ static xxwidgets_status run_job(xxwidgets_widget *owner, extractor_job *j, int *
     if (cancelled) *cancelled = 0;
     if (j->action != ACTION_SCAN) {
         xxwidgets_disk_write_result result;
-        status = xxwidgets_disk_write_run(owner, j->action == ACTION_SAVE ? XXW_TR(app, "Saving extractor results") : XXW_TR(app, "Dumping objects"),
-            j->path, extractor_disk_worker, j, &result);
+        status = xxwidgets_disk_write_run(owner, j->action == ACTION_SAVE ? XXW_TR(app, "Saving extractor results") : XXW_TR(app, "Dumping objects"), j->path,
+                                          extractor_disk_worker, j, &result);
         if (cancelled) *cancelled = result.cancelled;
         return status;
     }
@@ -278,9 +274,9 @@ static xxwidgets_status labels(xxwidgets_extractor *v)
     char text[160], page[32];
     uint64_t pages = v->source->count ? (v->source->count - 1) / XXWIDGETS_EXTRACTOR_PAGE_SIZE + 1 : 1;
     xxwidgets_status status;
-    snprintf(text, sizeof(text), "0x%" PRIX64 " %s | %" PRIu64 " %s | %s %" PRIu64 " / %" PRIu64, v->source->size, XXW_TR(v->owner->app, "bytes"),
-             v->source->count, xxwidgets_app_ngettext(v->owner->app, "object", "objects", v->source->count), XXW_TR(v->owner->app, "Page"),
-             v->first / XXWIDGETS_EXTRACTOR_PAGE_SIZE + 1, pages);
+    snprintf(text, sizeof(text), "0x%" PRIX64 " %s | %" PRIu64 " %s | %s %" PRIu64 " / %" PRIu64, v->source->size, XXW_TR(v->owner->app, "bytes"), v->source->count,
+             xxwidgets_app_ngettext(v->owner->app, "object", "objects", v->source->count), XXW_TR(v->owner->app, "Page"), v->first / XXWIDGETS_EXTRACTOR_PAGE_SIZE + 1,
+             pages);
     status = xxwidgets_widget_set_text(C(v, SUMMARY), text);
     snprintf(page, sizeof(page), "%" PRIu64, v->first / XXWIDGETS_EXTRACTOR_PAGE_SIZE + 1);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(C(v, PAGE), page);
@@ -324,8 +320,7 @@ static xxwidgets_status controls_enabled(xxwidgets_extractor *v)
     if (status == XXWIDGETS_OK && selection >= 0 && (size_t)selection < v->offered_mode_count) desired = v->offered_modes[selection];
     if (status == XXWIDGETS_OK && (format < 0 || (v->source->format_count && (size_t)format >= v->source->format_count))) return XXWIDGETS_INVALID_ARGUMENT;
     if (status == XXWIDGETS_OK) status = load_modes(v, (size_t)format, desired);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_enabled(C(v, TYPES), !all && (v->source->type_count || v->source->choose_types) && v->source->scan);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, TYPES), !all && (v->source->type_count || v->source->choose_types) && v->source->scan);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, MAP_SELECTOR), v->source->map_mode_count > 1 && v->source->scan);
     return status;
 }
@@ -333,8 +328,7 @@ static xxwidgets_status load_options(xxwidgets_extractor *v)
 {
     const xxwidgets_extractor_options *o = &v->source->options;
     xxwidgets_status status = combo(C(v, FORMAT_SELECTOR), v->source->formats, v->source->format_count, XXW_TR(v->owner->app, "Binary"), o->format);
-    if (status == XXWIDGETS_OK)
-        status = combo(C(v, MAP_SELECTOR), v->source->map_modes, v->source->map_mode_count, XXW_TR(v->owner->app, "Regions"), o->map_mode);
+    if (status == XXWIDGETS_OK) status = combo(C(v, MAP_SELECTOR), v->source->map_modes, v->source->map_mode_count, XXW_TR(v->owner->app, "Regions"), o->map_mode);
     if (status == XXWIDGETS_OK) status = load_modes(v, o->format, o->mode);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(C(v, ALL), o->all_types);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(C(v, DEEP), o->deep_scan);
@@ -363,7 +357,11 @@ xxwidgets_status xxwidgets_extractor_set_rect(xxwidgets_extractor *v, xxwidgets_
     if (!v || !valid_bounds(b)) return XXWIDGETS_INVALID_ARGUMENT;
     for (size_t i = 0; i < XXWIDGETS_EXTRACTOR_CONTROL_COUNT; ++i) r[i] = (xxwidgets_rect){b.x, b.y, 1, 1};
     table_height = (b.height - 12) * 3 / 5;
-#define R(id, dx, dy, w, h) r[XXWIDGETS_EXTRACTOR_##id] = (xxwidgets_rect){b.x + (dx), b.y + (dy), w, h}
+#define R(id, dx, dy, w, h)                        \
+    r[XXWIDGETS_EXTRACTOR_##id] = (xxwidgets_rect) \
+    {                                              \
+        b.x + (dx), b.y + (dy), w, h               \
+    }
     R(FORMAT_SELECTOR, 0, 0, 19, 2);
     R(MAP_SELECTOR, 20, 0, 20, 2);
     R(SUMMARY, 41, 0, b.width - 81, 2);
@@ -459,9 +457,25 @@ xxwidgets_status xxwidgets_extractor_create(xxwidgets_widget *owner, xxwidgets_r
                                            XXWIDGETS_BUTTON,   XXWIDGETS_COMBOBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_BUTTON, XXWIDGETS_CHECKBOX,
                                            XXWIDGETS_TABLE,    XXWIDGETS_LABEL,    XXWIDGETS_HEXVIEW,  XXWIDGETS_LABEL,  XXWIDGETS_BUTTON,
                                            XXWIDGETS_EDIT,     XXWIDGETS_BUTTON,   XXWIDGETS_BUTTON,   XXWIDGETS_BUTTON};
-    static const char *const texts[] = {XXW_N_("Format"), XXW_N_("Memory map"), "", XXW_N_("Dump all"), XXW_N_("Save"), XXW_N_("Scan"), XXW_N_("Mode"),
-                                        XXW_N_("All"), XXW_N_("Options..."), XXW_N_("Deep scan"), "", XXW_N_("Hex"), "", "", XXW_N_("Previous"), "1",
-                                        XXW_N_("Go"), XXW_N_("Next"), XXW_N_("Dump selected")};
+    static const char *const texts[] = {XXW_N_("Format"),
+                                        XXW_N_("Memory map"),
+                                        "",
+                                        XXW_N_("Dump all"),
+                                        XXW_N_("Save"),
+                                        XXW_N_("Scan"),
+                                        XXW_N_("Mode"),
+                                        XXW_N_("All"),
+                                        XXW_N_("Options..."),
+                                        XXW_N_("Deep scan"),
+                                        "",
+                                        XXW_N_("Hex"),
+                                        "",
+                                        "",
+                                        XXW_N_("Previous"),
+                                        "1",
+                                        XXW_N_("Go"),
+                                        XXW_N_("Next"),
+                                        XXW_N_("Dump selected")};
     const char *translated[9];
     if (out) *out = NULL;
     if (!out || !owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds) || !source || !source->read || !valid_options(source, &source->options) ||
@@ -556,8 +570,8 @@ static xxwidgets_status choose_types(xxwidgets_extractor *v)
     app->user_data = &m;
     app->modal_default = NULL;
     app->create_hidden = 1;
-    status =
-        xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, XXW_TR(app, "Extractor types"), (xxwidgets_rect){v->owner->rect.x + 2, v->owner->rect.y + 2, 104, height}, &m.window);
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, XXW_TR(app, "Extractor types"),
+                                     (xxwidgets_rect){v->owner->rect.x + 2, v->owner->rect.y + 2, 104, height}, &m.window);
     app->create_hidden = hidden;
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = m.window;
@@ -567,7 +581,8 @@ static xxwidgets_status choose_types(xxwidgets_extractor *v)
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(m.checks[i], (int)((v->staged_types >> i) & 1));
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, m.window, XXWIDGETS_BUTTON, XXW_TR(app, "OK"), (xxwidgets_rect){78, height - 3, 10, 2}, &m.ok);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, m.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), (xxwidgets_rect){90, height - 3, 12, 2}, &m.cancel);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(app, m.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), (xxwidgets_rect){90, height - 3, 12, 2}, &m.cancel);
     /* Enter accepts even when a catalog translates "OK" (the backends'
      * caption match is only a fallback); restored to previous_default below. */
     if (status == XXWIDGETS_OK) app->modal_default = m.ok;
@@ -714,7 +729,7 @@ static xxwidgets_status output_view(xxwidgets_extractor *v, int action)
     free(path);
     if (status != XXWIDGETS_OK) return status_text(v, provider_error(v, XXW_TR(v->owner->app, "Cannot write extractor output")));
     if (accepted)
-        return status_text(v, cancelled                ? XXW_TR(v->owner->app, "Output cancelled; completed files may remain")
+        return status_text(v, cancelled               ? XXW_TR(v->owner->app, "Output cancelled; completed files may remain")
                               : action == ACTION_SAVE ? XXW_TR(v->owner->app, "Results saved")
                                                       : XXW_TR(v->owner->app, "Objects dumped"));
     return status;
@@ -752,8 +767,7 @@ xxwidgets_status xxwidgets_extractor_process(xxwidgets_extractor *v)
         uint64_t pages = v->source->count ? (v->source->count - 1) / 128 + 1 : 1;
         errno = 0;
         page = strtoull(text, &end, 10);
-        if (!text[0] || text[0] == '-' || text[0] == '+' || *end || errno || !page || page > pages)
-            return status_text(v, XXW_TR(v->owner->app, "Invalid page number"));
+        if (!text[0] || text[0] == '-' || text[0] == '+' || *end || errno || !page || page > pages) return status_text(v, XXW_TR(v->owner->app, "Invalid page number"));
         first = ((uint64_t)page - 1) * 128;
     }
     status = xxwidgets_extractor_set_page(v, first);

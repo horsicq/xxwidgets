@@ -21,8 +21,7 @@ struct xxwidgets_debugger_xxemul {
     char last_message[256];
 };
 
-static xxwidgets_status set_result(xxwidgets_debugger_xxemul *adapter, xxwidgets_status result,
-    xxemul_status code, const char *message)
+static xxwidgets_status set_result(xxwidgets_debugger_xxemul *adapter, xxwidgets_status result, xxemul_status code, const char *message)
 {
     adapter->last_code = code;
     if (message != NULL) {
@@ -32,9 +31,8 @@ static xxwidgets_status set_result(xxwidgets_debugger_xxemul *adapter, xxwidgets
     } else {
         const char *detail = xxemul_process_error(adapter->emulator);
         const char *name = xxemul_status_string(code);
-        (void)snprintf(adapter->last_message, sizeof(adapter->last_message), "%s%s%s",
-            name != NULL ? name : "Emulator error", detail != NULL && *detail != '\0' ? ": " : "",
-            detail != NULL ? detail : "");
+        (void)snprintf(adapter->last_message, sizeof(adapter->last_message), "%s%s%s", name != NULL ? name : "Emulator error",
+                       detail != NULL && *detail != '\0' ? ": " : "", detail != NULL ? detail : "");
     }
     return result;
 }
@@ -43,11 +41,11 @@ static xxwidgets_status emul_result(xxwidgets_debugger_xxemul *adapter, xxemul_s
 {
     xxwidgets_status result;
     switch (code) {
-    case XXEMUL_STATUS_OK: result = XXWIDGETS_OK; break;
-    case XXEMUL_STATUS_INVALID_ARGUMENT: result = XXWIDGETS_INVALID_ARGUMENT; break;
-    case XXEMUL_STATUS_OUT_OF_MEMORY: result = XXWIDGETS_OUT_OF_MEMORY; break;
-    case XXEMUL_STATUS_IO_ERROR: result = XXWIDGETS_PLATFORM_ERROR; break;
-    default: result = XXWIDGETS_UNAVAILABLE; break;
+        case XXEMUL_STATUS_OK: result = XXWIDGETS_OK; break;
+        case XXEMUL_STATUS_INVALID_ARGUMENT: result = XXWIDGETS_INVALID_ARGUMENT; break;
+        case XXEMUL_STATUS_OUT_OF_MEMORY: result = XXWIDGETS_OUT_OF_MEMORY; break;
+        case XXEMUL_STATUS_IO_ERROR: result = XXWIDGETS_PLATFORM_ERROR; break;
+        default: result = XXWIDGETS_UNAVAILABLE; break;
     }
     return set_result(adapter, result, code, NULL);
 }
@@ -55,8 +53,7 @@ static xxwidgets_status emul_result(xxwidgets_debugger_xxemul *adapter, xxemul_s
 static xxwidgets_status stopped(xxwidgets_debugger_xxemul *adapter)
 {
     if (adapter->running || adapter->in_step)
-        return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT,
-            "Stop the emulator before reading or changing its state");
+        return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT, "Stop the emulator before reading or changing its state");
     return XXWIDGETS_OK;
 }
 
@@ -70,7 +67,8 @@ static xxwidgets_status get_state(void *context, xxwidgets_debugger_session_stat
     xxwidgets_debugger_xxemul *adapter = context;
     if (state == NULL) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     *state = xxemul_is_halted(adapter->emulator) ? XXWIDGETS_DEBUGGER_SESSION_HALTED
-        : adapter->running ? XXWIDGETS_DEBUGGER_SESSION_RUNNING : XXWIDGETS_DEBUGGER_SESSION_STOPPED;
+             : adapter->running                  ? XXWIDGETS_DEBUGGER_SESSION_RUNNING
+                                                 : XXWIDGETS_DEBUGGER_SESSION_STOPPED;
     return emul_result(adapter, XXEMUL_STATUS_OK);
 }
 
@@ -139,8 +137,7 @@ static xxwidgets_status get_target(void *context, uint64_t tid, xxwidgets_debugg
             regs->r[13] = (uint32_t)native.sp;
             regs->r[14] = (uint32_t)native.gpr[14];
             regs->r[15] = (uint32_t)native.pc;
-            regs->cpsr = (native.pstate & ~UINT32_C(0x20))
-                | (mode == XXEMUL_MODE_ARM_T32 ? UINT32_C(0x20) : 0u);
+            regs->cpsr = (native.pstate & ~UINT32_C(0x20)) | (mode == XXEMUL_MODE_ARM_T32 ? UINT32_C(0x20) : 0u);
             value.sp = regs->r[13];
         } else {
             return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
@@ -169,8 +166,7 @@ static xxwidgets_status get_target(void *context, uint64_t tid, xxwidgets_debugg
 /* Public xxemul reads are all-or-error, so shorten failed chunks until the
  * readable prefix is known. This also supports an instruction at a region's
  * end without assuming the initial flat region is the only mapped memory. */
-static xxemul_status read_prefix(xxwidgets_debugger_xxemul *adapter, uint64_t address,
-    void *buffer, size_t size, size_t *done)
+static xxemul_status read_prefix(xxwidgets_debugger_xxemul *adapter, uint64_t address, void *buffer, size_t size, size_t *done)
 {
     unsigned char *bytes = buffer;
     *done = 0;
@@ -198,8 +194,7 @@ static xxwidgets_status read_memory(void *context, uint64_t address, void *buffe
 {
     xxwidgets_debugger_xxemul *adapter = context;
     if (done != NULL) *done = 0;
-    if (done == NULL || (size != 0 && buffer == NULL) || !valid_range(address, size))
-        return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
+    if (done == NULL || (size != 0 && buffer == NULL) || !valid_range(address, size)) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     if (stopped(adapter) != XXWIDGETS_OK) return XXWIDGETS_BUSY;
     return emul_result(adapter, read_prefix(adapter, address, buffer, size, done));
 }
@@ -209,8 +204,7 @@ static xxwidgets_status write_memory(void *context, uint64_t address, const void
     xxwidgets_debugger_xxemul *adapter = context;
     const unsigned char *bytes = buffer;
     if (done != NULL) *done = 0;
-    if (done == NULL || (size != 0 && buffer == NULL) || !valid_range(address, size))
-        return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
+    if (done == NULL || (size != 0 && buffer == NULL) || !valid_range(address, size)) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     if (stopped(adapter) != XXWIDGETS_OK) return XXWIDGETS_BUSY;
     /* A bulk write crossing Linux mappings can modify a prefix before the
      * public API returns ADDRESS_FAULT without a transfer count. Write bytes
@@ -223,8 +217,7 @@ static xxwidgets_status write_memory(void *context, uint64_t address, const void
     return emul_result(adapter, XXEMUL_STATUS_OK);
 }
 
-static xxwidgets_status disassemble(void *context, uint64_t tid, uint64_t address,
-    char *text, size_t capacity, uint32_t *length)
+static xxwidgets_status disassemble(void *context, uint64_t tid, uint64_t address, char *text, size_t capacity, uint32_t *length)
 {
     xxwidgets_debugger_xxemul *adapter = context;
     uint8_t bytes[15];
@@ -235,8 +228,7 @@ static xxwidgets_status disassemble(void *context, uint64_t tid, uint64_t addres
     xxemul_status code;
     if (text != NULL && capacity != 0) text[0] = '\0';
     if (length != NULL) *length = 0;
-    if (!valid_tid(tid) || text == NULL || capacity == 0 || length == NULL)
-        return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
+    if (!valid_tid(tid) || text == NULL || capacity == 0 || length == NULL) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     if (stopped(adapter) != XXWIDGETS_OK) return XXWIDGETS_BUSY;
     if ((uint64_t)(wanted - 1u) > UINT64_MAX - address) wanted = (size_t)(UINT64_MAX - address) + 1u;
     code = read_prefix(adapter, address, bytes, wanted, &available);
@@ -249,8 +241,7 @@ static xxwidgets_status disassemble(void *context, uint64_t tid, uint64_t addres
         else if (mode == XXEMUL_MODE_X86_32) decode_mode = CDISASM_X86_MODE_32;
         else if (mode == XXEMUL_MODE_X86_64) decode_mode = CDISASM_X86_MODE_64;
         else return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
-        if (cdisasm_x86_cpu_decode_flag_mask(CDISASM_CPU_X86, decode_mode, &flags) != CDISASM_STATUS_OK)
-            return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
+        if (cdisasm_x86_cpu_decode_flag_mask(CDISASM_CPU_X86, decode_mode, &flags) != CDISASM_STATUS_OK) return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
         decoded = cdisasm_x86_decode(CDISASM_CPU_X86, decode_mode, bytes, available, address, &flags, &instruction);
         if (decoded == 0) return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
         formatted = cdisasm_x86_format_mode(&instruction, decode_mode, CDISASM_FORMAT_SYNTAX_X86_INTEL, text, capacity);
@@ -266,25 +257,20 @@ static xxwidgets_status disassemble(void *context, uint64_t tid, uint64_t addres
         formatted = cdisasm_arm_format(&instruction, CDISASM_FORMAT_SYNTAX_ARM_CANONICAL, text, capacity);
     } else if (arch == XXEMUL_ARCH_M68K) {
         cdisasm_m68k_instruction instruction;
-        if (mode != XXEMUL_MODE_M68K_68000 || (address & 1u) || address > UINT32_MAX)
-            return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
+        if (mode != XXEMUL_MODE_M68K_68000 || (address & 1u) || address > UINT32_MAX) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
         decoded = cdisasm_m68k_decode(CDISASM_M68K_CPU_68000, 0, bytes, available, address, NULL, &instruction);
         if (decoded == 0) return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
         formatted = cdisasm_m68k_format(&instruction, 0, text, capacity);
     } else {
         return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     }
-    if (formatted == 0 || decoded > available || decoded > 16u)
-        return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
-    if (formatted >= capacity)
-        return set_result(adapter, XXWIDGETS_BUFFER_TOO_SMALL, XXEMUL_STATUS_INVALID_ARGUMENT,
-            "Disassembly text buffer is too small");
+    if (formatted == 0 || decoded > available || decoded > 16u) return emul_result(adapter, XXEMUL_STATUS_DECODE_ERROR);
+    if (formatted >= capacity) return set_result(adapter, XXWIDGETS_BUFFER_TOO_SMALL, XXEMUL_STATUS_INVALID_ARGUMENT, "Disassembly text buffer is too small");
     *length = decoded;
     return emul_result(adapter, XXEMUL_STATUS_OK);
 }
 
-static xxwidgets_status list_breakpoints(void *context, xxwidgets_debugger_session_breakpoint *items,
-    size_t capacity, size_t *count)
+static xxwidgets_status list_breakpoints(void *context, xxwidgets_debugger_session_breakpoint *items, size_t capacity, size_t *count)
 {
     xxwidgets_debugger_xxemul *adapter = context;
     size_t copied = capacity < adapter->breakpoint_count ? capacity : adapter->breakpoint_count;
@@ -299,21 +285,18 @@ static xxwidgets_status set_breakpoint(void *context, uint64_t address, uint64_t
     xxwidgets_debugger_xxemul *adapter = context;
     size_t index;
     if (id == NULL) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
-    if (xxemul_get_arch(adapter->emulator) == XXEMUL_ARCH_M68K && ((address & 1u) || address > UINT32_MAX))
-        return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
+    if (xxemul_get_arch(adapter->emulator) == XXEMUL_ARCH_M68K && ((address & 1u) || address > UINT32_MAX)) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     for (index = 0; index < adapter->breakpoint_count; ++index) {
         if (adapter->breakpoints[index].address == address) {
             *id = adapter->breakpoints[index].id;
             return emul_result(adapter, XXEMUL_STATUS_OK);
         }
     }
-    if (adapter->next_breakpoint_id == 0)
-        return set_result(adapter, XXWIDGETS_UNAVAILABLE, XXEMUL_STATUS_INVALID_ARGUMENT, "Breakpoint ID space exhausted");
+    if (adapter->next_breakpoint_id == 0) return set_result(adapter, XXWIDGETS_UNAVAILABLE, XXEMUL_STATUS_INVALID_ARGUMENT, "Breakpoint ID space exhausted");
     if (adapter->breakpoint_count == adapter->breakpoint_capacity) {
         size_t capacity = adapter->breakpoint_capacity == 0 ? 8u : adapter->breakpoint_capacity * 2u;
         xxwidgets_debugger_session_breakpoint *items;
-        if (capacity < adapter->breakpoint_capacity || capacity > SIZE_MAX / sizeof(*items))
-            return emul_result(adapter, XXEMUL_STATUS_OUT_OF_MEMORY);
+        if (capacity < adapter->breakpoint_capacity || capacity > SIZE_MAX / sizeof(*items)) return emul_result(adapter, XXEMUL_STATUS_OUT_OF_MEMORY);
         items = realloc(adapter->breakpoints, capacity * sizeof(*items));
         if (items == NULL) return emul_result(adapter, XXEMUL_STATUS_OUT_OF_MEMORY);
         adapter->breakpoints = items;
@@ -332,8 +315,7 @@ static xxwidgets_status remove_breakpoint(void *context, uint64_t id)
     size_t index;
     for (index = 0; index < adapter->breakpoint_count; ++index) {
         if (adapter->breakpoints[index].id == id) {
-            memmove(adapter->breakpoints + index, adapter->breakpoints + index + 1u,
-                (adapter->breakpoint_count - index - 1u) * sizeof(*adapter->breakpoints));
+            memmove(adapter->breakpoints + index, adapter->breakpoints + index + 1u, (adapter->breakpoint_count - index - 1u) * sizeof(*adapter->breakpoints));
             --adapter->breakpoint_count;
             return emul_result(adapter, XXEMUL_STATUS_OK);
         }
@@ -344,8 +326,7 @@ static xxwidgets_status remove_breakpoint(void *context, uint64_t id)
 static xxwidgets_status ready_to_execute(xxwidgets_debugger_xxemul *adapter)
 {
     if (adapter->running || adapter->in_step || adapter->pending)
-        return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT,
-            "Stop execution and consume its pending event before starting again");
+        return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT, "Stop execution and consume its pending event before starting again");
     if (xxemul_is_halted(adapter->emulator)) return emul_result(adapter, XXEMUL_STATUS_HALTED);
     return XXWIDGETS_OK;
 }
@@ -371,8 +352,7 @@ static xxwidgets_status resume(void *context, int pass_exception)
     xxwidgets_debugger_xxemul *adapter = context;
     xxwidgets_status result;
     if (pass_exception != 0)
-        return set_result(adapter, XXWIDGETS_UNAVAILABLE, XXEMUL_STATUS_INVALID_ARGUMENT,
-            "Passing native exceptions is unsupported by the emulator");
+        return set_result(adapter, XXWIDGETS_UNAVAILABLE, XXEMUL_STATUS_INVALID_ARGUMENT, "Passing native exceptions is unsupported by the emulator");
     result = ready_to_execute(adapter);
     if (result != XXWIDGETS_OK) return result;
     adapter->skip_breakpoint = adapter->stopped_at_breakpoint;
@@ -402,8 +382,7 @@ static xxwidgets_status step(void *context, uint64_t tid)
     queue_event(adapter, code, address, 0);
     /* A stop/exit is the normal result of the action, while execution faults
      * are both returned now and retained in the pending event. */
-    if (code == XXEMUL_STATUS_OK || code == XXEMUL_STATUS_HALTED || code == XXEMUL_STATUS_BREAKPOINT)
-        return XXWIDGETS_OK;
+    if (code == XXEMUL_STATUS_OK || code == XXEMUL_STATUS_HALTED || code == XXEMUL_STATUS_BREAKPOINT) return XXWIDGETS_OK;
     return emul_result(adapter, code);
 }
 
@@ -412,9 +391,7 @@ static xxwidgets_status interrupt(void *context)
     xxwidgets_debugger_xxemul *adapter = context;
     uint64_t address;
     xxemul_status code;
-    if (adapter->in_step)
-        return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT,
-            "Interrupt must be called between emulator poll operations");
+    if (adapter->in_step) return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT, "Interrupt must be called between emulator poll operations");
     if (!adapter->running) return emul_result(adapter, XXEMUL_STATUS_OK);
     code = xxemul_get_current_address(adapter->emulator, &address);
     if (code != XXEMUL_STATUS_OK) return emul_result(adapter, code);
@@ -430,8 +407,7 @@ static xxwidgets_status poll(void *context, uint32_t timeout_ms, xxwidgets_debug
     (void)timeout_ms;
     if (event == NULL) return emul_result(adapter, XXEMUL_STATUS_INVALID_ARGUMENT);
     memset(event, 0, sizeof(*event));
-    if (adapter->in_step)
-        return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT, "Emulator poll cannot be reentered");
+    if (adapter->in_step) return set_result(adapter, XXWIDGETS_BUSY, XXEMUL_STATUS_INVALID_ARGUMENT, "Emulator poll cannot be reentered");
     if (adapter->pending) {
         *event = adapter->event;
         adapter->pending = 0;
@@ -492,15 +468,33 @@ static const char *error_message(void *context)
     return ((xxwidgets_debugger_xxemul *)context)->last_message;
 }
 
-static const xxwidgets_debugger_session_ops emul_ops = {
-    XXWIDGETS_DEBUGGER_SESSION_ABI,
-    get_state, get_target, read_memory, write_memory, disassemble,
-    list_breakpoints, set_breakpoint, remove_breakpoint,
-    resume, step, interrupt, poll, error_code, error_message, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-};
+static const xxwidgets_debugger_session_ops emul_ops = {XXWIDGETS_DEBUGGER_SESSION_ABI,
+                                                        get_state,
+                                                        get_target,
+                                                        read_memory,
+                                                        write_memory,
+                                                        disassemble,
+                                                        list_breakpoints,
+                                                        set_breakpoint,
+                                                        remove_breakpoint,
+                                                        resume,
+                                                        step,
+                                                        interrupt,
+                                                        poll,
+                                                        error_code,
+                                                        error_message,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL,
+                                                        NULL};
 
-xxwidgets_status xxwidgets_debugger_xxemul_create(xxemul *emulator, uint64_t instruction_quantum,
-    xxwidgets_debugger_xxemul **adapter)
+xxwidgets_status xxwidgets_debugger_xxemul_create(xxemul *emulator, uint64_t instruction_quantum, xxwidgets_debugger_xxemul **adapter)
 {
     xxwidgets_debugger_xxemul *result;
     xxemul_arch arch;
@@ -509,9 +503,9 @@ xxwidgets_status xxwidgets_debugger_xxemul_create(xxemul *emulator, uint64_t ins
     if (emulator == NULL || adapter == NULL || instruction_quantum > UINT64_C(100000)) return XXWIDGETS_INVALID_ARGUMENT;
     arch = xxemul_get_arch(emulator);
     mode = xxemul_get_mode(emulator);
-    if (!((arch == XXEMUL_ARCH_X86 && (mode == XXEMUL_MODE_X86_16 || mode == XXEMUL_MODE_X86_32 || mode == XXEMUL_MODE_X86_64))
-        || (arch == XXEMUL_ARCH_ARM && (mode == XXEMUL_MODE_ARM_A32 || mode == XXEMUL_MODE_ARM_T32 || mode == XXEMUL_MODE_ARM_A64))
-        || (arch == XXEMUL_ARCH_M68K && mode == XXEMUL_MODE_M68K_68000)))
+    if (!((arch == XXEMUL_ARCH_X86 && (mode == XXEMUL_MODE_X86_16 || mode == XXEMUL_MODE_X86_32 || mode == XXEMUL_MODE_X86_64)) ||
+          (arch == XXEMUL_ARCH_ARM && (mode == XXEMUL_MODE_ARM_A32 || mode == XXEMUL_MODE_ARM_T32 || mode == XXEMUL_MODE_ARM_A64)) ||
+          (arch == XXEMUL_ARCH_M68K && mode == XXEMUL_MODE_M68K_68000)))
         return XXWIDGETS_UNAVAILABLE;
     result = calloc(1u, sizeof(*result));
     if (result == NULL) return XXWIDGETS_OUT_OF_MEMORY;

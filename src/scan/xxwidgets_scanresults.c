@@ -40,7 +40,9 @@ static int scan_widget(const xxwidgets_widget *widget)
 }
 
 static int scan_table_widget(const xxwidgets_widget *widget)
-{ return scan_widget(widget) || (widget && widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER); }
+{
+    return scan_widget(widget) || (widget && widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER);
+}
 
 static const char *stored_field(const xxwidgets_scan_result *result, size_t column)
 {
@@ -203,7 +205,10 @@ xxwidgets_status xxwidgets_scanresults_set_table_results(xxwidgets_widget *widge
         for (column = 0; column < 4; ++column)
             if (!xxwidgets_valid_utf8(result_field(&results[row], column))) return XXWIDGETS_INVALID_ARGUMENT;
     memcpy(widths, minimum_widths, sizeof(widths));
-    if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) { widths[0] = 32; widths[1] = 12; }
+    if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) {
+        widths[0] = 32;
+        widths[1] = 12;
+    }
     if (count) {
         copies = (xxwidgets_scan_result *)calloc(count, sizeof(*copies));
         cells = (char **)calloc(count * 4, sizeof(*cells));

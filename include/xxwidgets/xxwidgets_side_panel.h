@@ -46,8 +46,7 @@ typedef struct xxwidgets_side_panel_item {
 } xxwidgets_side_panel_item;
 
 /* items are copied; creation (Tab) order is the order given. */
-XXWIDGETS_API xxwidgets_status xxwidgets_side_panel_create(xxwidgets_widget *owner, const xxwidgets_side_panel_item *items, size_t count,
-                                                         xxwidgets_side_panel **out);
+XXWIDGETS_API xxwidgets_status xxwidgets_side_panel_create(xxwidgets_widget *owner, const xxwidgets_side_panel_item *items, size_t count, xxwidgets_side_panel **out);
 XXWIDGETS_API xxwidgets_status xxwidgets_side_panel_destroy(xxwidgets_side_panel *panel);
 XXWIDGETS_API xxwidgets_status xxwidgets_side_panel_set_bounds(xxwidgets_side_panel *panel, xxwidgets_rect units);
 /* Widest visible item plus 2 * panel_inset. */

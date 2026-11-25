@@ -31,9 +31,9 @@ static void entropy_event(xxwidgets_app *app, const xxwidgets_event *event, void
     entropy_modal *modal = user;
     xxwidgets_status status = XXWIDGETS_OK;
     (void)app;
-    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == modal->window) ||
-        (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->close) ||
-        (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) modal->done = 1;
+    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == modal->window) || (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->close) ||
+        (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1))
+        modal->done = 1;
     else if (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->copy && modal->view) status = entropy_copy_all(modal);
     else if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window && modal->view && modal->close) {
         xxwidgets_rect bounds = {0};
@@ -42,20 +42,18 @@ static void entropy_event(xxwidgets_app *app, const xxwidgets_event *event, void
          * minimum and let the window clip, rather than fail the dialog. */
         if (bounds.width < modal->window->min_columns) bounds.width = modal->window->min_columns;
         if (bounds.height < modal->window->min_rows) bounds.height = modal->window->min_rows;
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_entropy_set_rect(modal->view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 6});
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_widget_set_rect(modal->copy, (xxwidgets_rect){1, bounds.height - 3, 14, 2});
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_widget_set_rect(modal->copied, (xxwidgets_rect){16, bounds.height - 3, bounds.width - 30, 2});
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_widget_set_rect(modal->close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
+        if (status == XXWIDGETS_OK) status = xxwidgets_entropy_set_rect(modal->view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 6});
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_rect(modal->copy, (xxwidgets_rect){1, bounds.height - 3, 14, 2});
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_rect(modal->copied, (xxwidgets_rect){16, bounds.height - 3, bounds.width - 30, 2});
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_rect(modal->close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
     } else if (modal->view) status = xxwidgets_entropy_handle_event(modal->view, event);
-    if (status != XXWIDGETS_OK) { modal->failure = status; modal->done = 1; }
+    if (status != XXWIDGETS_OK) {
+        modal->failure = status;
+        modal->done = 1;
+    }
 }
 
-xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *title,
-    const xxwidgets_entropy_statistics *statistics)
+xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_entropy_statistics *statistics)
 {
     entropy_modal modal = {0};
     xxwidgets_app *app;
@@ -65,31 +63,33 @@ xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *t
     xxwidgets_status status, cleanup;
     int enabled, disabled = 0, attached = 0;
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}};
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) ||
-        owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2)
+        return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
-    previous_event = app->on_event; previous_user = app->user_data; enabled = owner->enabled;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    enabled = owner->enabled;
     /* Return focus to the owner's focused control, else its first one. */
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
             if (!focus) focus = widget;
-            if (xxwidgets_widget_has_focus(widget) == 1) { focus = widget; break; }
+            if (xxwidgets_widget_has_focus(widget) == 1) {
+                focus = widget;
+                break;
+            }
         }
-    app->on_event = entropy_event; app->user_data = &modal;
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 100, 34}, &modal.window);
+    app->on_event = entropy_event;
+    app->user_data = &modal;
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 100, 34}, &modal.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = modal.window;
     status = xxwidgets_window_set_minimum_size(modal.window, 90, 33);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_entropy_create(modal.window, (xxwidgets_rect){1, 1, 98, 28}, &modal.view);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_entropy_set_statistics(modal.view, statistics);
+    if (status == XXWIDGETS_OK) status = xxwidgets_entropy_create(modal.window, (xxwidgets_rect){1, 1, 98, 28}, &modal.view);
+    if (status == XXWIDGETS_OK) status = xxwidgets_entropy_set_statistics(modal.view, statistics);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Copy all"), (xxwidgets_rect){1, 31, 14, 2}, &modal.copy);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){16, 31, 70, 2}, &modal.copied);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){16, 31, 70, 2}, &modal.copied);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){87, 31, 12, 2}, &modal.close);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, 1);
@@ -109,11 +109,25 @@ xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *t
     while (status == XXWIDGETS_OK && !modal.done && !app->quit) status = xxwidgets_app_poll(app, 30);
     if (status == XXWIDGETS_OK) status = modal.failure;
 finish:
-    if (attached) { cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
-    if (modal.view) { cleanup = xxwidgets_entropy_destroy(modal.view); if (status == XXWIDGETS_OK) status = cleanup; }
-    if (modal.window) { cleanup = xxwidgets_widget_destroy(modal.window); if (status == XXWIDGETS_OK) status = cleanup; }
-    app->modal_window = NULL; app->on_event = previous_event; app->user_data = previous_user;
-    if (disabled) { cleanup = xxwidgets_widget_set_enabled(owner, enabled); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (attached) {
+        cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (modal.view) {
+        cleanup = xxwidgets_entropy_destroy(modal.view);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (modal.window) {
+        cleanup = xxwidgets_widget_destroy(modal.window);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    app->modal_window = NULL;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
+    if (disabled) {
+        cleanup = xxwidgets_widget_set_enabled(owner, enabled);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
     if (focus) (void)xxwidgets_widget_focus(focus);
     return status;
 }

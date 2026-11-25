@@ -129,7 +129,15 @@ enum {
     TUI_NORMAL,
     TUI_DISABLED,
     TUI_FOCUS,
-    TUI_TITLE, TUI_RED, TUI_GREEN, TUI_BLUE, TUI_OLIVE, TUI_TEAL, TUI_GRAY, TUI_MALWARE, TUI_FOCUS_DISABLED,
+    TUI_TITLE,
+    TUI_RED,
+    TUI_GREEN,
+    TUI_BLUE,
+    TUI_OLIVE,
+    TUI_TEAL,
+    TUI_GRAY,
+    TUI_MALWARE,
+    TUI_FOCUS_DISABLED,
     TUI_PURPLE
 };
 /* Independent apps cannot safely own the same process terminal concurrently. */
@@ -597,12 +605,10 @@ static void tui_hexview_reveal_cursor(tui_state *state, xxwidgets_widget *widget
     size_t column, visible, maximum;
     if (!view || widget->kind != XXWIDGETS_HEXVIEW || widget->hex_cursor == SIZE_MAX || !widget->hex_columns) return;
     column = xxwidgets_hexview_cursor_column(widget);
-    if (column >= xxwidgets_hexview_column_width(widget, 0) + 1 + xxwidgets_hexview_column_width(widget, 1) + 1 +
-        xxwidgets_hexview_column_width(widget, 2)) return;
+    if (column >= xxwidgets_hexview_column_width(widget, 0) + 1 + xxwidgets_hexview_column_width(widget, 1) + 1 + xxwidgets_hexview_column_width(widget, 2)) return;
     visible = tui_hexview_visible(state, widget);
     if (!visible) return;
-    if (column < view->horizontal)
-        view->horizontal = column < visible ? 0 : column - 1 - (widget->hex_header == 2 ? 0 : widget->hex_nibble);
+    if (column < view->horizontal) view->horizontal = column < visible ? 0 : column - 1 - (widget->hex_header == 2 ? 0 : widget->hex_nibble);
     else if (column - view->horizontal >= visible) view->horizontal = column - visible + 1;
     maximum = tui_hexview_horizontal_max(state, widget);
     if (view->horizontal > maximum) view->horizontal = maximum;
@@ -655,8 +661,7 @@ static void tui_die_control(tui_state *state, xxwidgets_widget *widget, tui_clip
      * the caret and allocations within its actual visible viewport. */
     if (clip.bottom - y < (long long)height) height = clip.bottom > y ? (size_t)(clip.bottom - y) : 0;
     if (height > (size_t)state->rows) height = (size_t)state->rows;
-    if (clip.right - x - (long long)gutter < (long long)columns)
-        columns = clip.right > x + (long long)gutter ? (size_t)(clip.right - x - (long long)gutter) : 0;
+    if (clip.right - x - (long long)gutter < (long long)columns) columns = clip.right > x + (long long)gutter ? (size_t)(clip.right - x - (long long)gutter) : 0;
     if (columns > (size_t)state->columns) columns = (size_t)state->columns;
     xxwidgets_die_edit_page(widget, height ? height : 1, columns ? columns : 1);
     xxwidgets_die_edit_view_get(widget, &view);
@@ -664,7 +669,8 @@ static void tui_die_control(tui_state *state, xxwidgets_widget *widget, tui_clip
     if (!cells) return;
     for (size_t row = 0; row < height; ++row) {
         size_t line = view.first_line + row;
-        char number[32]; size_t digits;
+        char number[32];
+        size_t digits;
         int breakpoint, execution;
         if (line >= view.line_count) break;
         xxwidgets_die_edit_line_marker(widget, line, &breakpoint, &execution);
@@ -674,8 +680,14 @@ static void tui_die_control(tui_state *state, xxwidgets_widget *widget, tui_clip
             uint32_t cp = column + digits + 1 >= gutter && column + 1 < gutter ? (unsigned char)number[column + digits + 1 - gutter] : ' ';
             unsigned char marker_style = enabled ? TUI_GRAY : TUI_DISABLED;
             if (column + 1 == gutter) cp = '|';
-            if (column == 0 && breakpoint) { cp = 0x2022; marker_style = enabled ? TUI_RED : TUI_DISABLED; }
-            if (column == 1 && execution) { cp = '>'; marker_style = enabled ? TUI_OLIVE : TUI_DISABLED; }
+            if (column == 0 && breakpoint) {
+                cp = 0x2022;
+                marker_style = enabled ? TUI_RED : TUI_DISABLED;
+            }
+            if (column == 1 && execution) {
+                cp = '>';
+                marker_style = enabled ? TUI_OLIVE : TUI_DISABLED;
+            }
             tui_put(state, clip, x + (long long)column, y + (long long)row, cp, marker_style);
         }
         xxwidgets_die_edit_render_line(widget, line, view.first_column, cells, columns);
@@ -686,10 +698,9 @@ static void tui_die_control(tui_state *state, xxwidgets_widget *widget, tui_clip
             /* One model cell is one scalar. A terminal cannot shape a wide
              * or zero-width scalar into that slot; keep positions stable. */
             if (cp < 32 || cp == 127) cp = ' ';
-            else if (tui_width(cp) != 1 || tui_invisible(cp) || (cp >= 0x300 && cp <= 0x36f) ||
-                (cp >= 0x1ab0 && cp <= 0x1aff) || (cp >= 0x1dc0 && cp <= 0x1dff) ||
-                (cp >= 0x20d0 && cp <= 0x20ff) || (cp >= 0xfe00 && cp <= 0xfe2f) ||
-                cp == 0x200c || cp == 0x200d || (cp >= 0xe0100 && cp <= 0xe01ef)) cp = 0xfffd;
+            else if (tui_width(cp) != 1 || tui_invisible(cp) || (cp >= 0x300 && cp <= 0x36f) || (cp >= 0x1ab0 && cp <= 0x1aff) || (cp >= 0x1dc0 && cp <= 0x1dff) ||
+                     (cp >= 0x20d0 && cp <= 0x20ff) || (cp >= 0xfe00 && cp <= 0xfe2f) || cp == 0x200c || cp == 0x200d || (cp >= 0xe0100 && cp <= 0xe01ef))
+                cp = 0xfffd;
             tui_put(state, clip, sx, sy, cp ? cp : ' ', style);
             if (sx >= clip.left && sx < clip.right && sy >= clip.top && sy < clip.bottom) {
                 tui_cell *cell = state->cells + (size_t)sy * (size_t)state->columns + (size_t)sx;
@@ -699,7 +710,9 @@ static void tui_die_control(tui_state *state, xxwidgets_widget *widget, tui_clip
                 }
                 if (cells[column].style == XXWIDGETS_DIE_STYLE_KEYWORD || cells[column].style == XXWIDGETS_DIE_STYLE_BUILTIN) cell->bold = enabled;
                 if (cells[column].caret && state->focus == widget && enabled) {
-                    state->cursor_x = (int)sx; state->cursor_y = (int)sy; state->cursor_visible = 1;
+                    state->cursor_x = (int)sx;
+                    state->cursor_y = (int)sy;
+                    state->cursor_visible = 1;
                 }
             }
         }
@@ -715,30 +728,38 @@ static int tui_die_key(xxwidgets_widget *widget, uint32_t key, unsigned int modi
         modifiers |= XXWIDGETS_MOD_CTRL;
     } else if (key >= TUI_KEY_F1 && key < TUI_KEY_F1 + 24) mapped = XXWIDGETS_KEY_F1 + (int)(key - TUI_KEY_F1);
     else switch (key) {
-        case TUI_KEY_ESCAPE: mapped = XXWIDGETS_KEY_ESCAPE; break;
-        case TUI_KEY_ENTER: mapped = XXWIDGETS_KEY_ENTER; break;
-        case TUI_KEY_BACKTAB: modifiers |= XXWIDGETS_MOD_SHIFT; /* fall through */
-        case TUI_KEY_TAB: mapped = XXWIDGETS_KEY_TAB; break;
-        case TUI_KEY_INSERT: mapped = XXWIDGETS_KEY_INSERT; break;
-        default: break;
-    }
+            case TUI_KEY_ESCAPE: mapped = XXWIDGETS_KEY_ESCAPE; break;
+            case TUI_KEY_ENTER: mapped = XXWIDGETS_KEY_ENTER; break;
+            case TUI_KEY_BACKTAB: modifiers |= XXWIDGETS_MOD_SHIFT; /* fall through */
+            case TUI_KEY_TAB: mapped = XXWIDGETS_KEY_TAB; break;
+            case TUI_KEY_INSERT: mapped = XXWIDGETS_KEY_INSERT; break;
+            default: break;
+        }
     return xxwidgets_die_edit_key(widget, mapped, modifiers);
 }
 
-typedef struct tui_plot_context { tui_state *state; tui_clip clip; long long x, y; } tui_plot_context;
+typedef struct tui_plot_context {
+    tui_state *state;
+    tui_clip clip;
+    long long x, y;
+} tui_plot_context;
 static void tui_plot_draw(void *user, int kind, double x, double y, double x2, double y2, uint32_t rgb, const char *text)
 {
     tui_plot_context *p = user;
     unsigned char style = rgb == 0xd62222 ? TUI_RED : rgb == 0x2778c4 ? TUI_BLUE : rgb == 0xdce7f5 ? TUI_FOCUS : TUI_NORMAL;
-    if (kind == 2) { tui_text(p->state,p->clip,p->x+(long long)x,p->y+(long long)y,text,style,0); return; }
+    if (kind == 2) {
+        tui_text(p->state, p->clip, p->x + (long long)x, p->y + (long long)y, text, style, 0);
+        return;
+    }
     if (kind == 1) {
-        for (long long row=(long long)y;row<(long long)y2;++row)
-            for (long long col=(long long)x;col<(long long)x2;++col)
-                tui_put(p->state,p->clip,p->x+col,p->y+row,rgb==0x2778c4?'#':' ',style);
+        for (long long row = (long long)y; row < (long long)y2; ++row)
+            for (long long col = (long long)x; col < (long long)x2; ++col) tui_put(p->state, p->clip, p->x + col, p->y + row, rgb == 0x2778c4 ? '#' : ' ', style);
     } else {
-        double dx=x2-x,dy=y2-y;
-        int steps=(int)((dx<0?-dx:dx)>(dy<0?-dy:dy)?(dx<0?-dx:dx):(dy<0?-dy:dy))+1;
-        for(int i=0;i<=steps;++i) tui_put(p->state,p->clip,p->x+(long long)(x+dx*i/steps+0.5),p->y+(long long)(y+dy*i/steps+0.5),rgb==0xd62222?'*':(rgb==0xd8d8d8?'.':(dx==0?'|':'-')),style);
+        double dx = x2 - x, dy = y2 - y;
+        int steps = (int)((dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy) ? (dx < 0 ? -dx : dx) : (dy < 0 ? -dy : dy)) + 1;
+        for (int i = 0; i <= steps; ++i)
+            tui_put(p->state, p->clip, p->x + (long long)(x + dx * i / steps + 0.5), p->y + (long long)(y + dy * i / steps + 0.5),
+                    rgb == 0xd62222 ? '*' : (rgb == 0xd8d8d8 ? '.' : (dx == 0 ? '|' : '-')), style);
     }
 }
 
@@ -781,22 +802,41 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
          widget->kind == XXWIDGETS_VALUE) &&
         clip.bottom > y + 1)
         clip.bottom = y + 1;
-    if ((widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) && style == TUI_FOCUS)
-        style = TUI_NORMAL;
+    if ((widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) && style == TUI_FOCUS) style = TUI_NORMAL;
     tui_fill(state, clip, style);
     switch (widget->kind) {
         case XXWIDGETS_DIE_SIGNATURE_EDIT: tui_die_control(state, widget, clip, x, y); break;
         case XXWIDGETS_SPLITTER:
-            for(row=0;row<widget->rect.height;++row)for(col=0;col<widget->rect.width;++col)tui_put(state,clip,x+col,y+row,widget->rect.height>widget->rect.width?'|':'=',style);break;
+            for (row = 0; row < widget->rect.height; ++row)
+                for (col = 0; col < widget->rect.width; ++col) tui_put(state, clip, x + col, y + row, widget->rect.height > widget->rect.width ? '|' : '=', style);
+            break;
         case XXWIDGETS_CANVAS: {
-            if(!widget->canvas_pixels||!widget->canvas_width||!widget->canvas_height)break;double ox,oy,rw,rh;xxwidgets_canvas_fit(widget,widget->rect.width,widget->rect.height,&ox,&oy,&rw,&rh);static const char shades[]=" .:-=+*#%@";
-            for(row=0;row<widget->rect.height;++row)for(col=0;col<widget->rect.width;++col){if(col<ox||row<oy||col>=ox+rw||row>=oy+rh)continue;unsigned px=(unsigned)((col-ox)*widget->canvas_width/rw),py=(unsigned)((row-oy)*widget->canvas_height/rh);uint32_t c=widget->canvas_pixels[(size_t)py*widget->canvas_width+px];unsigned r=c>>24,g=(c>>16)&255,b=(c>>8)&255,gray=(r*3+g*6+b)/10;unsigned char tint=r>g*3/2&&r>b*3/2?TUI_RED:b>r*3/2&&b>g*3/2?TUI_BLUE:style;tui_put(state,clip,x+col,y+row,shades[gray*9/255],tint);}
-            for(size_t i=0;i<widget->canvas_label_count;++i){xxwidgets_canvas_label *l=widget->canvas_labels+i;tui_text(state,clip,x+(long long)(ox+l->x*rw/widget->canvas_width),y+(long long)(oy+l->y*rh/widget->canvas_height),l->text,style,TUI_TEXT_ELLIPSIS);}
-            if(widget->value>=0)tui_put(state,clip,x+(long long)(ox+(widget->value%widget->canvas_width)*rw/widget->canvas_width),y+(long long)(oy+(widget->value/widget->canvas_width)*rh/widget->canvas_height),'X',TUI_FOCUS);break;
+            if (!widget->canvas_pixels || !widget->canvas_width || !widget->canvas_height) break;
+            double ox, oy, rw, rh;
+            xxwidgets_canvas_fit(widget, widget->rect.width, widget->rect.height, &ox, &oy, &rw, &rh);
+            static const char shades[] = " .:-=+*#%@";
+            for (row = 0; row < widget->rect.height; ++row)
+                for (col = 0; col < widget->rect.width; ++col) {
+                    if (col < ox || row < oy || col >= ox + rw || row >= oy + rh) continue;
+                    unsigned px = (unsigned)((col - ox) * widget->canvas_width / rw), py = (unsigned)((row - oy) * widget->canvas_height / rh);
+                    uint32_t c = widget->canvas_pixels[(size_t)py * widget->canvas_width + px];
+                    unsigned r = c >> 24, g = (c >> 16) & 255, b = (c >> 8) & 255, gray = (r * 3 + g * 6 + b) / 10;
+                    unsigned char tint = r > g * 3 / 2 && r > b * 3 / 2 ? TUI_RED : b > r * 3 / 2 && b > g * 3 / 2 ? TUI_BLUE : style;
+                    tui_put(state, clip, x + col, y + row, shades[gray * 9 / 255], tint);
+                }
+            for (size_t i = 0; i < widget->canvas_label_count; ++i) {
+                xxwidgets_canvas_label *l = widget->canvas_labels + i;
+                tui_text(state, clip, x + (long long)(ox + l->x * rw / widget->canvas_width), y + (long long)(oy + l->y * rh / widget->canvas_height), l->text, style,
+                         TUI_TEXT_ELLIPSIS);
+            }
+            if (widget->value >= 0)
+                tui_put(state, clip, x + (long long)(ox + (widget->value % widget->canvas_width) * rw / widget->canvas_width),
+                        y + (long long)(oy + (widget->value / widget->canvas_width) * rh / widget->canvas_height), 'X', TUI_FOCUS);
+            break;
         }
         case XXWIDGETS_ENTROPY_PLOT: {
-            tui_plot_context plot = {state,clip,x,y};
-            xxwidgets_entropy_draw(widget,widget->rect.width,widget->rect.height,1,1,tui_plot_draw,&plot);
+            tui_plot_context plot = {state, clip, x, y};
+            xxwidgets_entropy_draw(widget, widget->rect.width, widget->rect.height, 1, 1, tui_plot_draw, &plot);
             break;
         }
         case XXWIDGETS_LABEL: tui_text(state, clip, x, y, widget->text, style, TUI_TEXT_MULTILINE | TUI_TEXT_ELLIPSIS); break;
@@ -816,7 +856,8 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
             long long inner = widget->rect.width > 2 ? widget->rect.width - 2 : 0, cells = tui_label_cells(widget->text), start = x + 1;
             tui_put(state, clip, x, y, '[', style);
             tui_put(state, clip, bounds.right - 1, y, ']', style);
-            if (cells < inner) start += widget->alignment == XXWIDGETS_ALIGN_CENTER ? (inner - cells) / 2 : widget->alignment == XXWIDGETS_ALIGN_RIGHT ? inner - cells : 0;
+            if (cells < inner)
+                start += widget->alignment == XXWIDGETS_ALIGN_CENTER ? (inner - cells) / 2 : widget->alignment == XXWIDGETS_ALIGN_RIGHT ? inner - cells : 0;
             bounds.left = x + 1;
             bounds.right--;
             tui_text(state, tui_intersect(clip, bounds), start, y, widget->text, style, TUI_TEXT_ELLIPSIS);
@@ -874,12 +915,10 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
             size_t rows_shown = filterable ? xxwidgets_tabular_rows(widget) : widget->item_count;
             size_t selected_row = widget->kind == XXWIDGETS_TREEVIEW ? xxwidgets_treeview_row_of_node(widget, (size_t)widget->value)
                                   : filterable ? (xxwidgets_tabular_row(widget, widget->value) < 0 ? SIZE_MAX : (size_t)xxwidgets_tabular_row(widget, widget->value))
-                                  : widget->value < 0                ? SIZE_MAX
-                                                                     : (size_t)widget->value;
+                                  : widget->value < 0 ? SIZE_MAX
+                                                      : (size_t)widget->value;
             /* Tables with filters have a filter row under their titles. */
-            int header_rows = widget->kind == XXWIDGETS_ARCHIVEBROWSER
-                                  ? 2
-                                  : (xxwidgets_tabular_kind(widget)) ? (tui_filter_row(widget) ? 2 : 1) : 0;
+            int header_rows = widget->kind == XXWIDGETS_ARCHIVEBROWSER ? 2 : (xxwidgets_tabular_kind(widget)) ? (tui_filter_row(widget) ? 2 : 1) : 0;
             int row_height = widget->rect.height - header_rows;
             tui_hexview *hexview = (tui_hexview *)widget->platform;
             if (widget->kind == XXWIDGETS_HEXVIEW) {
@@ -925,12 +964,13 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                     size_t width = xxwidgets_tabular_column_width(widget, column);
                     tui_clip cell_clip = header_clip;
                     if (widget->kind == XXWIDGETS_HEXVIEW) {
-                        cell_clip.left = header_x; cell_clip.right = header_x + (long long)width;
+                        cell_clip.left = header_x;
+                        cell_clip.right = header_x + (long long)width;
                         cell_clip = tui_intersect(header_clip, cell_clip);
                         tui_put(state, header_clip, header_x + (long long)width, y, '|', TUI_TITLE);
                     }
                     tui_text(state, cell_clip, header_x, y, xxwidgets_tabular_column_title(widget, column),
-                        widget->kind == XXWIDGETS_HEXVIEW && state->focus == widget && column == widget->hex_header ? TUI_FOCUS : TUI_TITLE, 0);
+                             widget->kind == XXWIDGETS_HEXVIEW && state->focus == widget && column == widget->hex_header ? TUI_FOCUS : TUI_TITLE, 0);
                     header_x += (long long)width + (widget->kind == XXWIDGETS_HEXVIEW ? 1 : widget->kind == XXWIDGETS_DATA_STRUCT_TABLE ? 3 : 2);
                 }
                 if (tui_filter_row(widget)) {
@@ -945,11 +985,15 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                         const char *filter = xxwidgets_table_filter(widget, column);
                         int editing = hexview && hexview->filter_editing && hexview->filter_column == column && state->focus == widget;
                         tui_clip cell_clip = filter_clip;
-                        cell_clip.left = header_x; cell_clip.right = header_x + (long long)width;
+                        cell_clip.left = header_x;
+                        cell_clip.right = header_x + (long long)width;
                         cell_clip = tui_intersect(filter_clip, cell_clip);
                         tui_fill(state, cell_clip, editing ? TUI_FOCUS : TUI_NORMAL);
                         tui_text(state, cell_clip, header_x, y + 1, filter[0] ? filter : XXW_TR(widget->app, "Filter"),
-                            editing ? TUI_FOCUS : filter[0] ? TUI_NORMAL : TUI_DISABLED, 0);
+                                 editing     ? TUI_FOCUS
+                                 : filter[0] ? TUI_NORMAL
+                                             : TUI_DISABLED,
+                                 0);
                         if (editing) {
                             long long cursor = header_x + tui_label_cells(filter);
                             if (cursor >= cell_clip.left && cursor < cell_clip.right) {
@@ -989,20 +1033,29 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                     xxwidgets_tree_color colors = xxwidgets_treeview_node_color(widget, xxwidgets_treeview_node_at_row(widget, item));
                     uint32_t color = colors.dark_foreground;
                     switch (color) {
-                    case 0xff0000: case 0x800000: item_style = TUI_RED; break;
-                    case 0x00ff00: case 0x008000: item_style = TUI_GREEN; break;
-                    case 0x0000ff: case 0x000080: item_style = TUI_BLUE; break;
-                    case 0xffff00: case 0x808000: case 0xffbf00: item_style = TUI_OLIVE; break;
-                    case 0xff00ff: case 0x800080: case 0xd080ff: item_style = TUI_PURPLE; break;
-                    case 0x00ffff: case 0x008080: item_style = TUI_TEAL; break;
-                    case 0xc0c0c0: case 0x808080: item_style = TUI_GRAY; break;
-                    default: break;
+                        case 0xff0000:
+                        case 0x800000: item_style = TUI_RED; break;
+                        case 0x00ff00:
+                        case 0x008000: item_style = TUI_GREEN; break;
+                        case 0x0000ff:
+                        case 0x000080: item_style = TUI_BLUE; break;
+                        case 0xffff00:
+                        case 0x808000:
+                        case 0xffbf00: item_style = TUI_OLIVE; break;
+                        case 0xff00ff:
+                        case 0x800080:
+                        case 0xd080ff: item_style = TUI_PURPLE; break;
+                        case 0x00ffff:
+                        case 0x008080: item_style = TUI_TEAL; break;
+                        case 0xc0c0c0:
+                        case 0x808080: item_style = TUI_GRAY; break;
+                        default: break;
                     }
                     if (colors.dark_background == 0xff0000 || colors.dark_background == 0x800000) item_style = TUI_MALWARE;
                 }
                 if (widget->kind != XXWIDGETS_HEXVIEW &&
-                    (item == selected_row || (widget->kind == XXWIDGETS_ARCHIVEBROWSER && xxwidgets_archivebrowser_row_selected(widget, item))) &&
-                    widget->enabled && widget->parent->enabled)
+                    (item == selected_row || (widget->kind == XXWIDGETS_ARCHIVEBROWSER && xxwidgets_archivebrowser_row_selected(widget, item))) && widget->enabled &&
+                    widget->parent->enabled)
                     item_style = TUI_FOCUS;
                 bounds.top = row;
                 bounds.bottom = row + 1;
@@ -1017,7 +1070,8 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                     for (size_t column = 0; column < 3; ++column) {
                         size_t width = xxwidgets_hexview_column_width(widget, column);
                         tui_clip cell_clip = clip;
-                        cell_clip.left = cell_x; cell_clip.right = cell_x + (long long)width;
+                        cell_clip.left = cell_x;
+                        cell_clip.right = cell_x + (long long)width;
                         cell_clip = tui_intersect(clip, cell_clip);
                         const char *text = xxwidgets_hexview_cell(widget, item, column);
                         if (column == 2) {
@@ -1047,14 +1101,12 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                                     continuation = glyph_cells > 1 ? (size_t)glyph_cells : 1;
                                 }
                                 for (; continuation < cells; ++continuation)
-                                    tui_put(state, slot, left + (long long)continuation, row, 0x00b7,
-                                        symbol_style == TUI_FOCUS ? TUI_FOCUS_DISABLED : TUI_DISABLED);
+                                    tui_put(state, slot, left + (long long)continuation, row, 0x00b7, symbol_style == TUI_FOCUS ? TUI_FOCUS_DISABLED : TUI_DISABLED);
                                 uint32_t tint;
                                 if (symbol_style != TUI_FOCUS && xxwidgets_hexview_highlight_span(widget, symbol.offset, symbol.bytes, &tint))
                                     for (long long px = slot.left; px < slot.right; ++px)
                                         if (px >= 0 && px < state->columns && row >= 0 && row < state->rows)
                                             state->cells[(size_t)row * (size_t)state->columns + (size_t)px].background = tint;
-
                             }
                             tui_put(state, clip, cell_x + (long long)width, row, '|', item_style);
                             cell_x += (long long)width + 1;
@@ -1079,8 +1131,7 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                             for (size_t k = 0; k < spans[n].start;) {
                                 size_t length;
                                 uint32_t glyph = tui_decode(text + k, spans[n].start - k, &length);
-                                if (!length)
-                                    break;
+                                if (!length) break;
                                 dx += tui_width(tui_invisible(glyph) ? 0xfffd : glyph);
                                 k += length;
                             }
@@ -1109,7 +1160,8 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                     for (size_t column = 0; column < 4; ++column) {
                         size_t width = xxwidgets_tabular_column_width(widget, column);
                         tui_clip cell_clip = clip;
-                        cell_clip.left = cell_x; cell_clip.right = cell_x + (long long)width;
+                        cell_clip.left = cell_x;
+                        cell_clip.right = cell_x + (long long)width;
                         cell_clip = tui_intersect(clip, cell_clip);
                         tui_text(state, cell_clip, cell_x, row, xxwidgets_tabular_cell(widget, item, column), item_style, TUI_TEXT_ELLIPSIS);
                         cell_x += (long long)width + 2;
@@ -1136,13 +1188,13 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                         left += cells;
                     }
                 } else {
-                tui_text(state, clip, x + 1, row, row_text + offset, item_style, TUI_TEXT_ELLIPSIS);
+                    tui_text(state, clip, x + 1, row, row_text + offset, item_style, TUI_TEXT_ELLIPSIS);
                 }
                 if (widget->kind == XXWIDGETS_HEXVIEW && hex_editable && state->focus == widget && widget->enabled && widget->parent->enabled &&
                     byte_cursor != SIZE_MAX && item == byte_cursor / widget->hex_columns) {
                     size_t cursor_column = xxwidgets_hexview_cursor_column(widget);
-                    size_t columns_end = xxwidgets_hexview_column_width(widget, 0) + 1 + xxwidgets_hexview_column_width(widget, 1) + 1 +
-                        xxwidgets_hexview_column_width(widget, 2);
+                    size_t columns_end =
+                        xxwidgets_hexview_column_width(widget, 0) + 1 + xxwidgets_hexview_column_width(widget, 1) + 1 + xxwidgets_hexview_column_width(widget, 2);
                     if (cursor_column < columns_end && !widget->hex_menu_open) {
                         long long cursor_x = x + 1 + (long long)cursor_column - (long long)(hexview ? hexview->horizontal : 0);
                         if (cursor_column >= (hexview ? hexview->horizontal : 0) && cursor_x >= clip.left && cursor_x < clip.right) {
@@ -1162,8 +1214,11 @@ static void tui_control(tui_state *state, xxwidgets_widget *widget, tui_clip cli
                     xxwidgets_hex_menu_item entry = xxwidgets_hexview_menu_item(widget, widget->hex_menu_open == 2 ? 3 : widget->hex_header, i);
                     long long menu_y = y + 1 + (long long)(i - first_item);
                     unsigned char menu_style = entry.disabled ? TUI_DISABLED : i == widget->hex_menu_index ? TUI_FOCUS : TUI_TITLE;
-                    tui_clip menu_clip = clip; menu_clip.top = menu_y; menu_clip.bottom = menu_y + 1;
-                    menu_clip = tui_intersect(clip, menu_clip); tui_fill(state, menu_clip, menu_style);
+                    tui_clip menu_clip = clip;
+                    menu_clip.top = menu_y;
+                    menu_clip.bottom = menu_y + 1;
+                    menu_clip = tui_intersect(clip, menu_clip);
+                    tui_fill(state, menu_clip, menu_style);
                     snprintf(label, sizeof(label), " [%c] %s%s%s", entry.checked ? 'x' : ' ', entry.group, entry.group[0] ? " > " : "", entry.title);
                     tui_text(state, menu_clip, x, menu_y, label, menu_style, TUI_TEXT_ELLIPSIS);
                 }
@@ -1276,14 +1331,19 @@ static xxwidgets_status tui_dimensions(tui_state *state)
 static xxwidgets_status tui_present(tui_state *state)
 {
 #ifdef _WIN32
-    static const WORD colors[] = {FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE, FOREGROUND_INTENSITY,
+    static const WORD colors[] = {FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
+                                  FOREGROUND_INTENSITY,
                                   FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY | BACKGROUND_BLUE,
                                   FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY | BACKGROUND_BLUE | BACKGROUND_GREEN,
-                                  FOREGROUND_RED | FOREGROUND_INTENSITY, FOREGROUND_GREEN | FOREGROUND_INTENSITY,
-                                  FOREGROUND_BLUE | FOREGROUND_INTENSITY, FOREGROUND_RED | FOREGROUND_GREEN,
-                                  FOREGROUND_GREEN | FOREGROUND_BLUE, FOREGROUND_INTENSITY,
+                                  FOREGROUND_RED | FOREGROUND_INTENSITY,
+                                  FOREGROUND_GREEN | FOREGROUND_INTENSITY,
+                                  FOREGROUND_BLUE | FOREGROUND_INTENSITY,
+                                  FOREGROUND_RED | FOREGROUND_GREEN,
+                                  FOREGROUND_GREEN | FOREGROUND_BLUE,
+                                  FOREGROUND_INTENSITY,
                                   FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY | BACKGROUND_RED,
-                                  FOREGROUND_INTENSITY | BACKGROUND_BLUE, FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY};
+                                  FOREGROUND_INTENSITY | BACKGROUND_BLUE,
+                                  FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY};
     size_t count = (size_t)state->columns * (size_t)state->rows, i;
     CHAR_INFO *output = (CHAR_INFO *)malloc(count * sizeof(*output));
     CONSOLE_SCREEN_BUFFER_INFO info;
@@ -1301,12 +1361,9 @@ static xxwidgets_status tui_present(tui_state *state)
         if (state->color_enabled) output[i].Attributes = colors[style];
         else {
             output[i].Attributes = state->monochrome_attributes;
-            if (style == TUI_FOCUS || style == TUI_FOCUS_DISABLED || style == TUI_MALWARE)
-                output[i].Attributes |= COMMON_LVB_REVERSE_VIDEO;
-            if (style == TUI_TITLE || style == TUI_RED || style == TUI_MALWARE)
-                output[i].Attributes |= FOREGROUND_INTENSITY;
-            if (style == TUI_DISABLED || style == TUI_GRAY || style == TUI_FOCUS_DISABLED)
-                output[i].Attributes &= (WORD)~FOREGROUND_INTENSITY;
+            if (style == TUI_FOCUS || style == TUI_FOCUS_DISABLED || style == TUI_MALWARE) output[i].Attributes |= COMMON_LVB_REVERSE_VIDEO;
+            if (style == TUI_TITLE || style == TUI_RED || style == TUI_MALWARE) output[i].Attributes |= FOREGROUND_INTENSITY;
+            if (style == TUI_DISABLED || style == TUI_GRAY || style == TUI_FOCUS_DISABLED) output[i].Attributes &= (WORD)~FOREGROUND_INTENSITY;
         }
         if (state->cells[i].bold) output[i].Attributes |= FOREGROUND_INTENSITY;
         uint32_t bg = state->cells[i].background;
@@ -1337,8 +1394,10 @@ static xxwidgets_status tui_present(tui_state *state)
         if (!SetConsoleCursorPosition(state->output, position)) return XXWIDGETS_PLATFORM_ERROR;
     }
 #else
-    static const char *styles[] = {"\033[0m", "\033[0;90m", "\033[0;97;44m", "\033[0;97;46m", "\033[0;91m", "\033[0;92m", "\033[0;94m", "\033[0;93m", "\033[0;96m", "\033[0;37m", "\033[0;97;41m", "\033[0;90;44m", "\033[0;95m"};
-    static const char *monochrome[] = {"\033[0m", "\033[0;2m", "\033[0;7m", "\033[0;1m", "\033[0;1m", "\033[0m", "\033[0m", "\033[0m", "\033[0m", "\033[0;2m", "\033[0;1;7m", "\033[0;2;7m", "\033[0m"};
+    static const char *styles[] = {"\033[0m",    "\033[0;90m", "\033[0;97;44m", "\033[0;97;46m", "\033[0;91m",    "\033[0;92m", "\033[0;94m",
+                                   "\033[0;93m", "\033[0;96m", "\033[0;37m",    "\033[0;97;41m", "\033[0;90;44m", "\033[0;95m"};
+    static const char *monochrome[] = {"\033[0m", "\033[0;2m", "\033[0;7m", "\033[0;1m",   "\033[0;1m",   "\033[0m", "\033[0m",
+                                       "\033[0m", "\033[0m",   "\033[0;2m", "\033[0;1;7m", "\033[0;2;7m", "\033[0m"};
     size_t capacity = (size_t)state->columns * (size_t)state->rows * 64 + (size_t)state->rows * 32 + 128, length = 0;
     char *output = (char *)malloc(capacity);
     int x, y, previous_style = -1, previous_bold = -1;
@@ -1368,7 +1427,8 @@ static xxwidgets_status tui_present(tui_state *state)
                 previous_background = cell->background;
                 previous_bold = base_bold; /* Each style starts with SGR 0. */
                 if (state->color_enabled && cell->background != UINT32_MAX)
-                    length += (size_t)snprintf(output + length, capacity - length, "\033[48;2;%u;%u;%um", (cell->background >> 16) & 255, (cell->background >> 8) & 255, cell->background & 255);
+                    length += (size_t)snprintf(output + length, capacity - length, "\033[48;2;%u;%u;%um", (cell->background >> 16) & 255, (cell->background >> 8) & 255,
+                                               cell->background & 255);
             }
             if (bold != previous_bold) {
                 /* SGR 22 clears dim as well as bold; preserve monochrome
@@ -1567,7 +1627,10 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             tui_focus_next(app, key == TUI_KEY_BACKTAB || (modifiers & XXWIDGETS_MOD_SHIFT));
             return XXWIDGETS_OK;
         }
-        if (tui_die_key(widget, key, modifiers)) { state->dirty = 1; return XXWIDGETS_OK; }
+        if (tui_die_key(widget, key, modifiers)) {
+            state->dirty = 1;
+            return XXWIDGETS_OK;
+        }
         /* Ctrl+D is not an editor command and must not close the window.
          * Escape remains the application's explicit close/navigation key. */
         if (key == 4 || ((key == 'd' || key == 'D') && (modifiers & XXWIDGETS_MOD_CTRL))) return XXWIDGETS_OK;
@@ -1583,8 +1646,7 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             else if (key == TUI_KEY_END) widget->hex_menu_index = (unsigned)count - 1;
             else if (key == TUI_KEY_ENTER || key == ' ') {
                 unsigned column = widget->hex_menu_open == 2 ? 3 : widget->hex_header;
-                if (xxwidgets_hexview_menu_item(widget, column, widget->hex_menu_index).disabled)
-                    return XXWIDGETS_OK;
+                if (xxwidgets_hexview_menu_item(widget, column, widget->hex_menu_index).disabled) return XXWIDGETS_OK;
                 widget->hex_menu_open = 0;
                 return xxwidgets_hexview_menu_apply(widget, column, widget->hex_menu_index);
             } else if (widget->hex_menu_open == 1 && (key == TUI_KEY_LEFT || key == TUI_KEY_RIGHT || key == TUI_KEY_F1 + 5)) {
@@ -1596,12 +1658,14 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
         if (key == TUI_KEY_F1 + 5) {
             xxwidgets_hexview_activate_column(widget, (widget->hex_header + 1) % 3);
             tui_hexview_reveal_cursor(state, widget);
-            state->dirty = 1; return XXWIDGETS_OK;
+            state->dirty = 1;
+            return XXWIDGETS_OK;
         }
         if (key == TUI_KEY_CONTEXT || key == TUI_KEY_F1 + 9) {
             widget->hex_menu_open = key == TUI_KEY_CONTEXT || (modifiers & XXWIDGETS_MOD_SHIFT) ? 2 : 1;
             widget->hex_menu_index = 0;
-            state->dirty = 1; return XXWIDGETS_OK;
+            state->dirty = 1;
+            return XXWIDGETS_OK;
         }
         if (key == 1 || key == 3 || key == 4 || key == 22 || key == 24 || key == 25 || key == 26) {
             int handled = 0;
@@ -1660,7 +1724,13 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
         return XXWIDGETS_OK;
     }
     if (!widget || !tui_eligible(widget)) return XXWIDGETS_OK;
-    if(widget->kind==XXWIDGETS_CANVAS||widget->kind==XXWIDGETS_SPLITTER){int mapped=(int)tui_hexview_key(key);if(widget->kind==XXWIDGETS_CANVAS)xxwidgets_canvas_key(widget,mapped);else xxwidgets_splitter_key(widget,mapped);state->dirty=1;return XXWIDGETS_OK;}
+    if (widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER) {
+        int mapped = (int)tui_hexview_key(key);
+        if (widget->kind == XXWIDGETS_CANVAS) xxwidgets_canvas_key(widget, mapped);
+        else xxwidgets_splitter_key(widget, mapped);
+        state->dirty = 1;
+        return XXWIDGETS_OK;
+    }
     if (xxwidgets_combo_kind(widget)) {
         /* An open COMBOBOX list moves only its highlight; Enter, Space or Tab
          * picks it and Escape keeps the old item, as native lists do. Arrows
@@ -1735,8 +1805,7 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
         }
         if (!widget->item_count) return XXWIDGETS_OK;
         /* A mark's first character presses it on the selected row (S, ?). */
-        if (!(modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_ALT | XXWIDGETS_MOD_META)) && xxwidgets_treeview_mark_key(widget, key))
-            return XXWIDGETS_OK;
+        if (!(modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_ALT | XXWIDGETS_MOD_META)) && xxwidgets_treeview_mark_key(widget, key)) return XXWIDGETS_OK;
         row = xxwidgets_treeview_row_of_node(widget, (size_t)widget->value);
         if (row == SIZE_MAX) row = 0;
         next = row;
@@ -1777,10 +1846,7 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
         /* Tables move over the rows their filters show; values stay model rows. */
         int selection = filterable ? xxwidgets_tabular_row(widget, widget->value) : widget->value;
         size_t row_count = filterable ? xxwidgets_tabular_rows(widget) : widget->item_count;
-        int page_rows = widget->rect.height -
-                        (widget->kind == XXWIDGETS_ARCHIVEBROWSER
-                             ? 2
-                             : (xxwidgets_tabular_kind(widget)) ? (tui_filter_row(widget) ? 2 : 1) : 0);
+        int page_rows = widget->rect.height - (widget->kind == XXWIDGETS_ARCHIVEBROWSER ? 2 : (xxwidgets_tabular_kind(widget)) ? (tui_filter_row(widget) ? 2 : 1) : 0);
         if (tui_filter_row(widget) && widget->platform) {
             tui_hexview *table = (tui_hexview *)widget->platform;
             size_t columns = xxwidgets_tabular_column_count(widget);
@@ -1852,8 +1918,7 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             int header_rows = widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ? (tui_filter_row(widget) ? 2 : 1) : 2;
             anchor_y = selection >= 0 ? selection - first + header_rows : header_rows;
             if (anchor_y >= widget->rect.height) anchor_y = widget->rect.height - 1;
-            xxwidgets_emit_context(widget, filterable ? xxwidgets_tabular_value(widget, selection) : selection,
-                widget->rect.width > 1 ? 1 : 0, anchor_y);
+            xxwidgets_emit_context(widget, filterable ? xxwidgets_tabular_value(widget, selection) : selection, widget->rect.width > 1 ? 1 : 0, anchor_y);
             return XXWIDGETS_OK;
         }
         if (widget->kind == XXWIDGETS_ARCHIVEBROWSER && key == TUI_KEY_BACKSPACE) return xxwidgets_archivebrowser_user_up(widget);
@@ -1886,7 +1951,9 @@ static xxwidgets_status tui_key(xxwidgets_app *app, uint32_t key, unsigned int m
             if (filterable) selection = xxwidgets_tabular_value(widget, selection);
             if (widget->kind != XXWIDGETS_HEXVIEW) widget->value = selection;
             state->dirty = 1;
-            if ((widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) && key == TUI_KEY_ENTER) {
+            if ((widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) ||
+                 xxwidgets_debugger_table_kind(widget)) &&
+                key == TUI_KEY_ENTER) {
                 xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, selection);
                 xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, selection);
                 return XXWIDGETS_OK;
@@ -2027,14 +2094,21 @@ static void tui_die_paste_append(tui_state *state, const unsigned char *bytes, s
     size_t required, capacity;
     char *next;
     if (!count || state->die_paste_discard) return;
-    if (count > 8u * 1024u * 1024u - state->die_paste_length) { state->die_paste_discard = 1; return; }
+    if (count > 8u * 1024u * 1024u - state->die_paste_length) {
+        state->die_paste_discard = 1;
+        return;
+    }
     required = state->die_paste_length + count + 1;
     if (required > state->die_paste_capacity) {
         capacity = state->die_paste_capacity ? state->die_paste_capacity : 1024;
         while (capacity < required) capacity *= 2;
         next = realloc(state->die_paste, capacity);
-        if (!next) { state->die_paste_discard = 1; return; }
-        state->die_paste = next; state->die_paste_capacity = capacity;
+        if (!next) {
+            state->die_paste_discard = 1;
+            return;
+        }
+        state->die_paste = next;
+        state->die_paste_capacity = capacity;
     }
     memcpy(state->die_paste + state->die_paste_length, bytes, count);
     state->die_paste_length += count;
@@ -2053,7 +2127,8 @@ static int tui_die_paste_consume(xxwidgets_app *app)
             at += sizeof(end) - 1;
             memmove(state->input, state->input + at, state->input_length - at);
             state->input_length -= at;
-            state->die_paste_active = 0; state->die_paste_target = NULL;
+            state->die_paste_active = 0;
+            state->die_paste_target = NULL;
             if (!state->die_paste_discard && state->die_paste_length && target == state->focus && target && tui_eligible(target))
                 (void)xxwidgets_die_edit_input(target, state->die_paste);
             state->die_paste_length = 0;
@@ -2098,8 +2173,7 @@ static xxwidgets_status tui_parse(xxwidgets_app *app)
                     int valid = 1;
                     for (size_t i = 2; i < end; ++i) {
                         unsigned char c = state->input[i];
-                        if (c == ';' && parameter < 2)
-                            ++parameter;
+                        if (c == ';' && parameter < 2) ++parameter;
                         else if (c >= '0' && c <= '9' && parameters[parameter] <= (0x10ffffu - (c - '0')) / 10)
                             parameters[parameter] = parameters[parameter] * 10 + c - '0';
                         else {
@@ -2109,16 +2183,11 @@ static xxwidgets_status tui_parse(xxwidgets_app *app)
                     }
                     if (parameter && parameters[1] >= 1 && parameters[1] <= 16) {
                         unsigned int mask = parameters[1] - 1;
-                        if (mask & 1)
-                            modifiers |= XXWIDGETS_MOD_SHIFT;
-                        if (mask & 2)
-                            modifiers |= XXWIDGETS_MOD_ALT;
-                        if (mask & 4)
-                            modifiers |= XXWIDGETS_MOD_CTRL;
-                        if (mask & 8)
-                            modifiers |= XXWIDGETS_MOD_META;
-                    } else if (parameter)
-                        valid = 0;
+                        if (mask & 1) modifiers |= XXWIDGETS_MOD_SHIFT;
+                        if (mask & 2) modifiers |= XXWIDGETS_MOD_ALT;
+                        if (mask & 4) modifiers |= XXWIDGETS_MOD_CTRL;
+                        if (mask & 8) modifiers |= XXWIDGETS_MOD_META;
+                    } else if (parameter) valid = 0;
                     switch (state->input[end]) {
                         case 'A': key = TUI_KEY_UP; break;
                         case 'B': key = TUI_KEY_DOWN; break;
@@ -2134,8 +2203,7 @@ static xxwidgets_status tui_parse(xxwidgets_app *app)
                         case 'u':
                             /* CSI u preserves modifiers that legacy control
                              * bytes cannot express, including Ctrl+Shift+V. */
-                            key = parameter == 1 && parameters[0] <= 0x10ffffu &&
-                                !(parameters[0] >= 0xd800u && parameters[0] <= 0xdfffu) ? parameters[0] : 0;
+                            key = parameter == 1 && parameters[0] <= 0x10ffffu && !(parameters[0] >= 0xd800u && parameters[0] <= 0xdfffu) ? parameters[0] : 0;
                             break;
                         case '~': {
                             static const unsigned char numbers[] = {11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 23, 24};
@@ -2147,8 +2215,7 @@ static xxwidgets_status tui_parse(xxwidgets_app *app)
                                 }
                             /* xterm modifyOtherKeys: CSI 27;modifier;code~. */
                             if (parameters[0] == 27 && parameter == 2)
-                                key = parameters[2] <= 0x10ffffu &&
-                                    !(parameters[2] >= 0xd800u && parameters[2] <= 0xdfffu) ? parameters[2] : 0;
+                                key = parameters[2] <= 0x10ffffu && !(parameters[2] >= 0xd800u && parameters[2] <= 0xdfffu) ? parameters[2] : 0;
                             else if (parameters[0] == 200) {
                                 state->die_paste_active = 1;
                                 state->die_paste_discard = 0;
@@ -2156,24 +2223,17 @@ static xxwidgets_status tui_parse(xxwidgets_app *app)
                                 state->die_paste_target = state->focus && state->focus->kind == XXWIDGETS_DIE_SIGNATURE_EDIT ? state->focus : NULL;
                                 key = 0;
                             } else if (parameters[0] == 201) key = 0;
-                            else if (parameters[0] == 2)
-                                key = TUI_KEY_INSERT;
-                            else if (parameters[0] == 1 || parameters[0] == 7)
-                                key = TUI_KEY_HOME;
-                            else if (parameters[0] == 4 || parameters[0] == 8)
-                                key = TUI_KEY_END;
-                            else if (parameters[0] == 3)
-                                key = TUI_KEY_DELETE;
-                            else if (parameters[0] == 5)
-                                key = TUI_KEY_PAGEUP;
-                            else if (parameters[0] == 6)
-                                key = TUI_KEY_PAGEDOWN;
+                            else if (parameters[0] == 2) key = TUI_KEY_INSERT;
+                            else if (parameters[0] == 1 || parameters[0] == 7) key = TUI_KEY_HOME;
+                            else if (parameters[0] == 4 || parameters[0] == 8) key = TUI_KEY_END;
+                            else if (parameters[0] == 3) key = TUI_KEY_DELETE;
+                            else if (parameters[0] == 5) key = TUI_KEY_PAGEUP;
+                            else if (parameters[0] == 6) key = TUI_KEY_PAGEDOWN;
                             break;
                         }
                         default: key = 0; break;
                     }
-                    if (!valid)
-                        key = 0;
+                    if (!valid) key = 0;
                     else if (modifiers & XXWIDGETS_MOD_CTRL) {
                         /* Match native console control input without losing
                          * Shift. Edit fields then keep Ctrl+V local too. */
@@ -2400,10 +2460,10 @@ static xxwidgets_status tui_sync(xxwidgets_widget *widget)
             int reset_horizontal = widget->kind != XXWIDGETS_HEXVIEW;
             int reveal_cursor = 0;
             if (widget->kind == XXWIDGETS_HEXVIEW) {
-                reset_horizontal = hexview->hex_data != widget->hex_data || hexview->hex_size != widget->hex_size ||
-                    hexview->hex_base != widget->hex_base || hexview->hex_columns != widget->hex_columns;
+                reset_horizontal = hexview->hex_data != widget->hex_data || hexview->hex_size != widget->hex_size || hexview->hex_base != widget->hex_base ||
+                                   hexview->hex_columns != widget->hex_columns;
                 reveal_cursor = reset_horizontal || hexview->hex_cursor != widget->hex_cursor || hexview->hex_nibble != widget->hex_nibble ||
-                    hexview->hex_editable != widget->hex_editable;
+                                hexview->hex_editable != widget->hex_editable;
                 hexview->hex_data = widget->hex_data;
                 hexview->hex_size = widget->hex_size;
                 hexview->hex_base = widget->hex_base;
@@ -2484,8 +2544,7 @@ static xxwidgets_status tui_copy_text(xxwidgets_widget *window, const char *text
     int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
     HGLOBAL memory = length ? GlobalAlloc(GMEM_MOVEABLE, (size_t)length * sizeof(wchar_t)) : NULL;
     (void)window;
-    if (!memory)
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (!memory) return XXWIDGETS_OUT_OF_MEMORY;
     wchar_t *wide = GlobalLock(memory);
     if (!wide) {
         GlobalFree(memory);
@@ -2499,25 +2558,20 @@ static xxwidgets_status tui_copy_text(xxwidgets_widget *window, const char *text
     }
     int ok = EmptyClipboard() && SetClipboardData(CF_UNICODETEXT, memory) != NULL;
     CloseClipboard();
-    if (!ok)
-        GlobalFree(memory);
+    if (!ok) GlobalFree(memory);
     return ok ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
 #else
     static const char digits[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     size_t length = strlen(text), at = 7;
     (void)window;
-    if (length > (SIZE_MAX - 16) / 4 * 3)
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (length > (SIZE_MAX - 16) / 4 * 3) return XXWIDGETS_OUT_OF_MEMORY;
     char *output = malloc(4 * ((length + 2) / 3) + 9);
-    if (!output)
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (!output) return XXWIDGETS_OUT_OF_MEMORY;
     memcpy(output, "\033]52;c;", 7);
     for (size_t i = 0; i < length; i += 3) {
         unsigned value = (unsigned char)text[i] << 16;
-        if (i + 1 < length)
-            value |= (unsigned char)text[i + 1] << 8;
-        if (i + 2 < length)
-            value |= (unsigned char)text[i + 2];
+        if (i + 1 < length) value |= (unsigned char)text[i + 1] << 8;
+        if (i + 2 < length) value |= (unsigned char)text[i + 2];
         output[at++] = digits[value >> 18];
         output[at++] = digits[(value >> 12) & 63];
         output[at++] = i + 1 < length ? digits[(value >> 6) & 63] : '=';
@@ -2550,24 +2604,30 @@ static xxwidgets_status tui_clipboard_helper(char *const arguments[], char **res
     *length = 0;
     if (pipe(descriptors) != 0) return XXWIDGETS_PLATFORM_ERROR;
     flags = fcntl(descriptors[0], F_GETFL);
-    if (flags < 0 || fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) < 0 ||
-        fcntl(descriptors[0], F_SETFD, FD_CLOEXEC) < 0 ||
-        fcntl(descriptors[1], F_SETFD, FD_CLOEXEC) < 0) goto cleanup;
+    if (flags < 0 || fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) < 0 || fcntl(descriptors[0], F_SETFD, FD_CLOEXEC) < 0 ||
+        fcntl(descriptors[1], F_SETFD, FD_CLOEXEC) < 0)
+        goto cleanup;
     if (posix_spawn_file_actions_init(&actions) != 0) goto cleanup;
     if (posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0) != 0 ||
         posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0) != 0 ||
-        posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO) != 0 ||
-        posix_spawn_file_actions_addclose(&actions, descriptors[0]) != 0 ||
+        posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO) != 0 || posix_spawn_file_actions_addclose(&actions, descriptors[0]) != 0 ||
         posix_spawn_file_actions_addclose(&actions, descriptors[1]) != 0) {
         posix_spawn_file_actions_destroy(&actions);
         goto cleanup;
     }
     int spawned = posix_spawnp(&child, arguments[0], &actions, NULL, arguments, environ);
     posix_spawn_file_actions_destroy(&actions);
-    if (spawned != 0) { child = -1; goto cleanup; }
-    close(descriptors[1]); descriptors[1] = -1;
+    if (spawned != 0) {
+        child = -1;
+        goto cleanup;
+    }
+    close(descriptors[1]);
+    descriptors[1] = -1;
     data = malloc(allocated);
-    if (!data) { status = XXWIDGETS_OUT_OF_MEMORY; goto cleanup; }
+    if (!data) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto cleanup;
+    }
     while (!eof || !child_done) {
         uint64_t now = tui_now();
         if (now >= deadline) goto cleanup;
@@ -2587,20 +2647,36 @@ static xxwidgets_status tui_clipboard_helper(char *const arguments[], char **res
                 if (allocated == TUI_CLIPBOARD_LIMIT + 1) {
                     char extra;
                     ssize_t read_extra = read(descriptors[0], &extra, 1);
-                    if (read_extra > 0) { status = XXWIDGETS_INVALID_ARGUMENT; goto cleanup; }
-                    if (!read_extra) { eof = 1; continue; }
+                    if (read_extra > 0) {
+                        status = XXWIDGETS_INVALID_ARGUMENT;
+                        goto cleanup;
+                    }
+                    if (!read_extra) {
+                        eof = 1;
+                        continue;
+                    }
                     if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) goto cleanup;
                 } else {
                     size_t next = allocated > (TUI_CLIPBOARD_LIMIT + 1) / 2 ? TUI_CLIPBOARD_LIMIT + 1 : allocated * 2;
                     char *grown = realloc(data, next);
-                    if (!grown) { status = XXWIDGETS_OUT_OF_MEMORY; goto cleanup; }
-                    data = grown; allocated = next;
+                    if (!grown) {
+                        status = XXWIDGETS_OUT_OF_MEMORY;
+                        goto cleanup;
+                    }
+                    data = grown;
+                    allocated = next;
                 }
             }
             if (used + 1 < allocated) {
                 ssize_t count = read(descriptors[0], data + used, allocated - used - 1);
-                if (count > 0) { used += (size_t)count; continue; }
-                if (!count) { eof = 1; continue; }
+                if (count > 0) {
+                    used += (size_t)count;
+                    continue;
+                }
+                if (!count) {
+                    eof = 1;
+                    continue;
+                }
                 if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) goto cleanup;
             }
         }
@@ -2621,7 +2697,8 @@ static xxwidgets_status tui_clipboard_helper(char *const arguments[], char **res
 cleanup:
     if (child > 0 && !child_done) {
         kill(child, SIGKILL);
-        while (waitpid(child, &child_status, 0) < 0 && errno == EINTR) {}
+        while (waitpid(child, &child_status, 0) < 0 && errno == EINTR) {
+        }
     }
     if (descriptors[0] >= 0) close(descriptors[0]);
     if (descriptors[1] >= 0) close(descriptors[1]);
@@ -2701,12 +2778,10 @@ static size_t tui_hexview_page_rows(const xxwidgets_widget *widget)
 {
     const tui_state *state = widget->app->platform;
     const xxwidgets_widget *window = widget->parent;
-    if (!state || !window)
-        return (size_t)(widget->rect.height > 1 ? widget->rect.height - 1 : 1);
+    if (!state || !window) return (size_t)(widget->rect.height > 1 ? widget->rect.height - 1 : 1);
     long long x = (long long)window->rect.x + 1, y = tui_window_top(state, window) + 1;
     tui_clip client = {x, y, x + window->rect.width, y + window->rect.height};
-    tui_clip bounds = {x + widget->rect.x, y + widget->rect.y,
-                       x + widget->rect.x + widget->rect.width, y + widget->rect.y + widget->rect.height};
+    tui_clip bounds = {x + widget->rect.x, y + widget->rect.y, x + widget->rect.x + widget->rect.width, y + widget->rect.y + widget->rect.height};
     tui_clip screen = {0, 0, state->columns, state->rows};
     tui_clip clip = tui_intersect(tui_intersect(bounds, client), screen);
     long long top = clip.top > bounds.top + 1 ? clip.top : bounds.top + 1;
@@ -2719,11 +2794,9 @@ static int tui_supports_kind(xxwidgets_kind kind)
     return kind == XXWIDGETS_VALUE || kind == XXWIDGETS_GROUP;
 }
 
-const xxwidgets_backend_ops xxwidgets_tui_ops = {"tui",   tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy,   tui_sync,
-                                                 tui_read, tui_read, tui_focus,    NULL,     NULL,       tui_copy_text, tui_apply_fonts,
-                                                 NULL,     NULL,     NULL,         NULL,     NULL,       tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL, NULL, NULL,
-                                                 NULL /* translation_changed */, NULL /* set_tooltip */,
-                                                 /* Cells: the core lays frames out as rects (no metrics, measure,
-                                                  * place, native_frame or minimum_frame). */
-                                                 NULL, NULL, NULL, NULL, NULL, tui_supports_kind, NULL /* set_icon: text only */,
-                                                 NULL /* begin_update */, NULL /* end_update */};
+const xxwidgets_backend_ops xxwidgets_tui_ops = {
+    "tui", tui_init, tui_shutdown, tui_poll, tui_create, tui_destroy, tui_sync, tui_read, tui_read, tui_focus, NULL, NULL, tui_copy_text, tui_apply_fonts, NULL, NULL,
+    NULL, NULL, NULL, tui_has_focus, NULL, tui_hexview_page_rows, tui_paste_text, NULL, NULL, NULL, NULL /* translation_changed */, NULL /* set_tooltip */,
+    /* Cells: the core lays frames out as rects (no metrics, measure,
+     * place, native_frame or minimum_frame). */
+    NULL, NULL, NULL, NULL, NULL, tui_supports_kind, NULL /* set_icon: text only */, NULL /* begin_update */, NULL /* end_update */};

@@ -125,8 +125,8 @@ typedef enum xxwidgets_event_type {
     XXWIDGETS_EVENT_SHORTCUT,
     XXWIDGETS_EVENT_DROP_FILES,
     XXWIDGETS_EVENT_VIEW_CHANGE, /* Hex header menu applied; value is column 0..2. */
-    XXWIDGETS_EVENT_DRAG, /* Splitter: absolute parent text-cell coordinates. */
-    XXWIDGETS_EVENT_READ_ERROR /* HexView device input read failed; value is xxwidgets_status. View is retained. */
+    XXWIDGETS_EVENT_DRAG,        /* Splitter: absolute parent text-cell coordinates. */
+    XXWIDGETS_EVENT_READ_ERROR   /* HexView device input read failed; value is xxwidgets_status. View is retained. */
 } xxwidgets_event_type;
 
 /* Logical text-cell units: native controls scale these to font-sized pixels.
@@ -206,8 +206,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_window_set_shortcut_filter(xxwidgets_wi
 typedef struct xxwidgets_menu_item {
     const char *menu;  /* Top-level group, e.g. "File". Adjacent entries share a group. */
     const char *label; /* UTF-8 label; NULL or empty inserts a separator. */
-    int action;       /* Unique nonzero action for ordinary items. */
-    int enabled;      /* 0 or 1; ignored for separators. */
+    int action;        /* Unique nonzero action for ordinary items. */
+    int enabled;       /* 0 or 1; ignored for separators. */
 } xxwidgets_menu_item;
 
 /* Replace the native window menu with a copied list (NULL/count 0 clears it).
@@ -218,7 +218,6 @@ typedef struct xxwidgets_menu_item {
  * TUI returns UNAVAILABLE. Do not replace a menu from an input callback. */
 XXWIDGETS_API xxwidgets_status xxwidgets_window_set_menu(xxwidgets_widget *window, const xxwidgets_menu_item *items, size_t count);
 XXWIDGETS_API xxwidgets_status xxwidgets_window_set_menu_item_enabled(xxwidgets_widget *window, int action, int enabled);
-
 
 /* Opt in to file drops anywhere in the window, including over its controls.
  * Emits DROP_FILES on the window. Disabled by default; hidden/disabled windows
@@ -318,8 +317,8 @@ typedef struct xxwidgets_tree_color {
     uint32_t foreground, background, dark_foreground, dark_background;
 } xxwidgets_tree_color;
 /* NULL colors preserves the ordinary tree behavior. Copied transactionally. */
-XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes,
-                                                                  const xxwidgets_tree_color *colors, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes, const xxwidgets_tree_color *colors,
+                                                                    size_t count);
 XXWIDGETS_API xxwidgets_tree_color xxwidgets_treeview_node_color(const xxwidgets_widget *widget, size_t index);
 /* Small buttons at the right end of rows, like the S and ? columns of a DIE
  * result tree (not with a lazy source, see xxwidgets_treeview_set_source).
@@ -331,8 +330,8 @@ XXWIDGETS_API xxwidgets_tree_color xxwidgets_treeview_node_color(const xxwidgets
  * focused tree, typing a label's first character does the same for the
  * selected node. TUI has no mouse, so there only the key works. */
 #define XXWIDGETS_TREE_MARKS_MAX 4
-XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_marks(xxwidgets_widget *widget, const char *const *labels, size_t label_count,
-                                                          const unsigned int *masks, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_marks(xxwidgets_widget *widget, const char *const *labels, size_t label_count, const unsigned int *masks,
+                                                            size_t count);
 /* Marks shown on node index as a bit set; 0 when there are none. */
 XXWIDGETS_API unsigned int xxwidgets_treeview_node_marks(const xxwidgets_widget *widget, size_t index);
 /* Number of mark columns, and their labels (NULL past the end). */
@@ -387,8 +386,7 @@ typedef struct xxwidgets_tree_item {
     int has_children;           /* Nonzero: an expander that fetches the children. */
     xxwidgets_tree_color color; /* UINT32_MAX components: system colors. */
 } xxwidgets_tree_item;
-typedef size_t (*xxwidgets_tree_children_fn)(void *user, uint64_t parent, size_t offset, xxwidgets_tree_item *items,
-                                             size_t capacity, size_t *total);
+typedef size_t (*xxwidgets_tree_children_fn)(void *user, uint64_t parent, size_t offset, xxwidgets_tree_item *items, size_t capacity, size_t *total);
 #define XXWIDGETS_TREE_PAGE_DEFAULT 1000
 #define XXWIDGETS_TREE_PAGE_MAX 65536
 typedef struct xxwidgets_tree_source {
@@ -432,8 +430,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_treeview_source_select(xxwidgets_widget
  * selected row (-1 for none); Enter or a double click emits ACTIVATE.
  * xxwidgets_widget_create makes one too, its text the titles separated by tabs. */
 #define XXWIDGETS_TABLE_MAX_COLUMNS 9
-XXWIDGETS_API xxwidgets_status xxwidgets_table_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const char *const *titles,
-                                                    size_t columns, xxwidgets_widget **out);
+XXWIDGETS_API xxwidgets_status xxwidgets_table_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const char *const *titles, size_t columns, xxwidgets_widget **out);
 /* Replaces the rows: rows * columns UTF-8 cells, row by row, copied; NULL is an
  * empty cell. Control characters show as \xNN. Selects the first row and keeps
  * the filters. On failure the previous rows stay. */
@@ -526,8 +523,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_options_dialog(xxwidgets_widget *owner,
  * what Escape and closing the window answer. text holds up to 12 lines
  * separated by '\n', each shown as one label (64 columns). *accepted is 1 for
  * yes. The owner, modal and reentrancy rules are those of options_dialog. */
-XXWIDGETS_API xxwidgets_status xxwidgets_question_dialog(xxwidgets_widget *owner, const char *title, const char *text,
-                                                         const char *yes_label, const char *no_label, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_question_dialog(xxwidgets_widget *owner, const char *title, const char *text, const char *yes_label, const char *no_label,
+                                                         int *accepted);
 
 /* Include xxwidgets/xxwidgets_process.h for xxfclib's xx_pd_struct definition.
  * Called immediately, then between event polls (30 ms timeout). Keep it
@@ -614,8 +611,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_get_text(const xxwidgets_a
  * handles, file paths, or decoder dependencies cross this API. */
 XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_set_image(xxwidgets_about_dialog *dialog, const void *rgba, unsigned int width, unsigned int height, size_t stride);
 /* Appends a rich item (see xxwidgets_about_item_kind). BUSY while showing. */
-XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_add_item(xxwidgets_about_dialog *dialog, xxwidgets_about_item_kind kind, const char *text,
-                                                               const char *value, const char *link);
+XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_add_item(xxwidgets_about_dialog *dialog, xxwidgets_about_item_kind kind, const char *text, const char *value,
+                                                               const char *link);
 XXWIDGETS_API xxwidgets_status xxwidgets_about_dialog_clear_items(xxwidgets_about_dialog *dialog);
 XXWIDGETS_API size_t xxwidgets_about_dialog_item_count(const xxwidgets_about_dialog *dialog);
 /* Application-modal, on the owner's UI thread, outside input callbacks/polling.
@@ -686,8 +683,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_data(xxwidgets_widget *widg
  * The live source supports source-wide selection/copy/dump and paging.
  * Nibble editing remains unavailable while attached. Explicit byte insertion
  * and deletion below are available for resizable read/write devices. */
-XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_device(xxwidgets_widget *, xx_io_device *, uint64_t initial_offset,
-                                                          size_t window_size, int take_ownership);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_device(xxwidgets_widget *, xx_io_device *, uint64_t initial_offset, size_t window_size, int take_ownership);
 /* Seek loads a bounded window starting at offset and selects its first byte.
  * Refresh reloads the displayed window, retaining selection when still valid.
  * Offset at a known EOF loads an empty window. Failures preserve the old view. */
@@ -812,8 +808,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_overview_markers(xxwidgets_
  * shows the text as a tooltip; the other backends keep the handler and show
  * nothing yet (a TUI host can describe the cursor byte itself). A NULL
  * handler removes it and any tip it set. */
-typedef void (*xxwidgets_hexview_tooltip_fn)(xxwidgets_widget *widget, uint64_t offset, unsigned int column, char *text, size_t capacity,
-                                             void *user_data);
+typedef void (*xxwidgets_hexview_tooltip_fn)(xxwidgets_widget *widget, uint64_t offset, unsigned int column, char *text, size_t capacity, void *user_data);
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_tooltip_handler(xxwidgets_widget *, xxwidgets_hexview_tooltip_fn, void *user_data);
 /* Optional read-only, windowed source. Source offsets are absolute and the
  * displayed window starts at the layout base. read must fill exactly length
@@ -829,8 +824,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_tooltip_handler(xxwidgets_w
  * the selected bytes and their clipboard representation, with overflow checks. */
 typedef xxwidgets_status (*xxwidgets_hexview_source_read_fn)(void *user_data, uint64_t offset, void *data, size_t length);
 typedef xxwidgets_status (*xxwidgets_hexview_source_seek_fn)(xxwidgets_widget *widget, uint64_t offset, void *user_data);
-XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_source(xxwidgets_widget *, uint64_t size, xxwidgets_hexview_source_read_fn,
-                                                         xxwidgets_hexview_source_seek_fn, void *user_data);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_source(xxwidgets_widget *, uint64_t size, xxwidgets_hexview_source_read_fn, xxwidgets_hexview_source_seek_fn,
+                                                            void *user_data);
 /* Absolute source range, or base plus the ordinary selection without a source.
  * Empty selection returns UINT64_MAX/0. get_selection remains window-relative
  * and returns only the visible intersection of a source selection. */
@@ -856,15 +851,25 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_layout(xxwidgets_widget *wi
  * Clicking a column or pressing F6 activates it.
  * Widths are character cells; zero restores automatic sizing. */
 typedef enum xxwidgets_hex_mode {
-    XXWIDGETS_HEX_HEX, XXWIDGETS_HEX_BYTE, XXWIDGETS_HEX_WORD, XXWIDGETS_HEX_DWORD, XXWIDGETS_HEX_QWORD,
-    XXWIDGETS_HEX_UINT8, XXWIDGETS_HEX_INT8, XXWIDGETS_HEX_UINT16, XXWIDGETS_HEX_INT16,
-    XXWIDGETS_HEX_UINT32, XXWIDGETS_HEX_INT32, XXWIDGETS_HEX_UINT64, XXWIDGETS_HEX_INT64
+    XXWIDGETS_HEX_HEX,
+    XXWIDGETS_HEX_BYTE,
+    XXWIDGETS_HEX_WORD,
+    XXWIDGETS_HEX_DWORD,
+    XXWIDGETS_HEX_QWORD,
+    XXWIDGETS_HEX_UINT8,
+    XXWIDGETS_HEX_INT8,
+    XXWIDGETS_HEX_UINT16,
+    XXWIDGETS_HEX_INT16,
+    XXWIDGETS_HEX_UINT32,
+    XXWIDGETS_HEX_INT32,
+    XXWIDGETS_HEX_UINT64,
+    XXWIDGETS_HEX_INT64
 } xxwidgets_hex_mode;
 typedef struct xxwidgets_hex_display {
-    unsigned int radix; /* 10 or 16. */
-    int offsets; /* 1: file offsets, 0: base address + offset. */
+    unsigned int radix;      /* 10 or 16. */
+    int offsets;             /* 1: file offsets, 0: base address + offset. */
     xxwidgets_hex_mode mode; /* Multi-byte numbers use little-endian byte order. */
-    const char *encoding; /* Name from xxfclib codepage registry; copied by setter. */
+    const char *encoding;    /* Name from xxfclib codepage registry; copied by setter. */
 } xxwidgets_hex_display;
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_display(xxwidgets_widget *, const xxwidgets_hex_display *);
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_display(const xxwidgets_widget *, xxwidgets_hex_display *);
@@ -899,9 +904,13 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_get_editable(const xxwidgets_wi
  * refresh source bytes after polling. No bytes/cursor change automatically.
  * Ctrl/Meta+Shift+V uses built-in insertion only for resizable devices.
  * A NULL handler disables application-owned input. */
-typedef enum xxwidgets_hex_input_kind { XXWIDGETS_HEX_INPUT_NIBBLE,
-    XXWIDGETS_HEX_INPUT_SCALAR, XXWIDGETS_HEX_INPUT_PASTE,
-    XXWIDGETS_HEX_INPUT_DELETE, XXWIDGETS_HEX_INPUT_BACKSPACE } xxwidgets_hex_input_kind;
+typedef enum xxwidgets_hex_input_kind {
+    XXWIDGETS_HEX_INPUT_NIBBLE,
+    XXWIDGETS_HEX_INPUT_SCALAR,
+    XXWIDGETS_HEX_INPUT_PASTE,
+    XXWIDGETS_HEX_INPUT_DELETE,
+    XXWIDGETS_HEX_INPUT_BACKSPACE
+} xxwidgets_hex_input_kind;
 typedef struct xxwidgets_hex_input {
     xxwidgets_hex_input_kind kind;
     uint64_t offset, selection_offset, selection_length;
@@ -936,7 +945,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_source_selection(xxwidgets_
 /* As above, with an independent absolute cursor for restoring a saved view. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_source_range(xxwidgets_widget *, uint64_t cursor, uint64_t offset, uint64_t length);
 typedef enum xxwidgets_hex_copy_format {
-    XXWIDGETS_HEX_COPY_HEX, XXWIDGETS_HEX_COPY_TEXT, XXWIDGETS_HEX_COPY_C_ARRAY, XXWIDGETS_HEX_COPY_OFFSET
+    XXWIDGETS_HEX_COPY_HEX,
+    XXWIDGETS_HEX_COPY_TEXT,
+    XXWIDGETS_HEX_COPY_C_ARRAY,
+    XXWIDGETS_HEX_COPY_OFFSET
 } xxwidgets_hex_copy_format;
 /* Optional application override for a nonempty selection. Called synchronously
  * before source reads or clipboard allocation, including for COPY_OFFSET.
@@ -956,8 +968,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_copy_handler(xxwidgets_widg
  * back to the synchronous built-in dump. NULL restores that default. Setting
  * a handler clears an already deferred built-in dump and emits no events. */
 typedef xxwidgets_status (*xxwidgets_hexview_dump_fn)(xxwidgets_widget *widget, void *user_data);
-XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_dump_handler(xxwidgets_widget *widget,
-    xxwidgets_hexview_dump_fn handler, void *user_data);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_set_dump_handler(xxwidgets_widget *widget, xxwidgets_hexview_dump_fn handler, void *user_data);
 /* Copies the selected range. Text uses the selected codepage, replacing invalid
  * sequences/control characters with dots. POSIX TUI uses OSC 52 in supporting
  * terminals; Windows TUI uses the system clipboard. */
@@ -1076,7 +1087,7 @@ XXWIDGETS_API size_t xxwidgets_archivebrowser_column_count(const xxwidgets_widge
 XXWIDGETS_API const char *xxwidgets_archivebrowser_column_title(const xxwidgets_widget *widget, size_t column);
 XXWIDGETS_API const char *xxwidgets_archivebrowser_cell(const xxwidgets_widget *widget, size_t row, xxwidgets_archive_column column);
 
-XXWIDGETS_API void xxwidgets_app_set_create_hidden(xxwidgets_app* app, int hidden);
+XXWIDGETS_API void xxwidgets_app_set_create_hidden(xxwidgets_app *app, int hidden);
 
 /* Measured placement. Layout units are pixels at the system DPI on WinAPI,
  * logical pixels on GTK, points on AppKit and text cells on the terminal. A
@@ -1086,8 +1097,8 @@ XXWIDGETS_API void xxwidgets_app_set_create_hidden(xxwidgets_app* app, int hidde
  * control is laid out by its frame only once set_frame was called for it,
  * and from then on cell relayouts of its window leave it where it is. */
 typedef struct xxwidgets_metrics {
-    int unit_is_cell;   /* 1: one unit is one text cell */
-    int cell_width;     /* one text cell of the control font, in units */
+    int unit_is_cell; /* 1: one unit is one text cell */
+    int cell_width;   /* one text cell of the control font, in units */
     int cell_height;
     int control_height; /* H: natural height of a one-line button, edit, combo or value */
     int label_height;   /* L: height of a one-line caption label */
@@ -1152,8 +1163,8 @@ enum {
  * height 1..256, stride at least width * 4. NULL/0/0/0 removes the icon.
  * BUTTON only. Backends without icons store it and show the text: the call
  * still succeeds. The built-in set is in xxwidgets/xxwidgets_icons.h. */
-XXWIDGETS_API xxwidgets_status xxwidgets_button_set_icon(xxwidgets_widget *button, const void *rgba, unsigned int width, unsigned int height,
-                                                       size_t stride, unsigned int flags);
+XXWIDGETS_API xxwidgets_status xxwidgets_button_set_icon(xxwidgets_widget *button, const void *rgba, unsigned int width, unsigned int height, size_t stride,
+                                                         unsigned int flags);
 /* The stored copy, borrowed until the icon changes: rgba NULL when none. */
 XXWIDGETS_API xxwidgets_status xxwidgets_button_get_icon(const xxwidgets_widget *button, xxwidgets_icon *icon, unsigned int *flags);
 
@@ -1179,7 +1190,9 @@ XXWIDGETS_API xxwidgets_status xxwidgets_window_end_update(xxwidgets_widget *win
 
 /* TREEVIEW presentation. ARROWS: expand arrows without connecting lines,
  * where the platform draws lines by default (WinAPI). Default 0. */
-enum { XXWIDGETS_TREE_ARROWS = 1u << 0 };
+enum {
+    XXWIDGETS_TREE_ARROWS = 1u << 0
+};
 XXWIDGETS_API xxwidgets_status xxwidgets_treeview_set_style(xxwidgets_widget *tree, unsigned int style);
 XXWIDGETS_API unsigned int xxwidgets_treeview_style(const xxwidgets_widget *tree);
 

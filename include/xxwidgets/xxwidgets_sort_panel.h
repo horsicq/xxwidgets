@@ -44,7 +44,7 @@ typedef struct xxwidgets_sort_settings {
     int all_file_types;
     char *file_types; /* '|'-separated names */
     int all_types;
-    char *types;      /* '|'-separated names */
+    char *types; /* '|'-separated names */
     int unknown;
     char *result_directory;
     int catalog;
@@ -64,9 +64,9 @@ XXWIDGETS_API xxwidgets_status xxwidgets_sort_settings_set(char **field, const c
 typedef struct xxwidgets_sort_panel_config {
     const char *const *file_types; /* names offered by the file type picker */
     size_t file_type_count;
-    const char *const *types;      /* names offered by the type picker */
+    const char *const *types; /* names offered by the type picker */
     size_t type_count;
-    const char *variables_help;    /* shown by the "?" buttons; NULL: a built-in list */
+    const char *variables_help; /* shown by the "?" buttons; NULL: a built-in list */
 } xxwidgets_sort_panel_config;
 
 typedef struct xxwidgets_sort_panel xxwidgets_sort_panel;

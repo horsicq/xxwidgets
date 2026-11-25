@@ -32,13 +32,12 @@ xxwidgets_status xxwidgets_window_set_menu(xxwidgets_widget *window, const xxwid
     xxwidgets_menu_item *copy = NULL, *previous;
     size_t previous_count;
     xxwidgets_status status;
-    if (!window || window->kind != XXWIDGETS_WINDOW || (!items && count) || count > 4096)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!window || window->kind != XXWIDGETS_WINDOW || (!items && count) || count > 4096) return XXWIDGETS_INVALID_ARGUMENT;
     if (window->app->dispatch_depth || window->app->syncing || window->app->quit) return XXWIDGETS_BUSY;
     if (!window->app->ops->window_menu) return XXWIDGETS_UNAVAILABLE;
     for (size_t i = 0; i < count; ++i) {
-        if (!items[i].menu || !*items[i].menu || !xxwidgets_valid_utf8(items[i].menu) ||
-            (items[i].label && !xxwidgets_valid_utf8(items[i].label))) return XXWIDGETS_INVALID_ARGUMENT;
+        if (!items[i].menu || !*items[i].menu || !xxwidgets_valid_utf8(items[i].menu) || (items[i].label && !xxwidgets_valid_utf8(items[i].label)))
+            return XXWIDGETS_INVALID_ARGUMENT;
         if (items[i].label && *items[i].label) {
             if (!items[i].action || (items[i].enabled != 0 && items[i].enabled != 1)) return XXWIDGETS_INVALID_ARGUMENT;
             for (size_t j = 0; j < i; ++j)
@@ -56,7 +55,10 @@ xxwidgets_status xxwidgets_window_set_menu(xxwidgets_widget *window, const xxwid
             copy[i] = items[i];
             copy[i].menu = copy_text(items[i].menu);
             copy[i].label = copy_text(items[i].label ? items[i].label : "");
-            if (!copy[i].menu || !copy[i].label) { free_items(copy, i + 1); return XXWIDGETS_OUT_OF_MEMORY; }
+            if (!copy[i].menu || !copy[i].label) {
+                free_items(copy, i + 1);
+                return XXWIDGETS_OUT_OF_MEMORY;
+            }
         }
     }
     previous = window->menu_items;
@@ -96,14 +98,12 @@ xxwidgets_status xxwidgets_window_set_menu_item_enabled(xxwidgets_widget *window
 
 int xxwidgets_menu_can_activate(const xxwidgets_widget *window, size_t index)
 {
-    return window && window->kind == XXWIDGETS_WINDOW && index < window->menu_count &&
-        window->visible && window->enabled && !window->app->quit && !window->app->syncing &&
-        (!window->app->modal_window || window->app->modal_window == window) &&
-        *window->menu_items[index].label && window->menu_items[index].enabled;
+    return window && window->kind == XXWIDGETS_WINDOW && index < window->menu_count && window->visible && window->enabled && !window->app->quit &&
+           !window->app->syncing && (!window->app->modal_window || window->app->modal_window == window) && *window->menu_items[index].label &&
+           window->menu_items[index].enabled;
 }
 
 void xxwidgets_menu_activate(xxwidgets_widget *window, size_t index)
 {
-    if (xxwidgets_menu_can_activate(window, index))
-        xxwidgets_emit(window, XXWIDGETS_EVENT_SHORTCUT, window->menu_items[index].action);
+    if (xxwidgets_menu_can_activate(window, index)) xxwidgets_emit(window, XXWIDGETS_EVENT_SHORTCUT, window->menu_items[index].action);
 }

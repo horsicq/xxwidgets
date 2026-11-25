@@ -10,8 +10,7 @@
 
 static int session_valid(const xxwidgets_debugger_session *session)
 {
-    return session && session->ops && session->ops->abi_version >= XXWIDGETS_DEBUGGER_SESSION_ABI_LEGACY &&
-        session->ops->abi_version <= XXWIDGETS_DEBUGGER_SESSION_ABI;
+    return session && session->ops && session->ops->abi_version >= XXWIDGETS_DEBUGGER_SESSION_ABI_LEGACY && session->ops->abi_version <= XXWIDGETS_DEBUGGER_SESSION_ABI;
 }
 
 static int range_valid(uint64_t address, size_t size)
@@ -19,8 +18,7 @@ static int range_valid(uint64_t address, size_t size)
     return !size || (uint64_t)(size - 1u) <= UINT64_MAX - address;
 }
 
-static xxwidgets_status session_state_impl(const xxwidgets_debugger_session *session,
-    xxwidgets_debugger_session_state *state, int *provider_failure)
+static xxwidgets_status session_state_impl(const xxwidgets_debugger_session *session, xxwidgets_debugger_session_state *state, int *provider_failure)
 {
     xxwidgets_debugger_session_state staged = XXWIDGETS_DEBUGGER_SESSION_EMPTY;
     xxwidgets_status status;
@@ -31,20 +29,17 @@ static xxwidgets_status session_state_impl(const xxwidgets_debugger_session *ses
     status = session->ops->get_state(session->context, &staged);
     if (provider_failure) *provider_failure = status != XXWIDGETS_OK;
     if (status != XXWIDGETS_OK) return status;
-    if (staged < XXWIDGETS_DEBUGGER_SESSION_EMPTY || staged > XXWIDGETS_DEBUGGER_SESSION_HALTED)
-        return XXWIDGETS_PLATFORM_ERROR;
+    if (staged < XXWIDGETS_DEBUGGER_SESSION_EMPTY || staged > XXWIDGETS_DEBUGGER_SESSION_HALTED) return XXWIDGETS_PLATFORM_ERROR;
     *state = staged;
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_session_get_state(const xxwidgets_debugger_session *session,
-    xxwidgets_debugger_session_state *state)
+xxwidgets_status xxwidgets_debugger_session_get_state(const xxwidgets_debugger_session *session, xxwidgets_debugger_session_state *state)
 {
     return session_state_impl(session, state, NULL);
 }
 
-static xxwidgets_status session_target_impl(const xxwidgets_debugger_session *session,
-    uint64_t tid, xxwidgets_debugger_target *target, int *provider_failure)
+static xxwidgets_status session_target_impl(const xxwidgets_debugger_session *session, uint64_t tid, xxwidgets_debugger_target *target, int *provider_failure)
 {
     xxwidgets_debugger_target staged = {0};
     xxwidgets_status status;
@@ -61,48 +56,48 @@ static xxwidgets_status session_target_impl(const xxwidgets_debugger_session *se
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_session_get_target(const xxwidgets_debugger_session *session,
-    uint64_t tid, xxwidgets_debugger_target *target)
+xxwidgets_status xxwidgets_debugger_session_get_target(const xxwidgets_debugger_session *session, uint64_t tid, xxwidgets_debugger_target *target)
 {
     return session_target_impl(session, tid, target, NULL);
 }
 
-static xxwidgets_status session_read_impl(const xxwidgets_debugger_session *session,
-    uint64_t address, void *data, size_t size, size_t *done, int *provider_failure)
+static xxwidgets_status session_read_impl(const xxwidgets_debugger_session *session, uint64_t address, void *data, size_t size, size_t *done, int *provider_failure)
 {
     xxwidgets_status status;
     if (provider_failure) *provider_failure = 0;
     if (done) *done = 0;
-    if (!session_valid(session) || !done || (!data && size) || !range_valid(address, size))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!session_valid(session) || !done || (!data && size) || !range_valid(address, size)) return XXWIDGETS_INVALID_ARGUMENT;
     if (!session->ops->read_memory) return XXWIDGETS_UNAVAILABLE;
     status = session->ops->read_memory(session->context, address, data, size, done);
     if (provider_failure) *provider_failure = status != XXWIDGETS_OK;
-    if (*done > size) { *done = 0; return XXWIDGETS_PLATFORM_ERROR; }
+    if (*done > size) {
+        *done = 0;
+        return XXWIDGETS_PLATFORM_ERROR;
+    }
     return status;
 }
 
-xxwidgets_status xxwidgets_debugger_session_read_memory(const xxwidgets_debugger_session *session,
-    uint64_t address, void *data, size_t size, size_t *done)
+xxwidgets_status xxwidgets_debugger_session_read_memory(const xxwidgets_debugger_session *session, uint64_t address, void *data, size_t size, size_t *done)
 {
     return session_read_impl(session, address, data, size, done, NULL);
 }
 
-xxwidgets_status xxwidgets_debugger_session_write_memory(const xxwidgets_debugger_session *session,
-    uint64_t address, const void *data, size_t size, size_t *done)
+xxwidgets_status xxwidgets_debugger_session_write_memory(const xxwidgets_debugger_session *session, uint64_t address, const void *data, size_t size, size_t *done)
 {
     xxwidgets_status status;
     if (done) *done = 0;
-    if (!session_valid(session) || !done || (!data && size) || !range_valid(address, size))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!session_valid(session) || !done || (!data && size) || !range_valid(address, size)) return XXWIDGETS_INVALID_ARGUMENT;
     if (!session->ops->write_memory) return XXWIDGETS_UNAVAILABLE;
     status = session->ops->write_memory(session->context, address, data, size, done);
-    if (*done > size) { *done = 0; return XXWIDGETS_PLATFORM_ERROR; }
+    if (*done > size) {
+        *done = 0;
+        return XXWIDGETS_PLATFORM_ERROR;
+    }
     return status;
 }
 
-static xxwidgets_status session_decode_impl(const xxwidgets_debugger_session *session,
-    uint64_t tid, uint64_t address, char *text, size_t capacity, uint32_t *length, int *provider_failure)
+static xxwidgets_status session_decode_impl(const xxwidgets_debugger_session *session, uint64_t tid, uint64_t address, char *text, size_t capacity, uint32_t *length,
+                                            int *provider_failure)
 {
     xxwidgets_status status;
     uint32_t staged = 0;
@@ -113,54 +108,50 @@ static xxwidgets_status session_decode_impl(const xxwidgets_debugger_session *se
     if (!session->ops->disassemble) return XXWIDGETS_UNAVAILABLE;
     status = session->ops->disassemble(session->context, tid, address, text, capacity, &staged);
     if (provider_failure) *provider_failure = status != XXWIDGETS_OK;
-    if (status == XXWIDGETS_OK && (!staged || staged > 16u || !range_valid(address, staged) || !memchr(text, 0, capacity)))
-        status = XXWIDGETS_PLATFORM_ERROR;
-    if (status != XXWIDGETS_OK) { text[0] = 0; return status; }
+    if (status == XXWIDGETS_OK && (!staged || staged > 16u || !range_valid(address, staged) || !memchr(text, 0, capacity))) status = XXWIDGETS_PLATFORM_ERROR;
+    if (status != XXWIDGETS_OK) {
+        text[0] = 0;
+        return status;
+    }
     *length = staged;
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_session_disassemble(const xxwidgets_debugger_session *session,
-    uint64_t tid, uint64_t address, char *text, size_t capacity, uint32_t *length)
+xxwidgets_status xxwidgets_debugger_session_disassemble(const xxwidgets_debugger_session *session, uint64_t tid, uint64_t address, char *text, size_t capacity,
+                                                        uint32_t *length)
 {
     return session_decode_impl(session, tid, address, text, capacity, length, NULL);
 }
 
-xxwidgets_status xxwidgets_debugger_session_list_breakpoints(const xxwidgets_debugger_session *session,
-    xxwidgets_debugger_session_breakpoint *breakpoints, size_t capacity, size_t *count)
+xxwidgets_status xxwidgets_debugger_session_list_breakpoints(const xxwidgets_debugger_session *session, xxwidgets_debugger_session_breakpoint *breakpoints,
+                                                             size_t capacity, size_t *count)
 {
     if (count) *count = 0;
-    if (!session_valid(session) || !count || (!breakpoints && capacity) || capacity > SIZE_MAX / sizeof(*breakpoints))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!session_valid(session) || !count || (!breakpoints && capacity) || capacity > SIZE_MAX / sizeof(*breakpoints)) return XXWIDGETS_INVALID_ARGUMENT;
     if (!session->ops->list_breakpoints) return XXWIDGETS_UNAVAILABLE;
     return session->ops->list_breakpoints(session->context, breakpoints, capacity, count);
 }
 
-xxwidgets_status xxwidgets_debugger_session_set_breakpoint(const xxwidgets_debugger_session *session,
-    uint64_t address, uint64_t *id)
+xxwidgets_status xxwidgets_debugger_session_set_breakpoint(const xxwidgets_debugger_session *session, uint64_t address, uint64_t *id)
 {
     return xxwidgets_debugger_session_set_breakpoint_typed(session, XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE, address, id);
 }
 
-xxwidgets_status xxwidgets_debugger_session_set_breakpoint_typed(const xxwidgets_debugger_session *session,
-    xxwidgets_debugger_breakpoint_type type, uint64_t address, uint64_t *id)
+xxwidgets_status xxwidgets_debugger_session_set_breakpoint_typed(const xxwidgets_debugger_session *session, xxwidgets_debugger_breakpoint_type type, uint64_t address,
+                                                                 uint64_t *id)
 {
     uint64_t staged = 0;
     xxwidgets_status status;
     if (id) *id = 0;
-    if (!session_valid(session) || !id || type < XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE ||
-        type > XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN) return XXWIDGETS_INVALID_ARGUMENT;
-    if (session->ops->abi_version >= 2 && session->ops->set_breakpoint_typed)
-        status = session->ops->set_breakpoint_typed(session->context, type, address, &staged);
-    else if (type == XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE && session->ops->set_breakpoint)
-        status = session->ops->set_breakpoint(session->context, address, &staged);
+    if (!session_valid(session) || !id || type < XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE || type > XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN) return XXWIDGETS_INVALID_ARGUMENT;
+    if (session->ops->abi_version >= 2 && session->ops->set_breakpoint_typed) status = session->ops->set_breakpoint_typed(session->context, type, address, &staged);
+    else if (type == XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE && session->ops->set_breakpoint) status = session->ops->set_breakpoint(session->context, address, &staged);
     else return XXWIDGETS_UNAVAILABLE;
     if (status == XXWIDGETS_OK) *id = staged;
     return status;
 }
 
-xxwidgets_status xxwidgets_debugger_session_get_breakpoint_type(const xxwidgets_debugger_session *session,
-    uint64_t id, xxwidgets_debugger_breakpoint_type *type)
+xxwidgets_status xxwidgets_debugger_session_get_breakpoint_type(const xxwidgets_debugger_session *session, uint64_t id, xxwidgets_debugger_breakpoint_type *type)
 {
     xxwidgets_debugger_breakpoint_type staged = XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE;
     xxwidgets_status status;
@@ -169,21 +160,19 @@ xxwidgets_status xxwidgets_debugger_session_get_breakpoint_type(const xxwidgets_
     if (session->ops->abi_version < 2 || !session->ops->get_breakpoint_type) return XXWIDGETS_OK;
     status = session->ops->get_breakpoint_type(session->context, id, &staged);
     if (status != XXWIDGETS_OK) return status;
-    if (staged < XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE || staged > XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN)
-        return XXWIDGETS_PLATFORM_ERROR;
+    if (staged < XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE || staged > XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN) return XXWIDGETS_PLATFORM_ERROR;
     *type = staged;
     return XXWIDGETS_OK;
 }
 
 static int breakpoint_kind_valid(xxwidgets_debugger_breakpoint_type type, xxwidgets_debugger_breakpoint_access access)
 {
-    return type >= XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE && type <= XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN &&
-        access >= XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE && access <= XXWIDGETS_DEBUGGER_BREAKPOINT_READ_WRITE;
+    return type >= XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE && type <= XXWIDGETS_DEBUGGER_BREAKPOINT_HIDDEN && access >= XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE &&
+           access <= XXWIDGETS_DEBUGGER_BREAKPOINT_READ_WRITE;
 }
 
-xxwidgets_status xxwidgets_debugger_session_get_breakpoint_support(const xxwidgets_debugger_session *session,
-    uint64_t tid, xxwidgets_debugger_breakpoint_type type, xxwidgets_debugger_breakpoint_access access,
-    xxwidgets_debugger_breakpoint_support *support)
+xxwidgets_status xxwidgets_debugger_session_get_breakpoint_support(const xxwidgets_debugger_session *session, uint64_t tid, xxwidgets_debugger_breakpoint_type type,
+                                                                   xxwidgets_debugger_breakpoint_access access, xxwidgets_debugger_breakpoint_support *support)
 {
     xxwidgets_debugger_breakpoint_support staged = {0};
     xxwidgets_status status;
@@ -202,64 +191,58 @@ xxwidgets_status xxwidgets_debugger_session_get_breakpoint_support(const xxwidge
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_session_list_breakpoint_info(const xxwidgets_debugger_session *session,
-    xxwidgets_debugger_breakpoint_info *output, size_t capacity, size_t *count)
+xxwidgets_status xxwidgets_debugger_session_list_breakpoint_info(const xxwidgets_debugger_session *session, xxwidgets_debugger_breakpoint_info *output, size_t capacity,
+                                                                 size_t *count)
 {
     xxwidgets_status status;
     xxwidgets_debugger_session_breakpoint *legacy = NULL;
     if (count) *count = 0;
-    if (!session_valid(session) || !count || (!output && capacity) || capacity > SIZE_MAX / sizeof(*output))
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (session->ops->abi_version >= 3 && session->ops->list_breakpoint_info)
-        return session->ops->list_breakpoint_info(session->context, output, capacity, count);
+    if (!session_valid(session) || !count || (!output && capacity) || capacity > SIZE_MAX / sizeof(*output)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (session->ops->abi_version >= 3 && session->ops->list_breakpoint_info) return session->ops->list_breakpoint_info(session->context, output, capacity, count);
     if (capacity) {
         legacy = calloc(capacity, sizeof(*legacy));
         if (!legacy) return XXWIDGETS_OUT_OF_MEMORY;
     }
     status = xxwidgets_debugger_session_list_breakpoints(session, legacy, capacity, count);
-    if (status == XXWIDGETS_OK) for (size_t i = 0; i < *count && i < capacity; ++i) {
-        xxwidgets_debugger_breakpoint_type type;
-        status = xxwidgets_debugger_session_get_breakpoint_type(session, legacy[i].id, &type);
-        if (status != XXWIDGETS_OK) break;
-        output[i] = (xxwidgets_debugger_breakpoint_info){legacy[i].id,
-            {legacy[i].address, type, XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE, 1}, legacy[i].enabled};
-    }
+    if (status == XXWIDGETS_OK)
+        for (size_t i = 0; i < *count && i < capacity; ++i) {
+            xxwidgets_debugger_breakpoint_type type;
+            status = xxwidgets_debugger_session_get_breakpoint_type(session, legacy[i].id, &type);
+            if (status != XXWIDGETS_OK) break;
+            output[i] = (xxwidgets_debugger_breakpoint_info){legacy[i].id, {legacy[i].address, type, XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE, 1}, legacy[i].enabled};
+        }
     free(legacy);
     return status;
 }
 
-xxwidgets_status xxwidgets_debugger_session_set_breakpoint_spec(const xxwidgets_debugger_session *session,
-    const xxwidgets_debugger_breakpoint_spec *spec, uint64_t *id)
+xxwidgets_status xxwidgets_debugger_session_set_breakpoint_spec(const xxwidgets_debugger_session *session, const xxwidgets_debugger_breakpoint_spec *spec, uint64_t *id)
 {
     uint64_t staged = 0;
     xxwidgets_status status;
     if (id) *id = 0;
     if (!session_valid(session) || !spec || !id || !breakpoint_kind_valid(spec->type, spec->access) ||
-        !(spec->size == 1 || spec->size == 2 || spec->size == 4 || spec->size == 8) ||
-        !range_valid(spec->address, spec->size) ||
-        (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE && spec->size != 1)) return XXWIDGETS_INVALID_ARGUMENT;
-    if (session->ops->abi_version >= 3 && session->ops->set_breakpoint_spec)
-        status = session->ops->set_breakpoint_spec(session->context, spec, &staged);
-    else if (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE)
-        return xxwidgets_debugger_session_set_breakpoint_typed(session, spec->type, spec->address, id);
+        !(spec->size == 1 || spec->size == 2 || spec->size == 4 || spec->size == 8) || !range_valid(spec->address, spec->size) ||
+        (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE && spec->size != 1))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    if (session->ops->abi_version >= 3 && session->ops->set_breakpoint_spec) status = session->ops->set_breakpoint_spec(session->context, spec, &staged);
+    else if (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE) return xxwidgets_debugger_session_set_breakpoint_typed(session, spec->type, spec->address, id);
     else return XXWIDGETS_UNAVAILABLE;
     if (status == XXWIDGETS_OK) *id = staged;
     return status;
 }
 
-static int breakpoint_policy_normalize(const xxwidgets_debugger_breakpoint_policy *input,
-    xxwidgets_debugger_breakpoint_policy *output)
+static int breakpoint_policy_normalize(const xxwidgets_debugger_breakpoint_policy *input, xxwidgets_debugger_breakpoint_policy *output)
 {
     if (!input || input->mode < XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_ALWAYS || input->mode > XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_COUNT ||
-        (input->mode == XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_COUNT && !input->count)) return 0;
+        (input->mode == XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_COUNT && !input->count))
+        return 0;
     output->mode = input->mode;
-    output->count = input->mode == XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_ALWAYS ? 0 :
-        input->mode == XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_ONESHOT ? 1 : input->count;
+    output->count = input->mode == XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_ALWAYS ? 0 : input->mode == XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_ONESHOT ? 1 : input->count;
     return 1;
 }
 
-xxwidgets_status xxwidgets_debugger_session_get_breakpoint_policy(const xxwidgets_debugger_session *session,
-    uint64_t id, xxwidgets_debugger_breakpoint_policy *policy, uint64_t *hit_count)
+xxwidgets_status xxwidgets_debugger_session_get_breakpoint_policy(const xxwidgets_debugger_session *session, uint64_t id, xxwidgets_debugger_breakpoint_policy *policy,
+                                                                  uint64_t *hit_count)
 {
     xxwidgets_debugger_breakpoint_policy staged = {0}, normalized = {0};
     uint64_t hits = 0;
@@ -270,19 +253,20 @@ xxwidgets_status xxwidgets_debugger_session_get_breakpoint_policy(const xxwidget
     xxwidgets_status status = session->ops->get_breakpoint_policy(session->context, id, &staged, &hits);
     if (status != XXWIDGETS_OK) return status;
     if (!breakpoint_policy_normalize(&staged, &normalized)) return XXWIDGETS_PLATFORM_ERROR;
-    *policy = normalized; *hit_count = hits;
+    *policy = normalized;
+    *hit_count = hits;
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_session_set_breakpoint_with_policy(const xxwidgets_debugger_session *session,
-    const xxwidgets_debugger_breakpoint_spec *spec, const xxwidgets_debugger_breakpoint_policy *policy, uint64_t *id)
+xxwidgets_status xxwidgets_debugger_session_set_breakpoint_with_policy(const xxwidgets_debugger_session *session, const xxwidgets_debugger_breakpoint_spec *spec,
+                                                                       const xxwidgets_debugger_breakpoint_policy *policy, uint64_t *id)
 {
     xxwidgets_debugger_breakpoint_policy normalized = {0};
     uint64_t staged = 0;
     if (id) *id = 0;
-    if (!session_valid(session) || !id || !spec || !breakpoint_policy_normalize(policy, &normalized) ||
-        !breakpoint_kind_valid(spec->type, spec->access) || !(spec->size == 1 || spec->size == 2 || spec->size == 4 || spec->size == 8) ||
-        !range_valid(spec->address, spec->size) || (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE && spec->size != 1))
+    if (!session_valid(session) || !id || !spec || !breakpoint_policy_normalize(policy, &normalized) || !breakpoint_kind_valid(spec->type, spec->access) ||
+        !(spec->size == 1 || spec->size == 2 || spec->size == 4 || spec->size == 8) || !range_valid(spec->address, spec->size) ||
+        (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE && spec->size != 1))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (session->ops->abi_version < 4 || !session->ops->set_breakpoint_with_policy) {
         if (normalized.mode != XXWIDGETS_DEBUGGER_BREAKPOINT_HIT_ALWAYS) return XXWIDGETS_UNAVAILABLE;
@@ -293,8 +277,7 @@ xxwidgets_status xxwidgets_debugger_session_set_breakpoint_with_policy(const xxw
     return status;
 }
 
-xxwidgets_status xxwidgets_debugger_session_get_software_breakpoint_encodings(const xxwidgets_debugger_session *session,
-    uint64_t tid, uint32_t *mask)
+xxwidgets_status xxwidgets_debugger_session_get_software_breakpoint_encodings(const xxwidgets_debugger_session *session, uint64_t tid, uint32_t *mask)
 {
     uint32_t staged = 1u << XXWIDGETS_DEBUGGER_SW_DEFAULT;
     if (mask) *mask = 0;
@@ -302,15 +285,14 @@ xxwidgets_status xxwidgets_debugger_session_get_software_breakpoint_encodings(co
     if (session->ops->abi_version >= 5 && session->ops->get_software_breakpoint_encodings) {
         xxwidgets_status status = session->ops->get_software_breakpoint_encodings(session->context, tid, &staged);
         if (status != XXWIDGETS_OK) return status;
-        if ((staged & ~((1u << (XXWIDGETS_DEBUGGER_SW_HLT + 1)) - 1u)) || !(staged & (1u << XXWIDGETS_DEBUGGER_SW_DEFAULT)))
-            return XXWIDGETS_PLATFORM_ERROR;
+        if ((staged & ~((1u << (XXWIDGETS_DEBUGGER_SW_HLT + 1)) - 1u)) || !(staged & (1u << XXWIDGETS_DEBUGGER_SW_DEFAULT))) return XXWIDGETS_PLATFORM_ERROR;
     }
     *mask = staged;
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_session_get_breakpoint_encoding(const xxwidgets_debugger_session *session,
-    uint64_t id, xxwidgets_debugger_software_encoding *encoding)
+xxwidgets_status xxwidgets_debugger_session_get_breakpoint_encoding(const xxwidgets_debugger_session *session, uint64_t id,
+                                                                    xxwidgets_debugger_software_encoding *encoding)
 {
     xxwidgets_debugger_software_encoding staged = XXWIDGETS_DEBUGGER_SW_DEFAULT;
     if (encoding) *encoding = XXWIDGETS_DEBUGGER_SW_DEFAULT;
@@ -324,17 +306,16 @@ xxwidgets_status xxwidgets_debugger_session_get_breakpoint_encoding(const xxwidg
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_session_set_breakpoint_ex(const xxwidgets_debugger_session *session,
-    const xxwidgets_debugger_breakpoint_spec *spec, const xxwidgets_debugger_breakpoint_policy *policy,
-    xxwidgets_debugger_software_encoding encoding, uint64_t *id)
+xxwidgets_status xxwidgets_debugger_session_set_breakpoint_ex(const xxwidgets_debugger_session *session, const xxwidgets_debugger_breakpoint_spec *spec,
+                                                              const xxwidgets_debugger_breakpoint_policy *policy, xxwidgets_debugger_software_encoding encoding,
+                                                              uint64_t *id)
 {
     xxwidgets_debugger_breakpoint_policy normalized = {0};
     uint64_t staged = 0;
     if (id) *id = 0;
-    if (!session_valid(session) || !id || !spec || !breakpoint_policy_normalize(policy, &normalized) ||
-        !breakpoint_kind_valid(spec->type, spec->access) || !(spec->size == 1 || spec->size == 2 || spec->size == 4 || spec->size == 8) ||
-        !range_valid(spec->address, spec->size) || (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE && spec->size != 1) ||
-        encoding < XXWIDGETS_DEBUGGER_SW_DEFAULT || encoding > XXWIDGETS_DEBUGGER_SW_HLT ||
+    if (!session_valid(session) || !id || !spec || !breakpoint_policy_normalize(policy, &normalized) || !breakpoint_kind_valid(spec->type, spec->access) ||
+        !(spec->size == 1 || spec->size == 2 || spec->size == 4 || spec->size == 8) || !range_valid(spec->address, spec->size) ||
+        (spec->access == XXWIDGETS_DEBUGGER_BREAKPOINT_EXECUTE && spec->size != 1) || encoding < XXWIDGETS_DEBUGGER_SW_DEFAULT || encoding > XXWIDGETS_DEBUGGER_SW_HLT ||
         (encoding != XXWIDGETS_DEBUGGER_SW_DEFAULT && spec->type != XXWIDGETS_DEBUGGER_BREAKPOINT_SOFTWARE))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (session->ops->abi_version < 5 || !session->ops->set_breakpoint_ex) {
@@ -374,8 +355,7 @@ xxwidgets_status xxwidgets_debugger_session_interrupt(const xxwidgets_debugger_s
     return session->ops->interrupt(session->context);
 }
 
-xxwidgets_status xxwidgets_debugger_session_poll(const xxwidgets_debugger_session *session,
-    uint32_t timeout_ms, xxwidgets_debugger_session_event *event)
+xxwidgets_status xxwidgets_debugger_session_poll(const xxwidgets_debugger_session *session, uint32_t timeout_ms, xxwidgets_debugger_session_event *event)
 {
     xxwidgets_debugger_session_event staged = {0};
     xxwidgets_status status;
@@ -384,8 +364,8 @@ xxwidgets_status xxwidgets_debugger_session_poll(const xxwidgets_debugger_sessio
     if (!session->ops->poll) return XXWIDGETS_UNAVAILABLE;
     status = session->ops->poll(session->context, timeout_ms, &staged);
     if (status != XXWIDGETS_OK) return status;
-    if (staged.kind < XXWIDGETS_DEBUGGER_EVENT_NONE || staged.kind > XXWIDGETS_DEBUGGER_EVENT_OTHER ||
-        (!staged.data && staged.data_size)) return XXWIDGETS_PLATFORM_ERROR;
+    if (staged.kind < XXWIDGETS_DEBUGGER_EVENT_NONE || staged.kind > XXWIDGETS_DEBUGGER_EVENT_OTHER || (!staged.data && staged.data_size))
+        return XXWIDGETS_PLATFORM_ERROR;
     *event = staged;
     return XXWIDGETS_OK;
 }
@@ -409,8 +389,7 @@ typedef struct debugger_snapshot {
     xxwidgets_debugger_session_error first_error;
 } debugger_snapshot;
 
-static void capture_error(xxwidgets_debugger_session_error *error, const xxwidgets_debugger_session *session,
-    xxwidgets_status status)
+static void capture_error(xxwidgets_debugger_session_error *error, const xxwidgets_debugger_session *session, xxwidgets_status status)
 {
     const char *message = NULL;
     memset(error, 0, sizeof(*error));
@@ -424,21 +403,21 @@ static void capture_error(xxwidgets_debugger_session_error *error, const xxwidge
     snprintf(error->message, sizeof(error->message), "%s", message);
 }
 
-static void debugger_error(debugger_snapshot *snapshot, unsigned pane, const xxwidgets_debugger_session *session,
-    xxwidgets_status status, size_t received, size_t requested)
+static void debugger_error(debugger_snapshot *snapshot, unsigned pane, const xxwidgets_debugger_session *session, xxwidgets_status status, size_t received,
+                           size_t requested)
 {
     xxwidgets_debugger_session_error error;
     /* An OK short read is a provider-independent availability error. Avoid
      * copying diagnostics left over from an unrelated provider operation. */
-    if (status == XXWIDGETS_OK) { status = XXWIDGETS_UNAVAILABLE; session = NULL; }
+    if (status == XXWIDGETS_OK) {
+        status = XXWIDGETS_UNAVAILABLE;
+        session = NULL;
+    }
     capture_error(&error, session, status);
     if (snapshot->first_error.status == XXWIDGETS_OK) snapshot->first_error = error;
     if (snapshot->pane_status[pane][0]) return;
-    if (requested)
-        snprintf(snapshot->pane_status[pane], sizeof(snapshot->pane_status[pane]),
-            "%.110s (%zu/%zu)", error.message, received, requested);
-    else
-        snprintf(snapshot->pane_status[pane], sizeof(snapshot->pane_status[pane]), "%s", error.message);
+    if (requested) snprintf(snapshot->pane_status[pane], sizeof(snapshot->pane_status[pane]), "%.110s (%zu/%zu)", error.message, received, requested);
+    else snprintf(snapshot->pane_status[pane], sizeof(snapshot->pane_status[pane]), "%s", error.message);
 }
 
 static void mark_register_changes(xxwidgets_debugger *view, debugger_snapshot *snapshot)
@@ -451,16 +430,15 @@ static void mark_register_changes(xxwidgets_debugger *view, debugger_snapshot *s
             xxwidgets_debugger_register previous;
             if (xxwidgets_debugger_registers_get_row(table, j, &previous) != XXWIDGETS_OK) break;
             if (previous.name && !strcmp(previous.name, snapshot->registers.rows[i].name)) {
-                if (!previous.value || strcmp(previous.value, snapshot->registers.rows[i].value))
-                    snapshot->registers.rows[i].flags |= XXWIDGETS_DEBUGGER_CHANGED;
+                if (!previous.value || strcmp(previous.value, snapshot->registers.rows[i].value)) snapshot->registers.rows[i].flags |= XXWIDGETS_DEBUGGER_CHANGED;
                 break;
             }
         }
     }
 }
 
-static void read_instructions(debugger_snapshot *snapshot, const xxwidgets_debugger_session *session, uint64_t tid,
-    uint64_t address, uint64_t pc, size_t count, const xxwidgets_debugger_session_breakpoint *breakpoints, size_t breakpoint_count)
+static void read_instructions(debugger_snapshot *snapshot, const xxwidgets_debugger_session *session, uint64_t tid, uint64_t address, uint64_t pc, size_t count,
+                              const xxwidgets_debugger_session_breakpoint *breakpoints, size_t breakpoint_count)
 {
     size_t i;
     for (i = 0; i < count; ++i) {
@@ -470,15 +448,13 @@ static void read_instructions(debugger_snapshot *snapshot, const xxwidgets_debug
         xxwidgets_status status;
         int provider_failure;
         xxwidgets_debugger_instruction *row = &snapshot->instructions[i];
-        status = session_decode_impl(session, tid, address, snapshot->instruction_text[i],
-            DEBUGGER_INSTRUCTION_TEXT, &length, &provider_failure);
+        status = session_decode_impl(session, tid, address, snapshot->instruction_text[i], DEBUGGER_INSTRUCTION_TEXT, &length, &provider_failure);
         if (status != XXWIDGETS_OK) {
             debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_DISASM, provider_failure ? session : NULL, status, i, count);
             break;
         }
         status = session_read_impl(session, address, bytes, length, &got, &provider_failure);
-        if (status != XXWIDGETS_OK || got != length)
-            debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_DISASM, provider_failure ? session : NULL, status, got, length);
+        if (status != XXWIDGETS_OK || got != length) debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_DISASM, provider_failure ? session : NULL, status, got, length);
         for (j = 0; j < length; ++j) {
             char *at = snapshot->instruction_bytes[i] + j * 3u;
             if (j < got) snprintf(at, 4u, "%02X%s", (unsigned)bytes[j], j + 1u < length ? " " : "");
@@ -490,12 +466,10 @@ static void read_instructions(debugger_snapshot *snapshot, const xxwidgets_debug
         row->comment = "";
         if (address == pc) row->flags |= XXWIDGETS_DEBUGGER_CURRENT;
         for (j = 0; j < breakpoint_count; ++j)
-            if (breakpoints[j].enabled && breakpoints[j].address == address)
-                row->flags |= XXWIDGETS_DEBUGGER_BREAKPOINT;
+            if (breakpoints[j].enabled && breakpoints[j].address == address) row->flags |= XXWIDGETS_DEBUGGER_BREAKPOINT;
         ++snapshot->instruction_count;
         if ((uint64_t)length > UINT64_MAX - address) {
-            if (i + 1u < count)
-                debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_DISASM, NULL, XXWIDGETS_UNAVAILABLE, i + 1u, count);
+            if (i + 1u < count) debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_DISASM, NULL, XXWIDGETS_UNAVAILABLE, i + 1u, count);
             break;
         }
         address += length;
@@ -513,12 +487,10 @@ static void read_memory(debugger_snapshot *snapshot, const xxwidgets_debugger_se
     }
     status = session_read_impl(session, address, snapshot->memory, size, &snapshot->memory_size, &provider_failure);
     if (status != XXWIDGETS_OK || snapshot->memory_size != size)
-        debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_HEX, provider_failure ? session : NULL,
-            status, snapshot->memory_size, size);
+        debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_HEX, provider_failure ? session : NULL, status, snapshot->memory_size, size);
 }
 
-static void read_stack(debugger_snapshot *snapshot, const xxwidgets_debugger_session *session, uint64_t address,
-    const xxwidgets_debugger_target *target, size_t count)
+static void read_stack(debugger_snapshot *snapshot, const xxwidgets_debugger_session *session, uint64_t address, const xxwidgets_debugger_target *target, size_t count)
 {
     size_t word_size = xxwidgets_debugger_arch_word_size(target->cpu.arch);
     size_t size = count * word_size, got = 0, i;
@@ -529,8 +501,7 @@ static void read_stack(debugger_snapshot *snapshot, const xxwidgets_debugger_ses
         return;
     }
     status = session_read_impl(session, address, snapshot->stack_bytes, size, &got, &provider_failure);
-    if (status != XXWIDGETS_OK || got != size)
-        debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_STACK, provider_failure ? session : NULL, status, got, size);
+    if (status != XXWIDGETS_OK || got != size) debugger_error(snapshot, XXWIDGETS_DEBUGGER_CONTROL_STACK, provider_failure ? session : NULL, status, got, size);
     snapshot->stack_count = got ? (got + word_size - 1u) / word_size : 1u;
     for (i = 0; i < snapshot->stack_count; ++i) {
         xxwidgets_debugger_stack_entry *row = &snapshot->stack[i];
@@ -540,12 +511,9 @@ static void read_stack(debugger_snapshot *snapshot, const xxwidgets_debugger_ses
         row->comment = snapshot->stack_comments[i];
         if (row->address == target->sp) row->flags |= XXWIDGETS_DEBUGGER_CURRENT;
         if (available > word_size) available = word_size;
-        (void)xxwidgets_debugger_format_stack_word(target->cpu.arch, target->big_endian,
-            snapshot->stack_bytes + offset, available, snapshot->stack_values[i]);
-        if (available < word_size)
-            snprintf(snapshot->stack_comments[i], sizeof(snapshot->stack_comments[i]), "%s", got ? "partial read" : "unreadable");
-        else if (row->address == target->sp)
-            snprintf(snapshot->stack_comments[i], sizeof(snapshot->stack_comments[i]), "SP");
+        (void)xxwidgets_debugger_format_stack_word(target->cpu.arch, target->big_endian, snapshot->stack_bytes + offset, available, snapshot->stack_values[i]);
+        if (available < word_size) snprintf(snapshot->stack_comments[i], sizeof(snapshot->stack_comments[i]), "%s", got ? "partial read" : "unreadable");
+        else if (row->address == target->sp) snprintf(snapshot->stack_comments[i], sizeof(snapshot->stack_comments[i]), "SP");
     }
 }
 
@@ -556,32 +524,21 @@ static xxwidgets_status apply_snapshot(xxwidgets_debugger *view, const debugger_
     for (pane = 0; pane < 4u && status == XXWIDGETS_OK; ++pane) {
         if (!snapshot->enabled[pane]) continue;
         switch (pane) {
-        case XXWIDGETS_DEBUGGER_CONTROL_DISASM:
-            status = xxwidgets_debugger_set_disassembly(view, snapshot->instructions, snapshot->instruction_count);
-            break;
-        case XXWIDGETS_DEBUGGER_CONTROL_REGISTERS:
-            status = xxwidgets_debugger_set_registers(view, snapshot->registers.rows, snapshot->registers.count);
-            break;
-        case XXWIDGETS_DEBUGGER_CONTROL_HEX:
-            status = xxwidgets_debugger_set_memory(view, snapshot->memory_address, snapshot->memory, snapshot->memory_size);
-            break;
-        default:
-            status = xxwidgets_debugger_set_stack(view, snapshot->stack, snapshot->stack_count);
-            break;
+            case XXWIDGETS_DEBUGGER_CONTROL_DISASM: status = xxwidgets_debugger_set_disassembly(view, snapshot->instructions, snapshot->instruction_count); break;
+            case XXWIDGETS_DEBUGGER_CONTROL_REGISTERS: status = xxwidgets_debugger_set_registers(view, snapshot->registers.rows, snapshot->registers.count); break;
+            case XXWIDGETS_DEBUGGER_CONTROL_HEX: status = xxwidgets_debugger_set_memory(view, snapshot->memory_address, snapshot->memory, snapshot->memory_size); break;
+            default: status = xxwidgets_debugger_set_stack(view, snapshot->stack, snapshot->stack_count); break;
         }
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_debugger_set_pane_status(view, (xxwidgets_debugger_control_id)pane, snapshot->pane_status[pane]);
+        if (status == XXWIDGETS_OK) status = xxwidgets_debugger_set_pane_status(view, (xxwidgets_debugger_control_id)pane, snapshot->pane_status[pane]);
     }
     return status;
 }
 
-xxwidgets_status xxwidgets_debugger_refresh_session(xxwidgets_debugger *view, const xxwidgets_debugger_session *session,
-    uint64_t tid, const xxwidgets_debugger_refresh_options *options, xxwidgets_debugger_session_error *error)
+xxwidgets_status xxwidgets_debugger_refresh_session(xxwidgets_debugger *view, const xxwidgets_debugger_session *session, uint64_t tid,
+                                                    const xxwidgets_debugger_refresh_options *options, xxwidgets_debugger_session_error *error)
 {
     xxwidgets_debugger_refresh_options defaults = {0};
-    static const xxwidgets_kind compatible_kinds[] = {
-        XXWIDGETS_DEBUGGER_DISASM, XXWIDGETS_DEBUGGER_REGISTERS, XXWIDGETS_HEXVIEW, XXWIDGETS_DEBUGGER_STACK
-    };
+    static const xxwidgets_kind compatible_kinds[] = {XXWIDGETS_DEBUGGER_DISASM, XXWIDGETS_DEBUGGER_REGISTERS, XXWIDGETS_HEXVIEW, XXWIDGETS_DEBUGGER_STACK};
     xxwidgets_debugger_session_state state;
     xxwidgets_debugger_target target = {0};
     xxwidgets_debugger_session_breakpoint *breakpoints = NULL;
@@ -597,8 +554,8 @@ xxwidgets_status xxwidgets_debugger_refresh_session(xxwidgets_debugger *view, co
     instruction_count = options->instruction_count ? options->instruction_count : 32u;
     memory_size = options->memory_size ? options->memory_size : 256u;
     stack_count = options->stack_count ? options->stack_count : 32u;
-    if (instruction_count > XXWIDGETS_DEBUGGER_MAX_INSTRUCTIONS || memory_size > XXWIDGETS_DEBUGGER_MAX_MEMORY ||
-        stack_count > XXWIDGETS_DEBUGGER_MAX_STACK) return XXWIDGETS_INVALID_ARGUMENT;
+    if (instruction_count > XXWIDGETS_DEBUGGER_MAX_INSTRUCTIONS || memory_size > XXWIDGETS_DEBUGGER_MAX_MEMORY || stack_count > XXWIDGETS_DEBUGGER_MAX_STACK)
+        return XXWIDGETS_INVALID_ARGUMENT;
     status = session_state_impl(session, &state, &provider_failure);
     if (status != XXWIDGETS_OK) {
         if (error) capture_error(error, provider_failure ? session : NULL, status);
@@ -618,8 +575,8 @@ xxwidgets_status xxwidgets_debugger_refresh_session(xxwidgets_debugger *view, co
         any_enabled |= enabled[pane];
     }
     if (!any_enabled) return XXWIDGETS_OK;
-    need_target = enabled[XXWIDGETS_DEBUGGER_CONTROL_DISASM] || enabled[XXWIDGETS_DEBUGGER_CONTROL_REGISTERS] ||
-        enabled[XXWIDGETS_DEBUGGER_CONTROL_STACK] || (enabled[XXWIDGETS_DEBUGGER_CONTROL_HEX] && !options->has_memory_address);
+    need_target = enabled[XXWIDGETS_DEBUGGER_CONTROL_DISASM] || enabled[XXWIDGETS_DEBUGGER_CONTROL_REGISTERS] || enabled[XXWIDGETS_DEBUGGER_CONTROL_STACK] ||
+                  (enabled[XXWIDGETS_DEBUGGER_CONTROL_HEX] && !options->has_memory_address);
     if (need_target) {
         status = session_target_impl(session, tid, &target, &provider_failure);
         if (status != XXWIDGETS_OK) {
@@ -635,7 +592,10 @@ xxwidgets_status xxwidgets_debugger_refresh_session(xxwidgets_debugger *view, co
     stack_address = options->has_stack_address ? options->stack_address : target.sp;
     if (enabled[XXWIDGETS_DEBUGGER_CONTROL_REGISTERS]) {
         status = xxwidgets_debugger_format_registers(&target.cpu, &snapshot->registers);
-        if (status != XXWIDGETS_OK) { free(snapshot); return status; }
+        if (status != XXWIDGETS_OK) {
+            free(snapshot);
+            return status;
+        }
         mark_register_changes(view, snapshot);
     }
     if (enabled[XXWIDGETS_DEBUGGER_CONTROL_DISASM] && session->ops->list_breakpoints) {
@@ -644,11 +604,17 @@ xxwidgets_status xxwidgets_debugger_refresh_session(xxwidgets_debugger *view, co
         if ((status == XXWIDGETS_OK || status == XXWIDGETS_BUFFER_TOO_SMALL) && breakpoint_count) {
             breakpoint_capacity = breakpoint_count < DEBUGGER_BREAKPOINT_LIMIT ? breakpoint_count : DEBUGGER_BREAKPOINT_LIMIT;
             breakpoints = (xxwidgets_debugger_session_breakpoint *)calloc(breakpoint_capacity, sizeof(*breakpoints));
-            if (!breakpoints) { free(snapshot); return XXWIDGETS_OUT_OF_MEMORY; }
+            if (!breakpoints) {
+                free(snapshot);
+                return XXWIDGETS_OUT_OF_MEMORY;
+            }
             status = xxwidgets_debugger_session_list_breakpoints(session, breakpoints, breakpoint_capacity, &breakpoint_count);
             if (breakpoint_count > breakpoint_capacity) {
                 breakpoint_count = breakpoint_capacity;
-                if (status == XXWIDGETS_OK) { status = XXWIDGETS_BUFFER_TOO_SMALL; diagnostic_session = NULL; }
+                if (status == XXWIDGETS_OK) {
+                    status = XXWIDGETS_BUFFER_TOO_SMALL;
+                    diagnostic_session = NULL;
+                }
             }
         }
         if (status != XXWIDGETS_OK) {

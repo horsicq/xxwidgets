@@ -173,7 +173,8 @@ size_t xxwidgets_window_shortcut_count(const xxwidgets_widget *window)
 xxwidgets_status xxwidgets_window_set_shortcut_filter(xxwidgets_widget *window, xxwidgets_shortcut_filter_fn filter, void *user)
 {
     if (!window || window->kind != XXWIDGETS_WINDOW) return XXWIDGETS_INVALID_ARGUMENT;
-    window->shortcut_filter = filter; window->shortcut_filter_user = filter ? user : NULL;
+    window->shortcut_filter = filter;
+    window->shortcut_filter_user = filter ? user : NULL;
     return XXWIDGETS_OK;
 }
 
@@ -219,7 +220,8 @@ int xxwidgets_command_matches(const xxwidgets_command_item *item, const char *fi
         const char *end = term;
         while (*end && *end != ' ' && *end != '\t') ++end;
         size_t length = (size_t)(end - term);
-        if (length && !command_contains(item->label, term, length) && !command_contains(item->detail, term, length) && !command_contains(item->shortcut, term, length)) return 0;
+        if (length && !command_contains(item->label, term, length) && !command_contains(item->detail, term, length) && !command_contains(item->shortcut, term, length))
+            return 0;
         term = end;
     }
     return 1;

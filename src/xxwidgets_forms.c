@@ -15,17 +15,18 @@ typedef struct form_modal {
     xxwidgets_event_fn previous_event;
     void *previous_user;
     int done, pending, enabled, disabled, attached;
-    xxwidgets_widget *filter; int filter_changed;
+    xxwidgets_widget *filter;
+    int filter_changed;
     xxwidgets_status failure;
-    const xxwidgets_canvas_region *canvas_regions;size_t canvas_region_count;
+    const xxwidgets_canvas_region *canvas_regions;
+    size_t canvas_region_count;
     xxwidgets_widget *canvas_status;
     xxwidgets_widget *hex_choose, *hex_default;
 } form_modal;
 
 static int owner_valid(xxwidgets_widget *owner, const char *title, int height)
 {
-    return owner && owner->kind == XXWIDGETS_WINDOW && title && xxwidgets_valid_utf8(title) &&
-        owner->rect.x <= INT_MAX - 74 && owner->rect.y <= INT_MAX - height;
+    return owner && owner->kind == XXWIDGETS_WINDOW && title && xxwidgets_valid_utf8(title) && owner->rect.x <= INT_MAX - 74 && owner->rect.y <= INT_MAX - height;
 }
 
 /* ENTROPY_PLOT has an internal selected sample, rather than the generic
@@ -41,7 +42,9 @@ static xxwidgets_status form_plot_select(form_modal *modal, int value)
     --plot->app->syncing;
     if (status != XXWIDGETS_OK) {
         plot->value = previous;
-        ++plot->app->syncing; (void)plot->app->ops->sync(plot); --plot->app->syncing;
+        ++plot->app->syncing;
+        (void)plot->app->ops->sync(plot);
+        --plot->app->syncing;
     }
     return status;
 }
@@ -54,18 +57,36 @@ static void form_event(xxwidgets_app *app, const xxwidgets_event *event, void *u
     else if (event->widget == modal->filter && event->type == XXWIDGETS_EVENT_CHANGE) modal->filter_changed = 1;
     else if (event->widget == modal->filter && event->type == XXWIDGETS_EVENT_ACTIVATE) modal->pending = 1;
     else if (event->widget == modal->list && event->type == XXWIDGETS_EVENT_ACTIVATE) modal->pending = 1;
-    else if (modal->plot && modal->plot->kind==XXWIDGETS_CANVAS && event->type==XXWIDGETS_EVENT_SELECT && (event->widget==modal->plot||event->widget==modal->list)) {
-        if(event->widget==modal->plot){size_t region=SIZE_MAX;for(size_t i=0;i<modal->canvas_region_count;++i){const xxwidgets_canvas_region *r=modal->canvas_regions+i;if((unsigned)event->x>=r->x&&(unsigned)event->x-r->x<r->width&&(unsigned)event->y>=r->y&&(unsigned)event->y-r->y<r->height){region=i;break;}}if(region!=SIZE_MAX)xxwidgets_widget_set_value(modal->list,(int)region);char text[128];snprintf(text,sizeof(text),"Pixel %d,%d | index %d | Enter selects; Tab changes focus",event->x,event->y,event->value);xxwidgets_widget_set_text(modal->canvas_status,text);}
-        else if(event->value>=0&&(size_t)event->value<modal->canvas_region_count){const xxwidgets_canvas_region *r=modal->canvas_regions+event->value;xxwidgets_canvas_select(modal->plot,r->x+r->width/2,r->y+r->height/2);xxwidgets_widget_set_text(modal->canvas_status,r->label);}
-    }
-    else if (modal->plot && modal->plot->kind==XXWIDGETS_CANVAS && event->widget==modal->plot && event->type==XXWIDGETS_EVENT_ACTIVATE) modal->pending=1;
+    else if (modal->plot && modal->plot->kind == XXWIDGETS_CANVAS && event->type == XXWIDGETS_EVENT_SELECT &&
+             (event->widget == modal->plot || event->widget == modal->list)) {
+        if (event->widget == modal->plot) {
+            size_t region = SIZE_MAX;
+            for (size_t i = 0; i < modal->canvas_region_count; ++i) {
+                const xxwidgets_canvas_region *r = modal->canvas_regions + i;
+                if ((unsigned)event->x >= r->x && (unsigned)event->x - r->x < r->width && (unsigned)event->y >= r->y && (unsigned)event->y - r->y < r->height) {
+                    region = i;
+                    break;
+                }
+            }
+            if (region != SIZE_MAX) xxwidgets_widget_set_value(modal->list, (int)region);
+            char text[128];
+            snprintf(text, sizeof(text), "Pixel %d,%d | index %d | Enter selects; Tab changes focus", event->x, event->y, event->value);
+            xxwidgets_widget_set_text(modal->canvas_status, text);
+        } else if (event->value >= 0 && (size_t)event->value < modal->canvas_region_count) {
+            const xxwidgets_canvas_region *r = modal->canvas_regions + event->value;
+            xxwidgets_canvas_select(modal->plot, r->x + r->width / 2, r->y + r->height / 2);
+            xxwidgets_widget_set_text(modal->canvas_status, r->label);
+        }
+    } else if (modal->plot && modal->plot->kind == XXWIDGETS_CANVAS && event->widget == modal->plot && event->type == XXWIDGETS_EVENT_ACTIVATE) modal->pending = 1;
     else if (modal->plot && event->type == XXWIDGETS_EVENT_SELECT) {
         xxwidgets_status status = XXWIDGETS_OK;
         if (event->widget == modal->plot) status = xxwidgets_widget_set_value(modal->list, event->value);
         if (status == XXWIDGETS_OK && (event->widget == modal->plot || event->widget == modal->list)) status = form_plot_select(modal, event->value);
-        if (status != XXWIDGETS_OK) { modal->failure = status; modal->done = 1; }
-    }
-    else if (event->type == XXWIDGETS_EVENT_CLICK) {
+        if (status != XXWIDGETS_OK) {
+            modal->failure = status;
+            modal->done = 1;
+        }
+    } else if (event->type == XXWIDGETS_EVENT_CLICK) {
         if (event->widget == modal->ok) modal->pending = 1;
         else if (event->widget == modal->cancel) modal->done = 1;
         else if (event->widget == modal->hex_choose) modal->pending = 2;
@@ -78,15 +99,22 @@ static xxwidgets_status modal_begin(form_modal *modal, xxwidgets_widget *owner, 
     xxwidgets_widget *widget;
     xxwidgets_app *app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
-    modal->app = app; modal->owner = owner; modal->enabled = owner->enabled;
-    modal->previous_event = app->on_event; modal->previous_user = app->user_data; modal->previous_default = app->modal_default;
+    modal->app = app;
+    modal->owner = owner;
+    modal->enabled = owner->enabled;
+    modal->previous_event = app->on_event;
+    modal->previous_user = app->user_data;
+    modal->previous_default = app->modal_default;
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget) && (!modal->focus || xxwidgets_widget_has_focus(widget) == 1)) modal->focus = widget;
-    app->on_event = form_event; app->user_data = modal;
+    app->on_event = form_event;
+    app->user_data = modal;
     {
-        xxwidgets_status status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-            (xxwidgets_rect){owner->rect.x + (owner->rect.width > 74 ? (owner->rect.width - 74) / 2 : 0),
-                owner->rect.y + (owner->rect.height > height ? (owner->rect.height - height) / 2 : 0), 74, height}, &modal->window);
+        xxwidgets_status status =
+            xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
+                                    (xxwidgets_rect){owner->rect.x + (owner->rect.width > 74 ? (owner->rect.width - 74) / 2 : 0),
+                                                     owner->rect.y + (owner->rect.height > height ? (owner->rect.height - height) / 2 : 0), 74, height},
+                                    &modal->window);
         if (status != XXWIDGETS_OK) return status;
     }
     app->modal_window = modal->window;
@@ -136,8 +164,7 @@ static xxwidgets_status modal_finish(form_modal *modal, xxwidgets_status status)
     return status;
 }
 
-xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const char *title,
-    xxwidgets_hex_options *options, int show_editable, int *accepted)
+xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_hex_options *options, int show_editable, int *accepted)
 {
     form_modal modal = {0};
     xxwidgets_hex_options_widget *form = NULL;
@@ -147,27 +174,25 @@ xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const cha
     int commit = 0;
     if (accepted) *accepted = 0;
     if (!accepted || !options || !owner_valid(owner, title, 12) || (show_editable != 0 && show_editable != 1) ||
-        (options->bytes_per_row != 8 && options->bytes_per_row != 16 && options->bytes_per_row != 24 &&
-         options->bytes_per_row != 32 && options->bytes_per_row != 48 && options->bytes_per_row != 64) ||
+        (options->bytes_per_row != 8 && options->bytes_per_row != 16 && options->bytes_per_row != 24 && options->bytes_per_row != 32 && options->bytes_per_row != 48 &&
+         options->bytes_per_row != 64) ||
         (options->editable != 0 && options->editable != 1) || (options->bold_nonzero != 0 && options->bold_nonzero != 1) || !xxwidgets_font_valid(&options->font))
         return XXWIDGETS_INVALID_ARGUMENT;
     status = modal_begin(&modal, owner, title, 12);
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_hex_options_widget_create(modal.window, (xxwidgets_rect){2, 1, 70, 5}, &form);
     if (status == XXWIDGETS_OK) status = xxwidgets_hex_options_widget_set(form, options);
-    if (status == XXWIDGETS_OK && !show_editable)
-        status = xxwidgets_widget_set_visible(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_EDITABLE), 0);
+    if (status == XXWIDGETS_OK && !show_editable) status = xxwidgets_widget_set_visible(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_EDITABLE), 0);
     if (status == XXWIDGETS_OK && xxwidgets_app_backend(modal.app) == XXWIDGETS_BACKEND_TUI) {
         xxwidgets_widget *hint = NULL;
-        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL,
-            XXW_TR(modal.app, "TUI uses the terminal font; this preference is saved for GUI."), (xxwidgets_rect){2, 6, 70, 1}, &hint);
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, XXW_TR(modal.app, "TUI uses the terminal font; this preference is saved for GUI."),
+                                         (xxwidgets_rect){2, 6, 70, 1}, &hint);
     }
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Choose"), (xxwidgets_rect){17, 7, 12, 1}, &modal.hex_choose);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Default"), (xxwidgets_rect){31, 7, 12, 1}, &modal.hex_default);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){2, 8, 70, 1}, &error);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, "", (xxwidgets_rect){2, 8, 70, 1}, &error);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "OK"), (xxwidgets_rect){48, 10, 10, 1}, &modal.ok);
     if (status == XXWIDGETS_OK)
@@ -181,8 +206,7 @@ xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const cha
         modal.pending = 0;
         if (pending == 3) {
             status = xxwidgets_widget_set_text(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_FONT_FAMILY), "monospace");
-            if (status == XXWIDGETS_OK)
-                status = xxwidgets_widget_set_text(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_FONT_SIZE), "0");
+            if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(xxwidgets_hex_options_widget_control(form, XXWIDGETS_HEX_OPTIONS_FONT_SIZE), "0");
             if (status == XXWIDGETS_OK) status = xxwidgets_hex_options_widget_get(form, &result);
             if (status == XXWIDGETS_OK) {
                 result.font.bold = result.font.italic = 0;
@@ -207,7 +231,10 @@ xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const cha
                 status = xxwidgets_hex_options_widget_set(form, &result);
                 if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(error, "");
             }
-        } else { commit = 1; modal.done = 1; }
+        } else {
+            commit = 1;
+            modal.done = 1;
+        }
     }
     if (modal.app->quit) commit = 0;
 finish:
@@ -235,8 +262,9 @@ static int fields_valid(const xxwidgets_form_field *fields, size_t count)
             if (field->checked != 0 && field->checked != 1) return 0;
         } else {
             uintptr_t begin = (uintptr_t)field->value;
-            if (!field->value || !field->capacity || field->capacity > XXWIDGETS_FORM_MAX_CAPACITY ||
-                begin > UINTPTR_MAX - field->capacity || !memchr(field->value, 0, field->capacity) || !xxwidgets_valid_utf8(field->value)) return 0;
+            if (!field->value || !field->capacity || field->capacity > XXWIDGETS_FORM_MAX_CAPACITY || begin > UINTPTR_MAX - field->capacity ||
+                !memchr(field->value, 0, field->capacity) || !xxwidgets_valid_utf8(field->value))
+                return 0;
             for (j = 0; j < i; ++j) {
                 uintptr_t other;
                 if (fields[j].checkbox) continue;
@@ -248,8 +276,7 @@ static int fields_valid(const xxwidgets_form_field *fields, size_t count)
     return 1;
 }
 
-xxwidgets_status xxwidgets_form_dialog(xxwidgets_widget *owner, const char *title,
-    xxwidgets_form_field *fields, size_t count, int *accepted)
+xxwidgets_status xxwidgets_form_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_form_field *fields, size_t count, int *accepted)
 {
     form_modal modal = {0};
     xxwidgets_widget *controls[XXWIDGETS_FORM_MAX_FIELDS] = {0}, *error = NULL;
@@ -268,17 +295,18 @@ xxwidgets_status xxwidgets_form_dialog(xxwidgets_widget *owner, const char *titl
         const xxwidgets_form_field *field = &fields[i];
         int row = 1 + (int)i;
         if (field->checkbox) {
-            status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_CHECKBOX, field->label,
-                (xxwidgets_rect){2, row, 70, 1}, &controls[i]);
+            status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_CHECKBOX, field->label, (xxwidgets_rect){2, row, 70, 1}, &controls[i]);
             if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(controls[i], field->checked);
         } else {
             xxwidgets_widget *label;
             results[i] = (char *)malloc(field->capacity);
-            if (!results[i]) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
-            status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, field->label,
-                (xxwidgets_rect){2, row, 22, 1}, &label);
-            if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_EDIT, field->value,
-                (xxwidgets_rect){25, row, 47, 1}, &controls[i]);
+            if (!results[i]) {
+                status = XXWIDGETS_OUT_OF_MEMORY;
+                goto finish;
+            }
+            status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, field->label, (xxwidgets_rect){2, row, 22, 1}, &label);
+            if (status == XXWIDGETS_OK)
+                status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_EDIT, field->value, (xxwidgets_rect){25, row, 47, 1}, &controls[i]);
         }
         if (status != XXWIDGETS_OK) goto finish;
     }
@@ -294,12 +322,16 @@ xxwidgets_status xxwidgets_form_dialog(xxwidgets_widget *owner, const char *titl
         if (status != XXWIDGETS_OK || modal.done || modal.app->quit || !modal.pending) continue;
         modal.pending = 0;
         for (i = 0; i < count; ++i) {
-            status = fields[i].checkbox ? xxwidgets_widget_get_value(controls[i], &checked[i]) :
-                xxwidgets_widget_get_text(controls[i], results[i], fields[i].capacity, NULL);
+            status =
+                fields[i].checkbox ? xxwidgets_widget_get_value(controls[i], &checked[i]) : xxwidgets_widget_get_text(controls[i], results[i], fields[i].capacity, NULL);
             if (status != XXWIDGETS_OK) break;
         }
-        if (status == XXWIDGETS_BUFFER_TOO_SMALL) status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "One of the values is too long. Shorten it and choose OK."));
-        else if (status == XXWIDGETS_OK) { commit = 1; modal.done = 1; }
+        if (status == XXWIDGETS_BUFFER_TOO_SMALL)
+            status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "One of the values is too long. Shorten it and choose OK."));
+        else if (status == XXWIDGETS_OK) {
+            commit = 1;
+            modal.done = 1;
+        }
     }
     if (modal.app->quit) commit = 0;
 finish:
@@ -315,8 +347,7 @@ finish:
     return status;
 }
 
-xxwidgets_status xxwidgets_choice_dialog(xxwidgets_widget *owner, const char *title,
-    const char *const *items, size_t count, size_t *selection, int *accepted)
+xxwidgets_status xxwidgets_choice_dialog(xxwidgets_widget *owner, const char *title, const char *const *items, size_t count, size_t *selection, int *accepted)
 {
     form_modal modal = {0};
     xxwidgets_tree_node *nodes = NULL;
@@ -325,17 +356,25 @@ xxwidgets_status xxwidgets_choice_dialog(xxwidgets_widget *owner, const char *ti
     size_t i, selected = SIZE_MAX;
     int commit = 0;
     if (accepted) *accepted = 0;
-    if (!owner_valid(owner, title, 22) || !selection || !accepted || (!items && count) || count > INT_MAX ||
-        count > SIZE_MAX / sizeof(*nodes) || (count && *selection != SIZE_MAX && *selection >= count)) return XXWIDGETS_INVALID_ARGUMENT;
-    for (i = 0; i < count; ++i) if (!items[i] || !xxwidgets_valid_utf8(items[i])) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner_valid(owner, title, 22) || !selection || !accepted || (!items && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*nodes) ||
+        (count && *selection != SIZE_MAX && *selection >= count))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    for (i = 0; i < count; ++i)
+        if (!items[i] || !xxwidgets_valid_utf8(items[i])) return XXWIDGETS_INVALID_ARGUMENT;
     status = modal_begin(&modal, owner, title, 22);
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_TREEVIEW, "", (xxwidgets_rect){2, 1, 70, 16}, &modal.list);
     if (status != XXWIDGETS_OK) goto finish;
     if (count) {
         nodes = (xxwidgets_tree_node *)calloc(count, sizeof(*nodes));
-        if (!nodes) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
-        for (i = 0; i < count; ++i) { nodes[i].parent = SIZE_MAX; nodes[i].text = items[i]; }
+        if (!nodes) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto finish;
+        }
+        for (i = 0; i < count; ++i) {
+            nodes[i].parent = SIZE_MAX;
+            nodes[i].text = items[i];
+        }
         status = xxwidgets_treeview_set_nodes(modal.list, nodes, count);
         if (status != XXWIDGETS_OK) goto finish;
         status = xxwidgets_widget_set_value(modal.list, *selection == SIZE_MAX ? -1 : (int)*selection);
@@ -348,7 +387,7 @@ xxwidgets_status xxwidgets_choice_dialog(xxwidgets_widget *owner, const char *ti
         if (status != XXWIDGETS_OK) goto finish;
     }
     status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"),
-        (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
+                                     (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
     if (status != XXWIDGETS_OK) goto finish;
     status = modal_show(&modal, count ? modal.list : modal.cancel);
     while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
@@ -358,36 +397,42 @@ xxwidgets_status xxwidgets_choice_dialog(xxwidgets_widget *owner, const char *ti
         modal.pending = 0;
         status = xxwidgets_treeview_get_selection(modal.list, &selected, &node);
         if (status == XXWIDGETS_OK && selected >= count) status = xxwidgets_widget_set_text(error, XXW_TR(modal.app, "Select an item, then choose OK."));
-        else if (status == XXWIDGETS_OK) { commit = 1; modal.done = 1; }
+        else if (status == XXWIDGETS_OK) {
+            commit = 1;
+            modal.done = 1;
+        }
     }
     if (modal.app->quit) commit = 0;
 finish:
     free(nodes);
     status = modal_finish(&modal, status);
-    if (status == XXWIDGETS_OK && commit) { *selection = selected; *accepted = 1; }
+    if (status == XXWIDGETS_OK && commit) {
+        *selection = selected;
+        *accepted = 1;
+    }
     return status;
 }
 
-xxwidgets_status xxwidgets_structure_dialog(xxwidgets_widget *owner, const char *title,
-    const xxwidgets_data_struct_field *fields, size_t count, size_t *selection, int *accepted)
+xxwidgets_status xxwidgets_structure_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_data_struct_field *fields, size_t count, size_t *selection,
+                                            int *accepted)
 {
     form_modal modal = {0};
     xxwidgets_status status;
     size_t selected = SIZE_MAX;
     int commit = 0;
     if (accepted) *accepted = 0;
-    if (!owner_valid(owner, title, 22) || !selection || !accepted || (!fields && count) || count > 4096 ||
-        (count && *selection != SIZE_MAX && *selection >= count)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner_valid(owner, title, 22) || !selection || !accepted || (!fields && count) || count > 4096 || (count && *selection != SIZE_MAX && *selection >= count))
+        return XXWIDGETS_INVALID_ARGUMENT;
     status = modal_begin(&modal, owner, title, 22);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_DATA_STRUCT_TABLE, "",
-        (xxwidgets_rect){2, 1, 70, 17}, &modal.list);
+    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_DATA_STRUCT_TABLE, "", (xxwidgets_rect){2, 1, 70, 17}, &modal.list);
     if (status == XXWIDGETS_OK) status = xxwidgets_data_struct_table_set_fields(modal.list, fields, count);
     if (status == XXWIDGETS_OK && count) status = xxwidgets_widget_set_value(modal.list, *selection == SIZE_MAX ? 0 : (int)*selection);
-    if (status == XXWIDGETS_OK && count) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Select bytes"),
-        (xxwidgets_rect){43, 20, 15, 1}, &modal.ok);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON,
-        count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"), (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
+    if (status == XXWIDGETS_OK && count)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Select bytes"), (xxwidgets_rect){43, 20, 15, 1}, &modal.ok);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"),
+                                         (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
     if (status == XXWIDGETS_OK) status = modal_show(&modal, count ? modal.list : modal.cancel);
     while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
         xxwidgets_data_struct_field field;
@@ -395,52 +440,61 @@ xxwidgets_status xxwidgets_structure_dialog(xxwidgets_widget *owner, const char 
         if (status != XXWIDGETS_OK || modal.done || modal.app->quit || !modal.pending) continue;
         modal.pending = 0;
         status = xxwidgets_data_struct_table_get_selection(modal.list, &selected, &field);
-        if (status == XXWIDGETS_OK && selected < count) { commit = 1; modal.done = 1; }
+        if (status == XXWIDGETS_OK && selected < count) {
+            commit = 1;
+            modal.done = 1;
+        }
     }
     if (modal.app->quit) commit = 0;
 finish:
     status = modal_finish(&modal, status);
-    if (status == XXWIDGETS_OK && commit) { *selection = selected; *accepted = 1; }
+    if (status == XXWIDGETS_OK && commit) {
+        *selection = selected;
+        *accepted = 1;
+    }
     return status;
 }
 
-xxwidgets_status xxwidgets_entropy_samples_dialog(xxwidgets_widget *owner, const char *title,
-    const xxwidgets_entropy_sample *samples, size_t count, uint64_t base, uint64_t size,
-    size_t *selection, int *accepted)
+xxwidgets_status xxwidgets_entropy_samples_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_entropy_sample *samples, size_t count, uint64_t base,
+                                                  uint64_t size, size_t *selection, int *accepted)
 {
     form_modal modal = {0};
     xxwidgets_status status;
     xxwidgets_tree_node *nodes = NULL;
-    char (*labels)[128] = NULL;
+    char(*labels)[128] = NULL;
     size_t selected = SIZE_MAX;
     int commit = 0;
     if (accepted) *accepted = 0;
-    if (!owner_valid(owner, title, 22) || !selection || !accepted || (!samples && count) || count > 4096 ||
-        (count && *selection != SIZE_MAX && *selection >= count)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner_valid(owner, title, 22) || !selection || !accepted || (!samples && count) || count > 4096 || (count && *selection != SIZE_MAX && *selection >= count))
+        return XXWIDGETS_INVALID_ARGUMENT;
     status = modal_begin(&modal, owner, title, 22);
     if (status != XXWIDGETS_OK) goto finish;
-    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_ENTROPY_PLOT, "",
-        (xxwidgets_rect){2, 0, 70, 11}, &modal.plot);
+    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_ENTROPY_PLOT, "", (xxwidgets_rect){2, 0, 70, 11}, &modal.plot);
     if (status == XXWIDGETS_OK) status = xxwidgets_entropy_plot_set_samples(modal.plot, samples, count, base, size);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_TREEVIEW, "",
-        (xxwidgets_rect){2, 12, 70, 6}, &modal.list);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_TREEVIEW, "", (xxwidgets_rect){2, 12, 70, 6}, &modal.list);
     if (status != XXWIDGETS_OK) goto finish;
     if (count) {
-        labels = calloc(count, sizeof(*labels)); nodes = calloc(count, sizeof(*nodes));
-        if (!labels || !nodes) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
+        labels = calloc(count, sizeof(*labels));
+        nodes = calloc(count, sizeof(*nodes));
+        if (!labels || !nodes) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto finish;
+        }
         for (size_t i = 0; i < count; ++i) {
-            snprintf(labels[i], sizeof(labels[i]), "0x%" PRIX64 " | %" PRIu64 " bytes | %.5f bits/byte%s",
-                samples[i].offset, samples[i].size, samples[i].entropy, samples[i].entropy >= 6.5 ? " | packed" : "");
-            nodes[i].parent = SIZE_MAX; nodes[i].text = labels[i];
+            snprintf(labels[i], sizeof(labels[i]), "0x%" PRIX64 " | %" PRIu64 " bytes | %.5f bits/byte%s", samples[i].offset, samples[i].size, samples[i].entropy,
+                     samples[i].entropy >= 6.5 ? " | packed" : "");
+            nodes[i].parent = SIZE_MAX;
+            nodes[i].text = labels[i];
         }
         status = xxwidgets_treeview_set_nodes(modal.list, nodes, count);
         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(modal.list, *selection == SIZE_MAX ? 0 : (int)*selection);
         if (status == XXWIDGETS_OK) status = form_plot_select(&modal, *selection == SIZE_MAX ? 0 : (int)*selection);
-        if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Select block"),
-            (xxwidgets_rect){43, 20, 15, 1}, &modal.ok);
+        if (status == XXWIDGETS_OK)
+            status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Select block"), (xxwidgets_rect){43, 20, 15, 1}, &modal.ok);
     }
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON,
-        count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"), (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, count ? XXW_TR(modal.app, "Cancel") : XXW_TR(modal.app, "Close"),
+                                         (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
     if (status == XXWIDGETS_OK) status = modal_show(&modal, count ? modal.list : modal.cancel);
     while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
         xxwidgets_tree_node node;
@@ -448,50 +502,73 @@ xxwidgets_status xxwidgets_entropy_samples_dialog(xxwidgets_widget *owner, const
         if (status != XXWIDGETS_OK || modal.done || modal.app->quit || !modal.pending) continue;
         modal.pending = 0;
         status = xxwidgets_treeview_get_selection(modal.list, &selected, &node);
-        if (status == XXWIDGETS_OK && selected < count) { commit = 1; modal.done = 1; }
+        if (status == XXWIDGETS_OK && selected < count) {
+            commit = 1;
+            modal.done = 1;
+        }
     }
     if (modal.app->quit) commit = 0;
 finish:
-    free(labels); free(nodes);
+    free(labels);
+    free(nodes);
     if (status == XXWIDGETS_OK && modal.failure != XXWIDGETS_OK) status = modal.failure;
     status = modal_finish(&modal, status);
-    if (status == XXWIDGETS_OK && commit) { *selection = selected; *accepted = 1; }
+    if (status == XXWIDGETS_OK && commit) {
+        *selection = selected;
+        *accepted = 1;
+    }
     return status;
 }
 
-xxwidgets_status xxwidgets_command_palette(xxwidgets_widget *owner, const char *title,
-    const xxwidgets_command_item *items, size_t count, int *action, int *accepted)
+xxwidgets_status xxwidgets_command_palette(xxwidgets_widget *owner, const char *title, const xxwidgets_command_item *items, size_t count, int *action, int *accepted)
 {
     form_modal modal = {0};
     xxwidgets_status status;
     xxwidgets_tree_node *nodes = NULL;
-    char (*labels)[512] = NULL;
+    char(*labels)[512] = NULL;
     size_t *mapping = NULL, visible = 0;
     int selected_action = 0, commit = 0;
     if (accepted) *accepted = 0;
     if (!accepted || !action || (!items && count) || count > 4096 || !owner_valid(owner, title, 22)) return XXWIDGETS_INVALID_ARGUMENT;
     for (size_t i = 0; i < count; ++i)
-        if (!items[i].label || !xxwidgets_valid_utf8(items[i].label) || (items[i].detail && !xxwidgets_valid_utf8(items[i].detail)) || (items[i].shortcut && !xxwidgets_valid_utf8(items[i].shortcut))) return XXWIDGETS_INVALID_ARGUMENT;
-    nodes = calloc(count ? count : 1, sizeof(*nodes)); labels = calloc(count ? count : 1, sizeof(*labels)); mapping = calloc(count ? count : 1, sizeof(*mapping));
-    if (!nodes || !labels || !mapping) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
+        if (!items[i].label || !xxwidgets_valid_utf8(items[i].label) || (items[i].detail && !xxwidgets_valid_utf8(items[i].detail)) ||
+            (items[i].shortcut && !xxwidgets_valid_utf8(items[i].shortcut)))
+            return XXWIDGETS_INVALID_ARGUMENT;
+    nodes = calloc(count ? count : 1, sizeof(*nodes));
+    labels = calloc(count ? count : 1, sizeof(*labels));
+    mapping = calloc(count ? count : 1, sizeof(*mapping));
+    if (!nodes || !labels || !mapping) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto finish;
+    }
     status = modal_begin(&modal, owner, title, 22);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_EDIT, "", (xxwidgets_rect){2,1,70,1}, &modal.filter);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_TREEVIEW, "", (xxwidgets_rect){2,3,70,15}, &modal.list);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Run"), (xxwidgets_rect){48,20,10,1}, &modal.ok);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Cancel"), (xxwidgets_rect){60,20,12,1}, &modal.cancel);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_EDIT, "", (xxwidgets_rect){2, 1, 70, 1}, &modal.filter);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_TREEVIEW, "", (xxwidgets_rect){2, 3, 70, 15}, &modal.list);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Run"), (xxwidgets_rect){48, 20, 10, 1}, &modal.ok);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Cancel"), (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
     if (status == XXWIDGETS_OK) status = modal_show(&modal, modal.filter);
     modal.filter_changed = 1;
     while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
         if (modal.filter_changed) {
-            char filter[1024]; modal.filter_changed = 0;
+            char filter[1024];
+            modal.filter_changed = 0;
             status = xxwidgets_widget_get_text(modal.filter, filter, sizeof(filter), NULL);
-            if (status == XXWIDGETS_BUFFER_TOO_SMALL) { status = XXWIDGETS_OK; filter[sizeof(filter)-1] = 0; }
+            if (status == XXWIDGETS_BUFFER_TOO_SMALL) {
+                status = XXWIDGETS_OK;
+                filter[sizeof(filter) - 1] = 0;
+            }
             if (status != XXWIDGETS_OK) break;
             visible = 0;
-            for (size_t i = 0; i < count; ++i) if (xxwidgets_command_matches(&items[i], filter)) {
-                snprintf(labels[visible], sizeof(labels[visible]), "%s%s%s", items[i].label, items[i].shortcut && *items[i].shortcut ? "  |  " : "", items[i].shortcut ? items[i].shortcut : "");
-                nodes[visible].parent = SIZE_MAX; nodes[visible].text = labels[visible]; mapping[visible++] = i;
-            }
+            for (size_t i = 0; i < count; ++i)
+                if (xxwidgets_command_matches(&items[i], filter)) {
+                    snprintf(labels[visible], sizeof(labels[visible]), "%s%s%s", items[i].label, items[i].shortcut && *items[i].shortcut ? "  |  " : "",
+                             items[i].shortcut ? items[i].shortcut : "");
+                    nodes[visible].parent = SIZE_MAX;
+                    nodes[visible].text = labels[visible];
+                    mapping[visible++] = i;
+                }
             status = xxwidgets_treeview_set_nodes(modal.list, nodes, visible);
             if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(modal.list, visible ? 0 : -1);
             if (status != XXWIDGETS_OK) break;
@@ -501,35 +578,104 @@ xxwidgets_status xxwidgets_command_palette(xxwidgets_widget *owner, const char *
          * Rebuild the filtered mapping before accepting that queued Run. */
         if (status == XXWIDGETS_OK && modal.filter_changed && !modal.done && !modal.app->quit) continue;
         if (status == XXWIDGETS_OK && modal.pending && !modal.done && !modal.app->quit) {
-            int value = -1; modal.pending = 0;
+            int value = -1;
+            modal.pending = 0;
             status = xxwidgets_widget_get_value(modal.list, &value);
-            if (status == XXWIDGETS_OK && value >= 0 && (size_t)value < visible) { selected_action = items[mapping[value]].action; commit = 1; modal.done = 1; }
+            if (status == XXWIDGETS_OK && value >= 0 && (size_t)value < visible) {
+                selected_action = items[mapping[value]].action;
+                commit = 1;
+                modal.done = 1;
+            }
         }
     }
 finish:
     status = modal_finish(&modal, status);
-    free(nodes); free(labels); free(mapping);
-    if (status == XXWIDGETS_OK && commit) { *action = selected_action; *accepted = 1; }
+    free(nodes);
+    free(labels);
+    free(mapping);
+    if (status == XXWIDGETS_OK && commit) {
+        *action = selected_action;
+        *accepted = 1;
+    }
     return status;
 }
 
-xxwidgets_status xxwidgets_canvas_dialog(xxwidgets_widget *owner,const char *title,const uint32_t *pixels,unsigned width,unsigned height,const xxwidgets_canvas_label *labels,size_t label_count,const xxwidgets_canvas_region *regions,size_t count,size_t *selection,int *accepted) {
-    form_modal modal={0};xxwidgets_status status;int commit=0;size_t selected=SIZE_MAX;xxwidgets_tree_node *nodes=NULL;
-    if(accepted)*accepted=0;
-    if(!owner_valid(owner,title,22)||!selection||!accepted||!width||!height||width>4096||height>4096||!pixels||count>4096||(count&&!regions)||(*selection!=SIZE_MAX&&*selection>=(count?count:(size_t)width*height)))return XXWIDGETS_INVALID_ARGUMENT;
-    for(size_t i=0;i<count;++i){const xxwidgets_canvas_region *r=regions+i;if(!r->label||!xxwidgets_valid_utf8(r->label)||!r->width||!r->height||r->x>=width||r->y>=height||r->width>width-r->x||r->height>height-r->y)return XXWIDGETS_INVALID_ARGUMENT;}
-    status=modal_begin(&modal,owner,title,22);if(status!=XXWIDGETS_OK)goto finish;modal.canvas_regions=regions;modal.canvas_region_count=count;
-    status=xxwidgets_widget_create(modal.app,modal.window,XXWIDGETS_CANVAS,"",(xxwidgets_rect){2,1,count?47:70,17},&modal.plot);
-    if(status==XXWIDGETS_OK)status=xxwidgets_canvas_set_pixels(modal.plot,width,height,pixels);
-    if(status==XXWIDGETS_OK)status=xxwidgets_canvas_set_labels(modal.plot,labels,label_count);
-    if(status!=XXWIDGETS_OK)goto finish;
-    if(count){status=xxwidgets_widget_create(modal.app,modal.window,XXWIDGETS_TREEVIEW,"",(xxwidgets_rect){50,1,22,17},&modal.list);if(status!=XXWIDGETS_OK)goto finish;nodes=calloc(count,sizeof(*nodes));if(!nodes){status=XXWIDGETS_OUT_OF_MEMORY;goto finish;}for(size_t i=0;i<count;++i){nodes[i].parent=SIZE_MAX;nodes[i].text=regions[i].label;}status=xxwidgets_treeview_set_nodes(modal.list,nodes,count);if(status==XXWIDGETS_OK)status=xxwidgets_widget_set_value(modal.list,*selection==SIZE_MAX?0:(int)*selection);size_t initial=*selection==SIZE_MAX?0:*selection;const xxwidgets_canvas_region *r=regions+initial;if(status==XXWIDGETS_OK)status=xxwidgets_canvas_select(modal.plot,r->x+r->width/2,r->y+r->height/2);}
-    else {size_t initial=*selection==SIZE_MAX?0:*selection;status=xxwidgets_canvas_select(modal.plot,(unsigned)(initial%width),(unsigned)(initial/width));}
-    if(status==XXWIDGETS_OK)status=xxwidgets_widget_create(modal.app,modal.window,XXWIDGETS_LABEL,XXW_TR(modal.app, "Arrow keys move; Enter selects; Tab changes focus"),(xxwidgets_rect){2,18,70,1},&modal.canvas_status);
-    if(status==XXWIDGETS_OK)status=xxwidgets_widget_create(modal.app,modal.window,XXWIDGETS_BUTTON,XXW_TR(modal.app, "Select bytes"),(xxwidgets_rect){43,20,15,1},&modal.ok);
-    if(status==XXWIDGETS_OK)status=xxwidgets_widget_create(modal.app,modal.window,XXWIDGETS_BUTTON,XXW_TR(modal.app, "Cancel"),(xxwidgets_rect){60,20,12,1},&modal.cancel);
-    if(status==XXWIDGETS_OK)status=modal_show(&modal,count?modal.list:modal.plot);
-    while(status==XXWIDGETS_OK&&!modal.done&&!modal.app->quit){status=xxwidgets_app_poll(modal.app,30);if(status!=XXWIDGETS_OK||modal.done||modal.app->quit||!modal.pending)continue;modal.pending=0;if(count){xxwidgets_tree_node node;status=xxwidgets_treeview_get_selection(modal.list,&selected,&node);}else selected=modal.plot->value<0?SIZE_MAX:(size_t)modal.plot->value;if(status==XXWIDGETS_OK&&selected<(count?count:(size_t)width*height)){commit=1;modal.done=1;}}
-    if(modal.app&&modal.app->quit)commit=0;
-finish:free(nodes);status=modal_finish(&modal,status);if(status==XXWIDGETS_OK&&commit){*selection=selected;*accepted=1;}return status;
+xxwidgets_status xxwidgets_canvas_dialog(xxwidgets_widget *owner, const char *title, const uint32_t *pixels, unsigned width, unsigned height,
+                                         const xxwidgets_canvas_label *labels, size_t label_count, const xxwidgets_canvas_region *regions, size_t count,
+                                         size_t *selection, int *accepted)
+{
+    form_modal modal = {0};
+    xxwidgets_status status;
+    int commit = 0;
+    size_t selected = SIZE_MAX;
+    xxwidgets_tree_node *nodes = NULL;
+    if (accepted) *accepted = 0;
+    if (!owner_valid(owner, title, 22) || !selection || !accepted || !width || !height || width > 4096 || height > 4096 || !pixels || count > 4096 ||
+        (count && !regions) || (*selection != SIZE_MAX && *selection >= (count ? count : (size_t)width * height)))
+        return XXWIDGETS_INVALID_ARGUMENT;
+    for (size_t i = 0; i < count; ++i) {
+        const xxwidgets_canvas_region *r = regions + i;
+        if (!r->label || !xxwidgets_valid_utf8(r->label) || !r->width || !r->height || r->x >= width || r->y >= height || r->width > width - r->x ||
+            r->height > height - r->y)
+            return XXWIDGETS_INVALID_ARGUMENT;
+    }
+    status = modal_begin(&modal, owner, title, 22);
+    if (status != XXWIDGETS_OK) goto finish;
+    modal.canvas_regions = regions;
+    modal.canvas_region_count = count;
+    status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_CANVAS, "", (xxwidgets_rect){2, 1, count ? 47 : 70, 17}, &modal.plot);
+    if (status == XXWIDGETS_OK) status = xxwidgets_canvas_set_pixels(modal.plot, width, height, pixels);
+    if (status == XXWIDGETS_OK) status = xxwidgets_canvas_set_labels(modal.plot, labels, label_count);
+    if (status != XXWIDGETS_OK) goto finish;
+    if (count) {
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_TREEVIEW, "", (xxwidgets_rect){50, 1, 22, 17}, &modal.list);
+        if (status != XXWIDGETS_OK) goto finish;
+        nodes = calloc(count, sizeof(*nodes));
+        if (!nodes) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto finish;
+        }
+        for (size_t i = 0; i < count; ++i) {
+            nodes[i].parent = SIZE_MAX;
+            nodes[i].text = regions[i].label;
+        }
+        status = xxwidgets_treeview_set_nodes(modal.list, nodes, count);
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(modal.list, *selection == SIZE_MAX ? 0 : (int)*selection);
+        size_t initial = *selection == SIZE_MAX ? 0 : *selection;
+        const xxwidgets_canvas_region *r = regions + initial;
+        if (status == XXWIDGETS_OK) status = xxwidgets_canvas_select(modal.plot, r->x + r->width / 2, r->y + r->height / 2);
+    } else {
+        size_t initial = *selection == SIZE_MAX ? 0 : *selection;
+        status = xxwidgets_canvas_select(modal.plot, (unsigned)(initial % width), (unsigned)(initial / width));
+    }
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_LABEL, XXW_TR(modal.app, "Arrow keys move; Enter selects; Tab changes focus"),
+                                         (xxwidgets_rect){2, 18, 70, 1}, &modal.canvas_status);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Select bytes"), (xxwidgets_rect){43, 20, 15, 1}, &modal.ok);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(modal.app, modal.window, XXWIDGETS_BUTTON, XXW_TR(modal.app, "Cancel"), (xxwidgets_rect){60, 20, 12, 1}, &modal.cancel);
+    if (status == XXWIDGETS_OK) status = modal_show(&modal, count ? modal.list : modal.plot);
+    while (status == XXWIDGETS_OK && !modal.done && !modal.app->quit) {
+        status = xxwidgets_app_poll(modal.app, 30);
+        if (status != XXWIDGETS_OK || modal.done || modal.app->quit || !modal.pending) continue;
+        modal.pending = 0;
+        if (count) {
+            xxwidgets_tree_node node;
+            status = xxwidgets_treeview_get_selection(modal.list, &selected, &node);
+        } else selected = modal.plot->value < 0 ? SIZE_MAX : (size_t)modal.plot->value;
+        if (status == XXWIDGETS_OK && selected < (count ? count : (size_t)width * height)) {
+            commit = 1;
+            modal.done = 1;
+        }
+    }
+    if (modal.app && modal.app->quit) commit = 0;
+finish:
+    free(nodes);
+    status = modal_finish(&modal, status);
+    if (status == XXWIDGETS_OK && commit) {
+        *selection = selected;
+        *accepted = 1;
+    }
+    return status;
 }

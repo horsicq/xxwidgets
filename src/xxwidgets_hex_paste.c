@@ -33,7 +33,8 @@ static int paste_hex(const unsigned char *text, size_t size, unsigned char *byte
         while (at < size && paste_space(text[at])) ++at;
         if (at == size) break;
         if (size - at < 2) return 0;
-        high = paste_digit(text[at++]); low = paste_digit(text[at++]);
+        high = paste_digit(text[at++]);
+        low = paste_digit(text[at++]);
         if (high < 0 || low < 0) return 0;
         if (bytes) bytes[count] = (unsigned char)((high << 4) | low);
         ++count;
@@ -42,8 +43,7 @@ static int paste_hex(const unsigned char *text, size_t size, unsigned char *byte
     return 1;
 }
 
-static int paste_symbols(const xx_codepage *encoding, const unsigned char *text, size_t size,
-                         unsigned char *bytes, size_t *length)
+static int paste_symbols(const xx_codepage *encoding, const unsigned char *text, size_t size, unsigned char *bytes, size_t *length)
 {
     const xx_codepage *utf8 = xx_codepage_find("UTF-8");
     size_t at = 0, count = 0;
@@ -52,19 +52,19 @@ static int paste_symbols(const xx_codepage *encoding, const unsigned char *text,
     while (at < size) {
         uint32_t scalar;
         size_t used = 0, written = 0;
-        if (xx_codepage_decode(utf8, text + at, size - at, &used, &scalar) != XX_CODEPAGE_OK ||
-            !used || used > size - at ||
-            xx_codepage_encode(encoding, scalar, encoded, sizeof(encoded), &written) != XX_CODEPAGE_OK ||
-            !written || written > sizeof(encoded) || count > SIZE_MAX - written) return 0;
+        if (xx_codepage_decode(utf8, text + at, size - at, &used, &scalar) != XX_CODEPAGE_OK || !used || used > size - at ||
+            xx_codepage_encode(encoding, scalar, encoded, sizeof(encoded), &written) != XX_CODEPAGE_OK || !written || written > sizeof(encoded) ||
+            count > SIZE_MAX - written)
+            return 0;
         if (bytes) memcpy(bytes + count, encoded, written);
-        count += written; at += used;
+        count += written;
+        at += used;
     }
     *length = count;
     return 1;
 }
 
-xxwidgets_status xxwidgets_hexview_decode_paste(const xxwidgets_widget *w, const char *text,
-                                               unsigned char **bytes, size_t *length)
+xxwidgets_status xxwidgets_hexview_decode_paste(const xxwidgets_widget *w, const char *text, unsigned char **bytes, size_t *length)
 {
     const xx_codepage *encoding;
     const unsigned char *input = (const unsigned char *)text;
@@ -77,17 +77,16 @@ xxwidgets_status xxwidgets_hexview_decode_paste(const xxwidgets_widget *w, const
     while (size <= HEX_PASTE_TEXT_LIMIT && text[size]) ++size;
     if (size > HEX_PASTE_TEXT_LIMIT) return XXWIDGETS_INVALID_ARGUMENT;
     encoding = w->hex_header == 2 ? xx_codepage_find(w->hex_display.encoding) : NULL;
-    if (!(w->hex_header == 2 ? paste_symbols(encoding, input, size, NULL, &count)
-                            : paste_hex(input, size, NULL, &count))) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!(w->hex_header == 2 ? paste_symbols(encoding, input, size, NULL, &count) : paste_hex(input, size, NULL, &count))) return XXWIDGETS_INVALID_ARGUMENT;
     if (!count) return XXWIDGETS_OK;
     output = (unsigned char *)malloc(count);
     if (!output) return XXWIDGETS_OUT_OF_MEMORY;
-    if (!(w->hex_header == 2 ? paste_symbols(encoding, input, size, output, &converted)
-                            : paste_hex(input, size, output, &converted)) || converted != count) {
+    if (!(w->hex_header == 2 ? paste_symbols(encoding, input, size, output, &converted) : paste_hex(input, size, output, &converted)) || converted != count) {
         free(output);
         return XXWIDGETS_INVALID_ARGUMENT;
     }
-    *bytes = output; *length = count;
+    *bytes = output;
+    *length = count;
     return XXWIDGETS_OK;
 }
 
@@ -114,9 +113,8 @@ xxwidgets_status xxwidgets_hexview_paste_text(xxwidgets_widget *w, const char *t
 
 int xxwidgets_hexview_can_paste_insert(const xxwidgets_widget *w)
 {
-    return w && w->kind == XXWIDGETS_HEXVIEW && !w->hex_cut_busy &&
-           !w->hex_source_seeking && !w->app->syncing &&
-           (w->hex_header == 1 || w->hex_header == 2) && xxwidgets_hexview_can_resize(w);
+    return w && w->kind == XXWIDGETS_HEXVIEW && !w->hex_cut_busy && !w->hex_source_seeking && !w->app->syncing && (w->hex_header == 1 || w->hex_header == 2) &&
+           xxwidgets_hexview_can_resize(w);
 }
 
 xxwidgets_status xxwidgets_hexview_paste_insert_text(xxwidgets_widget *w, const char *text)

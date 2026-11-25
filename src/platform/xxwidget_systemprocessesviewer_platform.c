@@ -55,7 +55,8 @@ extern long syscall(long number, ...);
 static size_t systemprocessesviewer_length(const char *text)
 {
     size_t length;
-    for (length = 0; length <= SYSTEMPROCESSESVIEWER_MAX_STRING; ++length) if (!text[length]) return length;
+    for (length = 0; length <= SYSTEMPROCESSESVIEWER_MAX_STRING; ++length)
+        if (!text[length]) return length;
     return SIZE_MAX;
 }
 
@@ -81,9 +82,9 @@ static size_t systemprocessesviewer_utf8_sequence(const unsigned char *s, size_t
     else if (s[0] >= 0xf0 && s[0] <= 0xf4) length = 4;
     else return 0;
     if (remaining < length) return 0;
-    for (i = 1; i < length; ++i) if ((s[i] & 0xc0) != 0x80) return 0;
-    if ((s[0] == 0xe0 && s[1] < 0xa0) || (s[0] == 0xed && s[1] >= 0xa0) ||
-        (s[0] == 0xf0 && s[1] < 0x90) || (s[0] == 0xf4 && s[1] >= 0x90)) return 0;
+    for (i = 1; i < length; ++i)
+        if ((s[i] & 0xc0) != 0x80) return 0;
+    if ((s[0] == 0xe0 && s[1] < 0xa0) || (s[0] == 0xed && s[1] >= 0xa0) || (s[0] == 0xf0 && s[1] < 0x90) || (s[0] == 0xf4 && s[1] >= 0x90)) return 0;
     return length;
 }
 
@@ -98,7 +99,10 @@ static char *systemprocessesviewer_utf8_copy(const char *text, int filename)
     while (i < length) {
         size_t sequence = systemprocessesviewer_utf8_sequence((const unsigned char *)text + i, length - i);
         if (!sequence) {
-            if (filename) { copy[0] = '\0'; return copy; }
+            if (filename) {
+                copy[0] = '\0';
+                return copy;
+            }
             memcpy(copy + used, "\xef\xbf\xbd", 3);
             used += 3;
             ++i;
@@ -124,8 +128,7 @@ void xxwidget_systemprocessesviewer_free_processes(xxwidgets_process_info *proce
     free(processes);
 }
 
-static xxwidgets_status systemprocessesviewer_append(xxwidgets_process_info **items, size_t *count, size_t *capacity,
-                                             xxwidgets_process_info *item)
+static xxwidgets_status systemprocessesviewer_append(xxwidgets_process_info **items, size_t *count, size_t *capacity, xxwidgets_process_info *item)
 {
     if (!item->name || !item->path) return XXWIDGETS_OUT_OF_MEMORY;
     if (*count == *capacity) {
@@ -149,7 +152,10 @@ static char *systemprocessesviewer_from_wide(const wchar_t *text)
     char *copy;
     if (length <= 0 || (size_t)length > SYSTEMPROCESSESVIEWER_MAX_STRING) return NULL;
     copy = (char *)malloc((size_t)length);
-    if (copy && !WideCharToMultiByte(CP_UTF8, 0, text, -1, copy, length, NULL, NULL)) { free(copy); return NULL; }
+    if (copy && !WideCharToMultiByte(CP_UTF8, 0, text, -1, copy, length, NULL, NULL)) {
+        free(copy);
+        return NULL;
+    }
     return copy;
 }
 
@@ -237,14 +243,23 @@ xxwidgets_status xxwidget_systemprocessesviewer_open_process_path(const xxwidget
     if (length <= 0 || length > 32768 || strchr(process->path, '"')) return XXWIDGETS_INVALID_ARGUMENT;
     path = (wchar_t *)malloc((size_t)length * sizeof(*path));
     parameters = (wchar_t *)malloc(((size_t)length + 16) * sizeof(*parameters));
-    if (!path || !parameters) { free(path); free(parameters); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!path || !parameters) {
+        free(path);
+        free(parameters);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, process->path, -1, path, length);
-    if (!(length > 3 && ((path[1] == L':' && (path[2] == L'\\' || path[2] == L'/')) ||
-                         (path[0] == L'\\' && path[1] == L'\\')))) {
-        free(path); free(parameters); return XXWIDGETS_INVALID_ARGUMENT;
+    if (!(length > 3 && ((path[1] == L':' && (path[2] == L'\\' || path[2] == L'/')) || (path[0] == L'\\' && path[1] == L'\\')))) {
+        free(path);
+        free(parameters);
+        return XXWIDGETS_INVALID_ARGUMENT;
     }
     windows_length = GetWindowsDirectoryW(explorer, MAX_PATH);
-    if (!windows_length || windows_length >= MAX_PATH) { free(path); free(parameters); return XXWIDGETS_PLATFORM_ERROR; }
+    if (!windows_length || windows_length >= MAX_PATH) {
+        free(path);
+        free(parameters);
+        return XXWIDGETS_PLATFORM_ERROR;
+    }
     wcscat(explorer, L"\\explorer.exe");
     wcscpy(parameters, L"/select,\"");
     wcscat(parameters, path);
@@ -257,7 +272,10 @@ xxwidgets_status xxwidget_systemprocessesviewer_open_process_path(const xxwidget
     info.lpFile = explorer;
     info.lpParameters = parameters;
     info.nShow = SW_SHOWNORMAL;
-    if (!ShellExecuteExW(&info)) { free(parameters); return XXWIDGETS_PLATFORM_ERROR; }
+    if (!ShellExecuteExW(&info)) {
+        free(parameters);
+        return XXWIDGETS_PLATFORM_ERROR;
+    }
     if (info.hProcess) CloseHandle(info.hProcess);
     free(parameters);
     return XXWIDGETS_OK;
@@ -284,31 +302,50 @@ static int systemprocessesviewer_linux_stat(pid_t pid, char **name, uint64_t *st
     while (used < sizeof(buffer) - 1) {
         got = read(fd, buffer + used, sizeof(buffer) - 1 - used);
         if (got < 0 && errno == EINTR) continue;
-        if (got < 0) { error = errno; close(fd); errno = error; return -1; }
+        if (got < 0) {
+            error = errno;
+            close(fd);
+            errno = error;
+            return -1;
+        }
         if (!got) break;
         used += (size_t)got;
     }
     close(fd);
-    if (used == sizeof(buffer) - 1) { errno = EOVERFLOW; return -1; }
+    if (used == sizeof(buffer) - 1) {
+        errno = EOVERFLOW;
+        return -1;
+    }
     buffer[used] = '\0';
     left = strchr(buffer, '(');
     right = strrchr(buffer, ')');
-    if (!left || !right || right <= left || right[1] != ' ') { errno = EINVAL; return -1; }
+    if (!left || !right || right <= left || right[1] != ' ') {
+        errno = EINVAL;
+        return -1;
+    }
     cursor = right + 2;
     for (field = 3; field < 22; ++field) {
         while (*cursor && *cursor != ' ' && *cursor != '\t' && *cursor != '\n') ++cursor;
         while (*cursor == ' ' || *cursor == '\t') ++cursor;
-        if (!*cursor || *cursor == '\n') { errno = EINVAL; return -1; }
+        if (!*cursor || *cursor == '\n') {
+            errno = EINVAL;
+            return -1;
+        }
     }
     errno = 0;
     *start = (uint64_t)strtoull(cursor, &end, 10);
     if (errno || end == cursor || (*end && *end != ' ' && *end != '\n' && *end != '\t') || !*start) {
-        *start = 0; errno = EINVAL; return -1;
+        *start = 0;
+        errno = EINVAL;
+        return -1;
     }
     if (name) {
         *right = '\0';
         *name = systemprocessesviewer_utf8_copy(left + 1, 0);
-        if (!*name) { errno = ENOMEM; return -1; }
+        if (!*name) {
+            errno = ENOMEM;
+            return -1;
+        }
     }
     return 0;
 }
@@ -323,7 +360,10 @@ static char *systemprocessesviewer_linux_path(pid_t pid)
         ssize_t length;
         if (!buffer) return NULL;
         length = readlink(filename, buffer, capacity);
-        if (length < 0) { free(buffer); return systemprocessesviewer_copy(""); }
+        if (length < 0) {
+            free(buffer);
+            return systemprocessesviewer_copy("");
+        }
         if ((size_t)length < capacity) {
             buffer[length] = '\0';
             path = systemprocessesviewer_utf8_copy(buffer, 1);
@@ -350,7 +390,8 @@ static uint64_t systemprocessesviewer_macos_start(pid_t pid, struct proc_bsdinfo
 static uint64_t systemprocessesviewer_freebsd_token(const struct kinfo_proc *info)
 {
     if (info->ki_start.tv_sec <= 0 || info->ki_start.tv_usec < 0 || info->ki_start.tv_usec >= 1000000 ||
-        (uint64_t)info->ki_start.tv_sec > (UINT64_MAX - (uint64_t)info->ki_start.tv_usec) / 1000000) return 0;
+        (uint64_t)info->ki_start.tv_sec > (UINT64_MAX - (uint64_t)info->ki_start.tv_usec) / 1000000)
+        return 0;
     return (uint64_t)info->ki_start.tv_sec * 1000000 + (uint64_t)info->ki_start.tv_usec;
 }
 
@@ -359,8 +400,7 @@ static uint64_t systemprocessesviewer_freebsd_start(pid_t pid)
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
     struct kinfo_proc info;
     size_t length = sizeof(info);
-    if (sysctl(mib, 4, &info, &length, NULL, 0) || length != sizeof(info) ||
-        info.ki_structsize != (int)sizeof(info) || info.ki_pid != pid) return 0;
+    if (sysctl(mib, 4, &info, &length, NULL, 0) || length != sizeof(info) || info.ki_structsize != (int)sizeof(info) || info.ki_pid != pid) return 0;
     return systemprocessesviewer_freebsd_token(&info);
 }
 
@@ -369,8 +409,7 @@ static char *systemprocessesviewer_freebsd_path(pid_t pid)
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, pid};
     char filename[PATH_MAX];
     size_t length = sizeof(filename);
-    if (sysctl(mib, 4, filename, &length, NULL, 0) || !length || length > sizeof(filename))
-        return systemprocessesviewer_copy("");
+    if (sysctl(mib, 4, filename, &length, NULL, 0) || !length || length > sizeof(filename)) return systemprocessesviewer_copy("");
     filename[length - 1] = '\0';
     return systemprocessesviewer_utf8_copy(filename, 1);
 }
@@ -394,14 +433,20 @@ xxwidgets_status xxwidget_systemprocessesviewer_enumerate(xxwidgets_process_info
             unsigned long value;
             errno = 0;
             entry = readdir(directory);
-            if (!entry) { if (errno) status = XXWIDGETS_PLATFORM_ERROR; break; }
+            if (!entry) {
+                if (errno) status = XXWIDGETS_PLATFORM_ERROR;
+                break;
+            }
             if (entry->d_name[0] < '1' || entry->d_name[0] > '9') continue;
             errno = 0;
             value = strtoul(entry->d_name, &end, 10);
             if (errno || *end || value > INT_MAX) continue;
             item.pid = value;
             if (systemprocessesviewer_linux_stat((pid_t)value, &name, &item.start_time)) {
-                if (errno == ENOMEM) { status = XXWIDGETS_OUT_OF_MEMORY; break; }
+                if (errno == ENOMEM) {
+                    status = XXWIDGETS_OUT_OF_MEMORY;
+                    break;
+                }
                 continue; /* Exited or inaccessible between readdir and stat. */
             }
             item.name = name;
@@ -418,37 +463,47 @@ xxwidgets_status xxwidget_systemprocessesviewer_enumerate(xxwidgets_process_info
         if (desired <= 0) return XXWIDGETS_PLATFORM_ERROR;
         for (attempt = 0; attempt < 4; ++attempt) {
             size_t allocated = (size_t)desired + 256;
-            if (allocated > SYSTEMPROCESSESVIEWER_MAX_PROCESSES) { status = XXWIDGETS_UNAVAILABLE; break; }
+            if (allocated > SYSTEMPROCESSESVIEWER_MAX_PROCESSES) {
+                status = XXWIDGETS_UNAVAILABLE;
+                break;
+            }
             free(pids);
             pids = (pid_t *)malloc(allocated * sizeof(*pids));
-            if (!pids) { status = XXWIDGETS_OUT_OF_MEMORY; break; }
+            if (!pids) {
+                status = XXWIDGETS_OUT_OF_MEMORY;
+                break;
+            }
             found = proc_listallpids(pids, (int)(allocated * sizeof(*pids)));
-            if (found <= 0) { status = XXWIDGETS_PLATFORM_ERROR; break; }
+            if (found <= 0) {
+                status = XXWIDGETS_PLATFORM_ERROR;
+                break;
+            }
             if ((size_t)found < allocated) break;
             desired = found + 256;
         }
-        if (status == XXWIDGETS_OK) for (i = 0; i < found; ++i) {
-            struct proc_bsdinfo info;
-            char path[PROC_PIDPATHINFO_MAXSIZE], name[sizeof(info.pbi_name) + 1];
-            if (pids[i] <= 0) continue;
-            memset(&info, 0, sizeof(info));
-            item.pid = (uint64_t)pids[i];
-            item.start_time = systemprocessesviewer_macos_start(pids[i], &info);
-            memset(name, 0, sizeof(name));
-            if (item.start_time) {
-                const char *source = info.pbi_name[0] ? info.pbi_name : info.pbi_comm;
-                size_t maximum = info.pbi_name[0] ? sizeof(info.pbi_name) : sizeof(info.pbi_comm);
-                memcpy(name, source, maximum < sizeof(name) - 1 ? maximum : sizeof(name) - 1);
-            } else if (proc_name(pids[i], name, (uint32_t)sizeof(name)) <= 0) continue;
-            name[sizeof(name) - 1] = '\0';
-            memset(path, 0, sizeof(path));
-            if (proc_pidpath(pids[i], path, sizeof(path)) <= 0) path[0] = '\0';
-            path[sizeof(path) - 1] = '\0';
-            item.name = systemprocessesviewer_utf8_copy(name, 0);
-            item.path = systemprocessesviewer_utf8_copy(path, 1);
-            status = systemprocessesviewer_append(&items, &count, &capacity, &item);
-            if (status != XXWIDGETS_OK) break;
-        }
+        if (status == XXWIDGETS_OK)
+            for (i = 0; i < found; ++i) {
+                struct proc_bsdinfo info;
+                char path[PROC_PIDPATHINFO_MAXSIZE], name[sizeof(info.pbi_name) + 1];
+                if (pids[i] <= 0) continue;
+                memset(&info, 0, sizeof(info));
+                item.pid = (uint64_t)pids[i];
+                item.start_time = systemprocessesviewer_macos_start(pids[i], &info);
+                memset(name, 0, sizeof(name));
+                if (item.start_time) {
+                    const char *source = info.pbi_name[0] ? info.pbi_name : info.pbi_comm;
+                    size_t maximum = info.pbi_name[0] ? sizeof(info.pbi_name) : sizeof(info.pbi_comm);
+                    memcpy(name, source, maximum < sizeof(name) - 1 ? maximum : sizeof(name) - 1);
+                } else if (proc_name(pids[i], name, (uint32_t)sizeof(name)) <= 0) continue;
+                name[sizeof(name) - 1] = '\0';
+                memset(path, 0, sizeof(path));
+                if (proc_pidpath(pids[i], path, sizeof(path)) <= 0) path[0] = '\0';
+                path[sizeof(path) - 1] = '\0';
+                item.name = systemprocessesviewer_utf8_copy(name, 0);
+                item.path = systemprocessesviewer_utf8_copy(path, 1);
+                status = systemprocessesviewer_append(&items, &count, &capacity, &item);
+                if (status != XXWIDGETS_OK) break;
+            }
         free(pids);
     }
 #elif defined(__FreeBSD__)
@@ -460,39 +515,54 @@ xxwidgets_status xxwidget_systemprocessesviewer_enumerate(xxwidgets_process_info
         int complete = 0;
         for (attempt = 0; attempt < 8; ++attempt) {
             size_t wanted = 0, maximum = SYSTEMPROCESSESVIEWER_MAX_PROCESSES;
-            if (sysctl(mib, 3, NULL, &wanted, NULL, 0)) { status = systemprocessesviewer_errno_status(errno); break; }
+            if (sysctl(mib, 3, NULL, &wanted, NULL, 0)) {
+                status = systemprocessesviewer_errno_status(errno);
+                break;
+            }
             if (maximum > SIZE_MAX / sizeof(*records)) maximum = SIZE_MAX / sizeof(*records);
             if (wanted / sizeof(*records) > maximum || wanted > SIZE_MAX - 16 * sizeof(*records)) {
-                status = XXWIDGETS_UNAVAILABLE; break;
+                status = XXWIDGETS_UNAVAILABLE;
+                break;
             }
             size_t bytes = wanted + 16 * sizeof(*records);
             if (bytes / sizeof(*records) > maximum) bytes = maximum * sizeof(*records);
             struct kinfo_proc *grown = (struct kinfo_proc *)realloc(records, bytes);
-            if (!grown) { status = XXWIDGETS_OUT_OF_MEMORY; break; }
-            records = grown; length = bytes;
+            if (!grown) {
+                status = XXWIDGETS_OUT_OF_MEMORY;
+                break;
+            }
+            records = grown;
+            length = bytes;
             if (!sysctl(mib, 3, records, &length, NULL, 0)) {
                 if (length > bytes || length % sizeof(*records)) status = XXWIDGETS_PLATFORM_ERROR;
                 else complete = 1;
                 break;
             }
-            if (errno != ENOMEM) { status = systemprocessesviewer_errno_status(errno); break; }
+            if (errno != ENOMEM) {
+                status = systemprocessesviewer_errno_status(errno);
+                break;
+            }
         }
         if (status == XXWIDGETS_OK && !complete) status = XXWIDGETS_UNAVAILABLE;
-        if (status == XXWIDGETS_OK) for (size_t i = 0; i < length / sizeof(*records); ++i) {
-            const struct kinfo_proc *info = records + i;
-            char name[sizeof(info->ki_comm) + 1];
-            if (info->ki_structsize != (int)sizeof(*info)) { status = XXWIDGETS_UNAVAILABLE; break; }
-            if (info->ki_pid <= 0) continue;
-            item.pid = (uint64_t)info->ki_pid;
-            item.start_time = systemprocessesviewer_freebsd_token(info);
-            if (!item.start_time) continue;
-            memcpy(name, info->ki_comm, sizeof(info->ki_comm));
-            name[sizeof(info->ki_comm)] = '\0';
-            item.name = systemprocessesviewer_utf8_copy(name, 0);
-            item.path = systemprocessesviewer_freebsd_path(info->ki_pid);
-            status = systemprocessesviewer_append(&items, &count, &capacity, &item);
-            if (status != XXWIDGETS_OK) break;
-        }
+        if (status == XXWIDGETS_OK)
+            for (size_t i = 0; i < length / sizeof(*records); ++i) {
+                const struct kinfo_proc *info = records + i;
+                char name[sizeof(info->ki_comm) + 1];
+                if (info->ki_structsize != (int)sizeof(*info)) {
+                    status = XXWIDGETS_UNAVAILABLE;
+                    break;
+                }
+                if (info->ki_pid <= 0) continue;
+                item.pid = (uint64_t)info->ki_pid;
+                item.start_time = systemprocessesviewer_freebsd_token(info);
+                if (!item.start_time) continue;
+                memcpy(name, info->ki_comm, sizeof(info->ki_comm));
+                name[sizeof(info->ki_comm)] = '\0';
+                item.name = systemprocessesviewer_utf8_copy(name, 0);
+                item.path = systemprocessesviewer_freebsd_path(info->ki_pid);
+                status = systemprocessesviewer_append(&items, &count, &capacity, &item);
+                if (status != XXWIDGETS_OK) break;
+            }
         free(records);
     }
 #else
@@ -557,10 +627,16 @@ static xxwidgets_status systemprocessesviewer_launch(char *const argv[])
     ssize_t received;
     if (pipe(descriptors)) return XXWIDGETS_PLATFORM_ERROR;
     if (fcntl(descriptors[0], F_SETFD, FD_CLOEXEC) < 0 || fcntl(descriptors[1], F_SETFD, FD_CLOEXEC) < 0) {
-        close(descriptors[0]); close(descriptors[1]); return XXWIDGETS_PLATFORM_ERROR;
+        close(descriptors[0]);
+        close(descriptors[1]);
+        return XXWIDGETS_PLATFORM_ERROR;
     }
     child = fork();
-    if (child < 0) { close(descriptors[0]); close(descriptors[1]); return XXWIDGETS_PLATFORM_ERROR; }
+    if (child < 0) {
+        close(descriptors[0]);
+        close(descriptors[1]);
+        return XXWIDGETS_PLATFORM_ERROR;
+    }
     if (!child) {
         pid_t detached;
         close(descriptors[0]);
@@ -570,12 +646,18 @@ static xxwidgets_status systemprocessesviewer_launch(char *const argv[])
             exec_error = errno;
         } else if (detached < 0) exec_error = errno;
         else _exit(0);
-        do { result = (int)write(descriptors[1], &exec_error, sizeof(exec_error)); } while (result < 0 && errno == EINTR);
+        do {
+            result = (int)write(descriptors[1], &exec_error, sizeof(exec_error));
+        } while (result < 0 && errno == EINTR);
         _exit(127);
     }
     close(descriptors[1]);
-    do { waited = waitpid(child, &child_status, 0); } while (waited < 0 && errno == EINTR);
-    do { received = read(descriptors[0], &exec_error, sizeof(exec_error)); } while (received < 0 && errno == EINTR);
+    do {
+        waited = waitpid(child, &child_status, 0);
+    } while (waited < 0 && errno == EINTR);
+    do {
+        received = read(descriptors[0], &exec_error, sizeof(exec_error));
+    } while (received < 0 && errno == EINTR);
     close(descriptors[0]);
     if (received > 0) return systemprocessesviewer_errno_status(exec_error);
     if (received < 0 || waited < 0 || !WIFEXITED(child_status) || WEXITSTATUS(child_status)) return XXWIDGETS_PLATFORM_ERROR;

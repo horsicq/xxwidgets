@@ -32,7 +32,13 @@ typedef struct picker {
     int done, accepted, action;
 } picker;
 
-enum { ACT_NONE, ACT_TOGGLE, ACT_CHECK, ACT_UNCHECK, ACT_DEFAULTS };
+enum {
+    ACT_NONE,
+    ACT_TOGGLE,
+    ACT_CHECK,
+    ACT_UNCHECK,
+    ACT_DEFAULTS
+};
 
 static int lower(int c)
 {
@@ -44,7 +50,8 @@ static int contains(const char *h, const char *n)
     size_t i, j, hn = strlen(h), nn = strlen(n);
     if (!nn) return 1;
     for (i = 0; i + nn <= hn; ++i) {
-        for (j = 0; j < nn && lower((unsigned char)h[i + j]) == lower((unsigned char)n[j]); ++j) {}
+        for (j = 0; j < nn && lower((unsigned char)h[i + j]) == lower((unsigned char)n[j]); ++j) {
+        }
         if (j == nn) return 1;
     }
     return 0;
@@ -129,8 +136,8 @@ static xxwidgets_status apply(picker *p)
     return refresh(p, row);
 }
 
-xxwidgets_status xxwidgets_type_picker_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_type_picker_item *items, size_t count,
-                                              unsigned char *checked, const unsigned char *defaults, int *accepted)
+xxwidgets_status xxwidgets_type_picker_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_type_picker_item *items, size_t count, unsigned char *checked,
+                                              const unsigned char *defaults, int *accepted)
 {
     picker p;
     xxwidgets_app *app;

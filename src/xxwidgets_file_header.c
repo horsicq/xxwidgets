@@ -42,11 +42,10 @@ static const struct {
     unsigned int flags;
     int qt_box, qt_value;
     const char *sample;
-} field_specs[XXWIDGETS_FILE_HEADER_FIELD_COUNT] = {
-    {XXW_N_("File type"), XXW_N_("Type"), XXWIDGETS_VALUE_FIELD_COMBO, 120, 110, NULL},
-    {XXW_N_("File size"), XXW_N_("File size"), 0, 130, 120, "9999.99 MiB"},
-    {XXW_N_("Base address"), XXW_N_("Base address"), 0, 140, 130, "0000000000000000"},
-    {XXW_N_("Entry point"), XXW_N_("Entry point"), XXWIDGETS_VALUE_FIELD_WITH_ARROW, 180, 140, "0000000000000000"}};
+} field_specs[XXWIDGETS_FILE_HEADER_FIELD_COUNT] = {{XXW_N_("File type"), XXW_N_("Type"), XXWIDGETS_VALUE_FIELD_COMBO, 120, 110, NULL},
+                                                    {XXW_N_("File size"), XXW_N_("File size"), 0, 130, 120, "9999.99 MiB"},
+                                                    {XXW_N_("Base address"), XXW_N_("Base address"), 0, 140, 130, "0000000000000000"},
+                                                    {XXW_N_("Entry point"), XXW_N_("Entry point"), XXWIDGETS_VALUE_FIELD_WITH_ARROW, 180, 140, "0000000000000000"}};
 
 static int advanced_field(size_t field)
 {
@@ -178,9 +177,8 @@ xxwidgets_status xxwidgets_file_header_view_size(xxwidgets_file_header *header, 
 
 xxwidgets_status xxwidgets_file_header_set_bounds(xxwidgets_file_header *header, xxwidgets_rect units)
 {
-    static const xxwidgets_file_header_field_id order[5] = {XXWIDGETS_FILE_HEADER_FILE_TYPE, XXWIDGETS_FILE_HEADER_FILE_SIZE,
-                                                            XXWIDGETS_FILE_HEADER_FIELD_COUNT, XXWIDGETS_FILE_HEADER_BASE_ADDRESS,
-                                                            XXWIDGETS_FILE_HEADER_ENTRY_POINT};
+    static const xxwidgets_file_header_field_id order[5] = {XXWIDGETS_FILE_HEADER_FILE_TYPE, XXWIDGETS_FILE_HEADER_FILE_SIZE, XXWIDGETS_FILE_HEADER_FIELD_COUNT,
+                                                            XXWIDGETS_FILE_HEADER_BASE_ADDRESS, XXWIDGETS_FILE_HEADER_ENTRY_POINT};
     xxwidgets_layout_item items[5];
     xxwidgets_metrics metrics;
     xxwidgets_status status;
@@ -249,8 +247,7 @@ xxwidgets_status xxwidgets_file_header_set_file_size(xxwidgets_file_header *head
     return xxwidgets_value_field_set_text(header->fields[XXWIDGETS_FILE_HEADER_FILE_SIZE], text);
 }
 
-xxwidgets_status xxwidgets_file_header_set_address(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint64_t value,
-                                                   unsigned int bits)
+xxwidgets_status xxwidgets_file_header_set_address(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint64_t value, unsigned int bits)
 {
     xxwidgets_status status;
     if (!header || !advanced_field((size_t)field) || (bits != 8 && bits != 16 && bits != 32 && bits != 64)) return XXWIDGETS_INVALID_ARGUMENT;
@@ -258,8 +255,7 @@ xxwidgets_status xxwidgets_file_header_set_address(xxwidgets_file_header *header
     return status == XXWIDGETS_OK && header->has_bounds ? xxwidgets_file_header_set_bounds(header, header->bounds) : status;
 }
 
-xxwidgets_status xxwidgets_file_header_set_address_seg_off(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint16_t segment,
-                                                           uint16_t offset)
+xxwidgets_status xxwidgets_file_header_set_address_seg_off(xxwidgets_file_header *header, xxwidgets_file_header_field_id field, uint16_t segment, uint16_t offset)
 {
     xxwidgets_status status;
     if (!header || !advanced_field((size_t)field)) return XXWIDGETS_INVALID_ARGUMENT;
@@ -289,8 +285,7 @@ xxwidgets_status xxwidgets_file_header_clear(xxwidgets_file_header *header)
     xxwidgets_status status;
     size_t i;
     if (!header) return XXWIDGETS_INVALID_ARGUMENT;
-    status = xxwidgets_combobox_set_records(xxwidgets_value_field_control(header->fields[XXWIDGETS_FILE_HEADER_FILE_TYPE], XXWIDGETS_VALUE_FIELD_VALUE),
-                                            NULL, 0);
+    status = xxwidgets_combobox_set_records(xxwidgets_value_field_control(header->fields[XXWIDGETS_FILE_HEADER_FILE_TYPE], XXWIDGETS_VALUE_FIELD_VALUE), NULL, 0);
     for (i = XXWIDGETS_FILE_HEADER_FILE_SIZE; status == XXWIDGETS_OK && i < XXWIDGETS_FILE_HEADER_FIELD_COUNT; ++i)
         status = xxwidgets_value_field_set_text(header->fields[i], "");
     return status;

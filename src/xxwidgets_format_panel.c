@@ -44,13 +44,10 @@ static const format_spec specs[XXWIDGETS_FORMAT_ITEM_COUNT] = {
     {XXW_N_("Unpack"), XXWIDGETS_ICON_EXTRACT, PAGE(XXWIDGETS_FORMAT_PAGE_ARCHIVE), 0, 0, 0, 0},
     {XXW_N_("Import"), XXWIDGETS_ICON_IMPORT, PAGE(XXWIDGETS_FORMAT_PAGE_ELF) | PAGE(XXWIDGETS_FORMAT_PAGE_MACH), 0, 0, 0, 0},
     {XXW_N_("Export"), XXWIDGETS_ICON_EXPORT, PAGE(XXWIDGETS_FORMAT_PAGE_ELF) | PAGE(XXWIDGETS_FORMAT_PAGE_MACH), 0, 0, 0, 0},
-    {XXW_N_("Symbols"), XXWIDGETS_ICON_SYMBOL, PAGE(XXWIDGETS_FORMAT_PAGE_PE) | PAGE(XXWIDGETS_FORMAT_PAGE_ELF) |
-                                               PAGE(XXWIDGETS_FORMAT_PAGE_MACH), 0, 0, 0, 0}
-};
+    {XXW_N_("Symbols"), XXWIDGETS_ICON_SYMBOL, PAGE(XXWIDGETS_FORMAT_PAGE_PE) | PAGE(XXWIDGETS_FORMAT_PAGE_ELF) | PAGE(XXWIDGETS_FORMAT_PAGE_MACH), 0, 0, 0, 0}};
 
-static const char *const default_main[XXWIDGETS_FORMAT_PAGE_COUNT] = {
-    XXW_N_("Binary"), "", NULL, XXW_N_("MSDOS"), XXW_N_("NE"), XXW_N_("LE"), XXW_N_("DEX"),
-    XXW_N_("PE"), XXW_N_("ELF"), XXW_N_("Mach-O")};
+static const char *const default_main[XXWIDGETS_FORMAT_PAGE_COUNT] = {XXW_N_("Binary"), "",           NULL,          XXW_N_("MSDOS"), XXW_N_("NE"), XXW_N_("LE"),
+                                                                      XXW_N_("DEX"),    XXW_N_("PE"), XXW_N_("ELF"), XXW_N_("Mach-O")};
 
 struct xxwidgets_format_panel {
     xxwidgets_widget *owner, *frame, *buttons[XXWIDGETS_FORMAT_ITEM_COUNT];
@@ -93,8 +90,7 @@ static xxwidgets_status apply_all(xxwidgets_format_panel *panel)
 {
     xxwidgets_status status = panel->frame ? xxwidgets_widget_set_visible(panel->frame, panel->visible) : XXWIDGETS_OK;
     int i;
-    for (i = 0; status == XXWIDGETS_OK && i < XXWIDGETS_FORMAT_ITEM_COUNT; ++i)
-        status = apply_item(panel, (xxwidgets_format_item)i);
+    for (i = 0; status == XXWIDGETS_OK && i < XXWIDGETS_FORMAT_ITEM_COUNT; ++i) status = apply_item(panel, (xxwidgets_format_item)i);
     return status;
 }
 
@@ -109,11 +105,13 @@ xxwidgets_status xxwidgets_format_panel_create(xxwidgets_widget *owner, unsigned
     if (!owner || owner->kind != XXWIDGETS_WINDOW || flags || xxwidgets_component_busy(owner->app)) return XXWIDGETS_INVALID_ARGUMENT;
     panel = (xxwidgets_format_panel *)calloc(1, sizeof(*panel));
     if (!panel) return XXWIDGETS_OUT_OF_MEMORY;
-    panel->owner = owner; panel->visible = panel->enabled_all = 1; panel->page = XXWIDGETS_FORMAT_PAGE_BINARY;
-    if (xxwidgets_app_supports_kind(owner->app, XXWIDGETS_GROUP))
-        status = xxwidgets_widget_create(owner->app, owner, XXWIDGETS_GROUP, "", start, &panel->frame);
+    panel->owner = owner;
+    panel->visible = panel->enabled_all = 1;
+    panel->page = XXWIDGETS_FORMAT_PAGE_BINARY;
+    if (xxwidgets_app_supports_kind(owner->app, XXWIDGETS_GROUP)) status = xxwidgets_widget_create(owner->app, owner, XXWIDGETS_GROUP, "", start, &panel->frame);
     for (i = 0; status == XXWIDGETS_OK && i < XXWIDGETS_FORMAT_ITEM_COUNT; ++i) {
-        panel->shown[i] = specs[i].default_shown; panel->enabled[i] = 1;
+        panel->shown[i] = specs[i].default_shown;
+        panel->enabled[i] = 1;
         if (specs[i].field) {
             unsigned int field_flags = specs[i].with_arrow ? XXWIDGETS_VALUE_FIELD_WITH_ARROW : 0;
             if (i == XXWIDGETS_FORMAT_ITEM_PE_RESOURCES_GROUP) field_flags = XXWIDGETS_VALUE_FIELD_BUTTONS;
@@ -121,11 +119,10 @@ xxwidgets_status xxwidgets_format_panel_create(xxwidgets_widget *owner, unsigned
         } else {
             const char *label = i == XXWIDGETS_FORMAT_ITEM_MAIN ? default_main[panel->page] : specs[i].label;
             status = xxwidgets_widget_create(owner->app, owner, XXWIDGETS_BUTTON, label ? XXW_TR(owner->app, label) : "", start, &panel->buttons[i]);
-            if (status == XXWIDGETS_OK && specs[i].icon != XXWIDGETS_ICON_NONE)
-                status = xxwidgets_button_set_icon_id(panel->buttons[i], specs[i].icon, 0);
+            if (status == XXWIDGETS_OK && specs[i].icon != XXWIDGETS_ICON_NONE) status = xxwidgets_button_set_icon_id(panel->buttons[i], specs[i].icon, 0);
             if (status == XXWIDGETS_OK && label)
-                status = xxwidgets_widget_set_tooltip(panel->buttons[i], XXW_TR(owner->app,
-                    i == XXWIDGETS_FORMAT_ITEM_PE_DOTNET ? XXW_N_("Not available in this version") : label));
+                status = xxwidgets_widget_set_tooltip(panel->buttons[i],
+                                                      XXW_TR(owner->app, i == XXWIDGETS_FORMAT_ITEM_PE_DOTNET ? XXW_N_("Not available in this version") : label));
         }
     }
     if (status == XXWIDGETS_OK) {
@@ -134,7 +131,10 @@ xxwidgets_status xxwidgets_format_panel_create(xxwidgets_widget *owner, unsigned
     }
     panel->enabled[XXWIDGETS_FORMAT_ITEM_PE_DOTNET] = 0;
     if (status == XXWIDGETS_OK) status = apply_all(panel);
-    if (status != XXWIDGETS_OK) { (void)xxwidgets_format_panel_destroy(panel); return status; }
+    if (status != XXWIDGETS_OK) {
+        (void)xxwidgets_format_panel_destroy(panel);
+        return status;
+    }
     *out = panel;
     return XXWIDGETS_OK;
 }
@@ -150,7 +150,8 @@ xxwidgets_status xxwidgets_format_panel_destroy(xxwidgets_format_panel *panel)
         if (panel->buttons[i]) (void)xxwidgets_widget_destroy(panel->buttons[i]);
     }
     if (panel->frame) (void)xxwidgets_widget_destroy(panel->frame);
-    free(panel->main_label); free(panel);
+    free(panel->main_label);
+    free(panel);
     return XXWIDGETS_OK;
 }
 
@@ -207,7 +208,8 @@ xxwidgets_status xxwidgets_format_panel_get_minimum_size(xxwidgets_format_panel 
             int include = (specs[i].page_mask & PAGE(page)) != 0;
             if (i >= XXWIDGETS_FORMAT_ITEM_ARCHIVE_MANIFEST_MF && i <= XXWIDGETS_FORMAT_ITEM_ARCHIVE_UNPACK) include = 0;
             if (!include || i == XXWIDGETS_FORMAT_ITEM_PE_MANIFEST || i == XXWIDGETS_FORMAT_ITEM_PE_VERSION) continue;
-            if (specs[i].row2) ++row2; else ++row1;
+            if (specs[i].row2) ++row2;
+            else ++row1;
         }
         row1 = row1 ? row1 * m.control_height + (row1 - 1) * m.spacing : 0;
         row2 = row2 ? row2 * 2 * m.control_height + (row2 - 1) * m.spacing : 0;
@@ -228,16 +230,16 @@ xxwidgets_status xxwidgets_format_panel_set_bounds(xxwidgets_format_panel *panel
     if (!panel || units.x < 0 || units.y < 0 || units.width < 1 || units.height < 1) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_app_get_metrics(panel->owner->app, &m);
     if (status == XXWIDGETS_OK && panel->frame) status = xxwidgets_layout_place(panel->frame, units);
-    inner = xxwidgets_layout_rect(units.x + m.panel_inset, units.y + m.panel_inset,
-                                  units.width - 2 * m.panel_inset, units.height - 2 * m.panel_inset);
-    left = inner.x; right = inner.x + inner.width;
+    inner = xxwidgets_layout_rect(units.x + m.panel_inset, units.y + m.panel_inset, units.width - 2 * m.panel_inset, units.height - 2 * m.panel_inset);
+    left = inner.x;
+    right = inner.x + inner.width;
     /* Row 1: main at left, all other members packed from the right in descriptor order. */
     if (status == XXWIDGETS_OK && member(panel, XXWIDGETS_FORMAT_ITEM_MAIN) && panel->page != XXWIDGETS_FORMAT_PAGE_COM) {
         int w;
         status = item_width(panel, XXWIDGETS_FORMAT_ITEM_MAIN, &w);
         main_width = w;
-        if (status == XXWIDGETS_OK) status = xxwidgets_layout_place(panel->buttons[XXWIDGETS_FORMAT_ITEM_MAIN],
-            xxwidgets_layout_rect(left, inner.y, w, m.control_height));
+        if (status == XXWIDGETS_OK)
+            status = xxwidgets_layout_place(panel->buttons[XXWIDGETS_FORMAT_ITEM_MAIN], xxwidgets_layout_rect(left, inner.y, w, m.control_height));
     }
     for (i = 1; status == XXWIDGETS_OK && i < XXWIDGETS_FORMAT_ITEM_COUNT; ++i) {
         int w;
@@ -260,7 +262,10 @@ xxwidgets_status xxwidgets_format_panel_set_bounds(xxwidgets_format_panel *panel
     }
     field_y = inner.y + m.control_height + m.spacing;
     field_h = xxwidgets_layout_caption_box_height(&m, m.control_height);
-    left = inner.x; right = inner.x + inner.width; row_total = 0; row_available = inner.width;
+    left = inner.x;
+    right = inner.x + inner.width;
+    row_total = 0;
+    row_available = inner.width;
     for (i = 1; status == XXWIDGETS_OK && i < XXWIDGETS_FORMAT_ITEM_COUNT; ++i) {
         int w;
         if (!specs[i].field || !member(panel, (xxwidgets_format_item)i)) continue;
@@ -273,8 +278,8 @@ xxwidgets_status xxwidgets_format_panel_set_bounds(xxwidgets_format_panel *panel
         status = item_width(panel, XXWIDGETS_FORMAT_ITEM_PE_RESOURCES_GROUP, &w);
         if (row_total > row_available) w = xxwidgets_component_max(2 * m.control_height, (int)((long long)w * row_available / row_total));
         right -= w;
-        if (status == XXWIDGETS_OK) status = xxwidgets_value_field_set_bounds(panel->fields[XXWIDGETS_FORMAT_ITEM_PE_RESOURCES_GROUP],
-            xxwidgets_layout_rect(right, field_y, w, field_h));
+        if (status == XXWIDGETS_OK)
+            status = xxwidgets_value_field_set_bounds(panel->fields[XXWIDGETS_FORMAT_ITEM_PE_RESOURCES_GROUP], xxwidgets_layout_rect(right, field_y, w, field_h));
         right -= m.spacing;
     }
     for (i = 1; status == XXWIDGETS_OK && i < XXWIDGETS_FORMAT_ITEM_COUNT; ++i) {
@@ -287,7 +292,10 @@ xxwidgets_status xxwidgets_format_panel_set_bounds(xxwidgets_format_panel *panel
         if (status == XXWIDGETS_OK) status = xxwidgets_value_field_set_bounds(panel->fields[i], xxwidgets_layout_rect(left, field_y, w, field_h));
         left += w + m.spacing;
     }
-    if (status == XXWIDGETS_OK) { panel->bounds = units; panel->has_bounds = 1; }
+    if (status == XXWIDGETS_OK) {
+        panel->bounds = units;
+        panel->has_bounds = 1;
+    }
     return status;
 }
 
@@ -309,21 +317,24 @@ xxwidgets_status xxwidgets_format_panel_set_page(xxwidgets_format_panel *panel, 
 {
     char *copy = NULL;
     xxwidgets_status status;
-    if (!panel || page < 0 || page >= XXWIDGETS_FORMAT_PAGE_COUNT || (main_label && !xxwidgets_valid_utf8(main_label)))
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (main_label) { copy = xxwidgets_strdup(main_label); if (!copy) return XXWIDGETS_OUT_OF_MEMORY; }
-    free(panel->main_label); panel->main_label = copy; panel->page = page;
-    status = xxwidgets_widget_set_text(panel->buttons[XXWIDGETS_FORMAT_ITEM_MAIN], main_text(panel) ?
-                                       (panel->main_label ? panel->main_label : XXW_TR(panel->owner->app, main_text(panel))) : "");
+    if (!panel || page < 0 || page >= XXWIDGETS_FORMAT_PAGE_COUNT || (main_label && !xxwidgets_valid_utf8(main_label))) return XXWIDGETS_INVALID_ARGUMENT;
+    if (main_label) {
+        copy = xxwidgets_strdup(main_label);
+        if (!copy) return XXWIDGETS_OUT_OF_MEMORY;
+    }
+    free(panel->main_label);
+    panel->main_label = copy;
+    panel->page = page;
+    status = xxwidgets_widget_set_text(panel->buttons[XXWIDGETS_FORMAT_ITEM_MAIN],
+                                       main_text(panel) ? (panel->main_label ? panel->main_label : XXW_TR(panel->owner->app, main_text(panel))) : "");
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_tooltip(panel->buttons[XXWIDGETS_FORMAT_ITEM_MAIN], main_text(panel) ?
-                                              (panel->main_label ? panel->main_label : XXW_TR(panel->owner->app, main_text(panel))) : "");
+        status = xxwidgets_widget_set_tooltip(panel->buttons[XXWIDGETS_FORMAT_ITEM_MAIN],
+                                              main_text(panel) ? (panel->main_label ? panel->main_label : XXW_TR(panel->owner->app, main_text(panel))) : "");
     if (status == XXWIDGETS_OK) status = apply_all(panel);
     if (status == XXWIDGETS_OK && panel->has_bounds) {
         int width, height;
         status = xxwidgets_format_panel_get_minimum_size(panel, &width, &height);
-        if (status == XXWIDGETS_OK && panel->bounds.width >= width && panel->bounds.height >= height)
-            status = xxwidgets_format_panel_set_bounds(panel, panel->bounds);
+        if (status == XXWIDGETS_OK && panel->bounds.width >= width && panel->bounds.height >= height) status = xxwidgets_format_panel_set_bounds(panel, panel->bounds);
     }
     return status;
 }
@@ -343,8 +354,7 @@ xxwidgets_status xxwidgets_format_panel_set_item_enabled(xxwidgets_format_panel 
 xxwidgets_status xxwidgets_format_panel_set_item_shown(xxwidgets_format_panel *panel, xxwidgets_format_item item, int shown)
 {
     xxwidgets_status status;
-    if (!panel || item < 0 || item >= XXWIDGETS_FORMAT_ITEM_COUNT || item == XXWIDGETS_FORMAT_ITEM_MAIN || (shown != 0 && shown != 1))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!panel || item < 0 || item >= XXWIDGETS_FORMAT_ITEM_COUNT || item == XXWIDGETS_FORMAT_ITEM_MAIN || (shown != 0 && shown != 1)) return XXWIDGETS_INVALID_ARGUMENT;
     panel->shown[item] = shown;
     status = apply_item(panel, item);
     if (status == XXWIDGETS_OK && panel->has_bounds) status = xxwidgets_format_panel_set_bounds(panel, panel->bounds);
@@ -372,8 +382,7 @@ xxwidgets_status xxwidgets_format_panel_set_item_caption(xxwidgets_format_panel 
 xxwidgets_widget *xxwidgets_format_panel_item_widget(const xxwidgets_format_panel *panel, xxwidgets_format_item item)
 {
     if (!panel || item < 0 || item >= XXWIDGETS_FORMAT_ITEM_COUNT) return NULL;
-    return panel->buttons[item] ? panel->buttons[item] :
-        xxwidgets_value_field_control(panel->fields[item], XXWIDGETS_VALUE_FIELD_VALUE);
+    return panel->buttons[item] ? panel->buttons[item] : xxwidgets_value_field_control(panel->fields[item], XXWIDGETS_VALUE_FIELD_VALUE);
 }
 
 xxwidgets_value_field *xxwidgets_format_panel_item_field(const xxwidgets_format_panel *panel, xxwidgets_format_item item)
@@ -381,7 +390,10 @@ xxwidgets_value_field *xxwidgets_format_panel_item_field(const xxwidgets_format_
     return panel && item >= 0 && item < XXWIDGETS_FORMAT_ITEM_COUNT ? panel->fields[item] : NULL;
 }
 
-xxwidgets_widget *xxwidgets_format_panel_frame(const xxwidgets_format_panel *panel) { return panel ? panel->frame : NULL; }
+xxwidgets_widget *xxwidgets_format_panel_frame(const xxwidgets_format_panel *panel)
+{
+    return panel ? panel->frame : NULL;
+}
 
 xxwidgets_status xxwidgets_format_panel_retranslate(xxwidgets_format_panel *panel)
 {
@@ -392,18 +404,19 @@ xxwidgets_status xxwidgets_format_panel_retranslate(xxwidgets_format_panel *pane
         if (panel->fields[i]) status = xxwidgets_value_field_retranslate(panel->fields[i]);
         else if (panel->buttons[i]) {
             const char *label = i == XXWIDGETS_FORMAT_ITEM_MAIN ? main_text(panel) : specs[i].label;
-            status = xxwidgets_widget_set_text(panel->buttons[i], label ? ((i == XXWIDGETS_FORMAT_ITEM_MAIN && panel->main_label) ? label :
-                                               XXW_TR(panel->owner->app, label)) : "");
-            if (status == XXWIDGETS_OK && label) status = xxwidgets_widget_set_tooltip(panel->buttons[i],
-                i == XXWIDGETS_FORMAT_ITEM_PE_DOTNET ? XXW_TR(panel->owner->app, XXW_N_("Not available in this version")) :
-                (i == XXWIDGETS_FORMAT_ITEM_MAIN && panel->main_label) ? label : XXW_TR(panel->owner->app, label));
+            status = xxwidgets_widget_set_text(panel->buttons[i],
+                                               label ? ((i == XXWIDGETS_FORMAT_ITEM_MAIN && panel->main_label) ? label : XXW_TR(panel->owner->app, label)) : "");
+            if (status == XXWIDGETS_OK && label)
+                status = xxwidgets_widget_set_tooltip(panel->buttons[i], i == XXWIDGETS_FORMAT_ITEM_PE_DOTNET
+                                                                             ? XXW_TR(panel->owner->app, XXW_N_("Not available in this version"))
+                                                                         : (i == XXWIDGETS_FORMAT_ITEM_MAIN && panel->main_label) ? label
+                                                                                                                                  : XXW_TR(panel->owner->app, label));
         }
     }
     if (status == XXWIDGETS_OK && panel->has_bounds) {
         int width, height;
         status = xxwidgets_format_panel_get_minimum_size(panel, &width, &height);
-        if (status == XXWIDGETS_OK && panel->bounds.width >= width && panel->bounds.height >= height)
-            status = xxwidgets_format_panel_set_bounds(panel, panel->bounds);
+        if (status == XXWIDGETS_OK && panel->bounds.width >= width && panel->bounds.height >= height) status = xxwidgets_format_panel_set_bounds(panel, panel->bounds);
     }
     return status;
 }
@@ -425,6 +438,10 @@ int xxwidgets_format_panel_handle_event(xxwidgets_format_panel *panel, const xxw
             return 1;
         }
     }
-    if (panel->frame == event->widget) { if (item) *item = XXWIDGETS_FORMAT_ITEM_COUNT; if (is_arrow) *is_arrow = 0; return 1; }
+    if (panel->frame == event->widget) {
+        if (item) *item = XXWIDGETS_FORMAT_ITEM_COUNT;
+        if (is_arrow) *is_arrow = 0;
+        return 1;
+    }
     return 0;
 }

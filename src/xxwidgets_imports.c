@@ -14,7 +14,12 @@ struct xxwidgets_imports {
     int pending;
 };
 #define C(v, id) ((v)->controls[XXWIDGETS_IMPORTS_##id])
-enum { FILTER = 1, RESET, COPY, COPY_ALL };
+enum {
+    FILTER = 1,
+    RESET,
+    COPY,
+    COPY_ALL
+};
 static int valid_bounds(xxwidgets_rect b)
 {
     return b.x >= 0 && b.y >= 0 && b.width >= 96 && b.height >= 20 && b.x <= 32767 - b.width && b.y <= 32767 - b.height;
@@ -22,9 +27,12 @@ static int valid_bounds(xxwidgets_rect b)
 xxwidgets_status xxwidgets_imports_set_rect(xxwidgets_imports *v, xxwidgets_rect b)
 {
     xxwidgets_rect r[XXWIDGETS_IMPORTS_CONTROL_COUNT], old[XXWIDGETS_IMPORTS_CONTROL_COUNT];
-    if (!v || !valid_bounds(b))
-        return XXWIDGETS_INVALID_ARGUMENT;
-#define R(id, dx, dy, w, h) r[XXWIDGETS_IMPORTS_##id] = (xxwidgets_rect){b.x + (dx), b.y + (dy), w, h}
+    if (!v || !valid_bounds(b)) return XXWIDGETS_INVALID_ARGUMENT;
+#define R(id, dx, dy, w, h)                      \
+    r[XXWIDGETS_IMPORTS_##id] = (xxwidgets_rect) \
+    {                                            \
+        b.x + (dx), b.y + (dy), w, h             \
+    }
     R(PATH, 0, 0, b.width, 1);
     R(SUMMARY, 0, 2, b.width, 1);
     R(FILTER_LABEL, 0, 4, 8, 2);
@@ -36,13 +44,11 @@ xxwidgets_status xxwidgets_imports_set_rect(xxwidgets_imports *v, xxwidgets_rect
     R(COPY_ALL, 18, b.height - 3, 16, 2);
     R(STATUS, 36, b.height - 3, b.width - 36, 2);
 #undef R
-    for (size_t i = 0; i < XXWIDGETS_IMPORTS_CONTROL_COUNT; ++i)
-        old[i] = v->controls[i]->rect;
+    for (size_t i = 0; i < XXWIDGETS_IMPORTS_CONTROL_COUNT; ++i) old[i] = v->controls[i]->rect;
     for (size_t i = 0; i < XXWIDGETS_IMPORTS_CONTROL_COUNT; ++i) {
         xxwidgets_status status = xxwidgets_widget_set_rect(v->controls[i], r[i]);
         if (status != XXWIDGETS_OK) {
-            for (size_t j = 0; j < i; ++j)
-                (void)xxwidgets_widget_set_rect(v->controls[j], old[j]);
+            for (size_t j = 0; j < i; ++j) (void)xxwidgets_widget_set_rect(v->controls[j], old[j]);
             return status;
         }
     }
@@ -64,37 +70,27 @@ static void describe(const xxwidgets_app *app, const xx_import_record *r, char *
         snprintf(out, capacity, "%s", XXW_TR(app, "No import selected"));
         return;
     }
-    if (r->offset < 0)
-        strcpy(offset, "-");
-    else
-        snprintf(offset, sizeof(offset), "0x%" PRIX64, (uint64_t)r->offset);
-    if (r->address == UINT64_MAX)
-        strcpy(address, "-");
-    else
-        snprintf(address, sizeof(address), "0x%" PRIX64, r->address);
+    if (r->offset < 0) strcpy(offset, "-");
+    else snprintf(offset, sizeof(offset), "0x%" PRIX64, (uint64_t)r->offset);
+    if (r->address == UINT64_MAX) strcpy(address, "-");
+    else snprintf(address, sizeof(address), "0x%" PRIX64, r->address);
     snprintf(out, capacity, "File offset %s | Address %s | Hint %" PRIu32 " | %s%s", offset, address, r->hint, r->is_delay ? "Delay " : "",
              r->by_ordinal ? "Ordinal" : "Named");
 }
 static int matches(const char *text, const char *filter)
 {
     size_t length = strlen(filter);
-    if (!length)
-        return 1;
-    if (!text)
-        return 0;
+    if (!length) return 1;
+    if (!text) return 0;
     for (; *text; ++text) {
         size_t i;
         for (i = 0; i < length && text[i]; ++i) {
             unsigned char a = (unsigned char)text[i], b = (unsigned char)filter[i];
-            if (a >= 'A' && a <= 'Z')
-                a += 'a' - 'A';
-            if (b >= 'A' && b <= 'Z')
-                b += 'a' - 'A';
-            if (a != b)
-                break;
+            if (a >= 'A' && a <= 'Z') a += 'a' - 'A';
+            if (b >= 'A' && b <= 'Z') b += 'a' - 'A';
+            if (a != b) break;
         }
-        if (i == length)
-            return 1;
+        if (i == length) return 1;
     }
     return 0;
 }
@@ -115,10 +111,9 @@ static xxwidgets_status present(xxwidgets_imports *v, const xxwidgets_imports_da
         return status;
     }
     for (size_t i = 0; i < data->count; ++i)
-        if (matches(data->records[i].library_name, filter) || matches(data->records[i].name, filter))
-            rows[count++] = data->records[i];
-    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s | %zu / %zu %s", data->format, data->file_size, XXW_TR(v->owner->app, "bytes"), count,
-             data->count, xxwidgets_app_ngettext(v->owner->app, "import", "imports", data->count));
+        if (matches(data->records[i].library_name, filter) || matches(data->records[i].name, filter)) rows[count++] = data->records[i];
+    snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s | %zu / %zu %s", data->format, data->file_size, XXW_TR(v->owner->app, "bytes"), count, data->count,
+             xxwidgets_app_ngettext(v->owner->app, "import", "imports", data->count));
     describe(v->owner->app, count ? rows : NULL, details, sizeof(details));
     texts[0] = xxwidgets_strdup(data->path);
     texts[1] = xxwidgets_strdup(summary);
@@ -126,8 +121,7 @@ static xxwidgets_status present(xxwidgets_imports *v, const xxwidgets_imports_da
     texts[3] = xxwidgets_strdup(details);
     texts[4] = xxwidgets_strdup(count ? XXW_TR(v->owner->app, "Select an import") : XXW_TR(v->owner->app, "No imports match"));
     for (size_t i = 0; i < 5; ++i)
-        if (!texts[i])
-            goto finish;
+        if (!texts[i]) goto finish;
     for (size_t i = 0; i < 5; ++i) {
         old[i] = labels[i]->text;
         labels[i]->text = texts[i];
@@ -138,23 +132,16 @@ static xxwidgets_status present(xxwidgets_imports *v, const xxwidgets_imports_da
     }
     status = XXWIDGETS_OK;
     ++v->owner->app->syncing;
-    for (size_t i = 0; i < 5 && status == XXWIDGETS_OK; ++i)
-        status = v->owner->app->ops->sync(labels[i]);
-    for (size_t i = 0; i < 2 && status == XXWIDGETS_OK; ++i)
-        status = v->owner->app->ops->sync(buttons[i]);
+    for (size_t i = 0; i < 5 && status == XXWIDGETS_OK; ++i) status = v->owner->app->ops->sync(labels[i]);
+    for (size_t i = 0; i < 2 && status == XXWIDGETS_OK; ++i) status = v->owner->app->ops->sync(buttons[i]);
     --v->owner->app->syncing;
-    if (status == XXWIDGETS_OK)
-        status = xxwidget_importsviewer_set_records(C(v, TABLE), rows, count);
+    if (status == XXWIDGETS_OK) status = xxwidget_importsviewer_set_records(C(v, TABLE), rows, count);
     if (status != XXWIDGETS_OK) {
-        for (size_t i = 0; i < 5; ++i)
-            labels[i]->text = old[i];
-        for (size_t i = 0; i < 2; ++i)
-            buttons[i]->enabled = enabled[i];
+        for (size_t i = 0; i < 5; ++i) labels[i]->text = old[i];
+        for (size_t i = 0; i < 2; ++i) buttons[i]->enabled = enabled[i];
         ++v->owner->app->syncing;
-        for (size_t i = 0; i < 5; ++i)
-            (void)v->owner->app->ops->sync(labels[i]);
-        for (size_t i = 0; i < 2; ++i)
-            (void)v->owner->app->ops->sync(buttons[i]);
+        for (size_t i = 0; i < 5; ++i) (void)v->owner->app->ops->sync(labels[i]);
+        for (size_t i = 0; i < 2; ++i) (void)v->owner->app->ops->sync(buttons[i]);
         --v->owner->app->syncing;
         goto finish;
     }
@@ -167,8 +154,7 @@ static xxwidgets_status present(xxwidgets_imports *v, const xxwidgets_imports_da
     v->displayed_count = count;
     filter_copy = NULL;
 finish:
-    for (size_t i = 0; i < 5; ++i)
-        free(texts[i]);
+    for (size_t i = 0; i < 5; ++i) free(texts[i]);
     free(rows);
     free(filter_copy);
     return status;
@@ -177,43 +163,34 @@ xxwidgets_status xxwidgets_imports_create(xxwidgets_widget *owner, xxwidgets_rec
 {
     static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL,        XXWIDGETS_LABEL, XXWIDGETS_LABEL,  XXWIDGETS_EDIT,   XXWIDGETS_BUTTON,
                                            XXWIDGET_IMPORTSVIEWER, XXWIDGETS_LABEL, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
-    static const char *const names[] = {"", "", XXW_N_("Filter"), "", XXW_N_("Reset"), XXW_N_("Imports"), XXW_N_("No import selected"),
-                                        XXW_N_("Copy row"), XXW_N_("Copy visible"), ""};
+    static const char *const names[] = {
+        "", "", XXW_N_("Filter"), "", XXW_N_("Reset"), XXW_N_("Imports"), XXW_N_("No import selected"), XXW_N_("Copy row"), XXW_N_("Copy visible"), ""};
     xxwidgets_imports *v;
     xxwidgets_status status;
-    if (!out)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!out) return XXWIDGETS_INVALID_ARGUMENT;
     *out = NULL;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds))
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing) return XXWIDGETS_BUSY;
     v = calloc(1, sizeof(*v));
-    if (!v)
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (!v) return XXWIDGETS_OUT_OF_MEMORY;
     v->owner = owner;
     for (size_t i = 0; i < XXWIDGETS_IMPORTS_CONTROL_COUNT; ++i) {
         status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, v->controls + i);
-        if (status != XXWIDGETS_OK)
-            goto fail;
+        if (status != XXWIDGETS_OK) goto fail;
     }
     /* One row: a long path keeps its file name, and '&' is shown as is. */
     C(v, PATH)->keep_end = 1;
     /* Column headers provide the visible filters. Retain these controls for
      * the existing programmatic filtering API and control IDs. */
     status = xxwidgets_widget_set_visible(C(v, FILTER_LABEL), 0);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_visible(C(v, FILTER), 0);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_visible(C(v, RESET), 0);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_imports_set_rect(v, bounds);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(C(v, FILTER), 0);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_visible(C(v, RESET), 0);
+    if (status == XXWIDGETS_OK) status = xxwidgets_imports_set_rect(v, bounds);
     if (status == XXWIDGETS_OK) {
         xxwidgets_imports_data empty = {"", "", 0, NULL, 0};
         status = xxwidgets_imports_set_data(v, &empty);
     }
-    if (status != XXWIDGETS_OK)
-        goto fail;
+    if (status != XXWIDGETS_OK) goto fail;
     *out = v;
     return XXWIDGETS_OK;
 fail:
@@ -222,13 +199,10 @@ fail:
 }
 xxwidgets_status xxwidgets_imports_destroy(xxwidgets_imports *v)
 {
-    if (!v)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (!v) return XXWIDGETS_INVALID_ARGUMENT;
+    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
     for (size_t i = 0; i < XXWIDGETS_IMPORTS_CONTROL_COUNT; ++i)
-        if (v->controls[i])
-            (void)xxwidgets_widget_destroy(v->controls[i]);
+        if (v->controls[i]) (void)xxwidgets_widget_destroy(v->controls[i]);
     free_records(v->records, v->count);
     free(v->path);
     free(v->format);
@@ -253,19 +227,15 @@ static xxwidgets_status update_visible_state(xxwidgets_imports *v)
     size_t count = xxwidgets_imports_visible_count(v);
     char summary[256];
     xxwidgets_status status;
-    if (count == v->displayed_count)
-        return XXWIDGETS_OK;
+    if (count == v->displayed_count) return XXWIDGETS_OK;
     snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s | %zu / %zu %s", v->format, v->file_size, XXW_TR(v->owner->app, "bytes"), count, v->count,
              xxwidgets_app_ngettext(v->owner->app, "import", "imports", v->count));
     status = xxwidgets_widget_set_text(C(v, SUMMARY), summary);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_enabled(C(v, COPY), count != 0);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_enabled(C(v, COPY_ALL), count != 0);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, COPY), count != 0);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(C(v, COPY_ALL), count != 0);
     if (status == XXWIDGETS_OK)
         status = xxwidgets_widget_set_text(C(v, STATUS), count ? XXW_TR(v->owner->app, "Select an import") : XXW_TR(v->owner->app, "No imports match"));
-    if (status == XXWIDGETS_OK)
-        v->displayed_count = count;
+    if (status == XXWIDGETS_OK) v->displayed_count = count;
     return status;
 }
 xxwidgets_status xxwidgets_imports_set_data(xxwidgets_imports *v, const xxwidgets_imports_data *data)
@@ -277,38 +247,32 @@ xxwidgets_status xxwidgets_imports_set_data(xxwidgets_imports *v, const xxwidget
     if (!v || !data || !xxwidgets_valid_utf8(data->path) || !xxwidgets_valid_utf8(data->format) || strlen(data->format) > 128 ||
         data->count > XXWIDGETS_IMPORTS_MAX_RECORDS || (data->count && !data->records))
         return XXWIDGETS_INVALID_ARGUMENT;
-    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
     for (size_t i = 0; i < data->count; ++i) {
         const xx_import_record *r = data->records + i;
         const char *strings[] = {r->library_name ? r->library_name : "", r->name ? r->name : ""};
-        if (r->offset < -1 || (r->offset >= 0 && (uint64_t)r->offset >= data->file_size))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (r->offset < -1 || (r->offset >= 0 && (uint64_t)r->offset >= data->file_size)) return XXWIDGETS_INVALID_ARGUMENT;
         for (size_t j = 0; j < 2; ++j) {
             size_t n = strlen(strings[j]);
-            if (n > XXWIDGETS_IMPORTS_MAX_NAME || !xxwidgets_valid_utf8(strings[j]) || n + 1 > XXWIDGETS_IMPORTS_MAX_TEXT - total)
-                return XXWIDGETS_INVALID_ARGUMENT;
+            if (n > XXWIDGETS_IMPORTS_MAX_NAME || !xxwidgets_valid_utf8(strings[j]) || n + 1 > XXWIDGETS_IMPORTS_MAX_TEXT - total) return XXWIDGETS_INVALID_ARGUMENT;
             total += n + 1;
         }
     }
     path = xxwidgets_strdup(data->path);
     format = xxwidgets_strdup(data->format);
     copy = data->count ? calloc(data->count, sizeof(*copy)) : NULL;
-    if (!path || !format || (data->count && !copy))
-        goto finish;
+    if (!path || !format || (data->count && !copy)) goto finish;
     for (size_t i = 0; i < data->count; ++i) {
         copy[i] = data->records[i];
         copy[i].name = xxwidgets_strdup(data->records[i].name ? data->records[i].name : "");
         copy[i].library_name = xxwidgets_strdup(data->records[i].library_name ? data->records[i].library_name : "");
-        if (!copy[i].name || !copy[i].library_name)
-            goto finish;
+        if (!copy[i].name || !copy[i].library_name) goto finish;
     }
     {
         xxwidgets_imports_data owned = {path, format, data->file_size, copy, data->count};
         status = present(v, &owned, "");
     }
-    if (status != XXWIDGETS_OK)
-        goto finish;
+    if (status != XXWIDGETS_OK) goto finish;
     free_records(v->records, v->count);
     free(v->path);
     free(v->format);
@@ -329,10 +293,8 @@ finish:
 xxwidgets_status xxwidgets_imports_set_filter(xxwidgets_imports *v, const char *filter)
 {
     xxwidgets_imports_data data;
-    if (!v || !xxwidgets_valid_utf8(filter) || strlen(filter) > 256)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (!v || !xxwidgets_valid_utf8(filter) || strlen(filter) > 256) return XXWIDGETS_INVALID_ARGUMENT;
+    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
     data = (xxwidgets_imports_data){v->path, v->format, v->file_size, v->records, v->count};
     return present(v, &data, filter);
 }
@@ -341,76 +303,58 @@ static size_t row_text(xxwidgets_widget *table, size_t i, char *out, size_t capa
     xx_import_record r;
     char offset[32];
     xxwidget_importsviewer_get_record(table, i, &r);
-    if (r.offset < 0)
-        strcpy(offset, "-");
-    else
-        snprintf(offset, sizeof(offset), "0x%" PRIX64, (uint64_t)r.offset);
-    return (size_t)snprintf(out, capacity, "%s\t%s\t%s\t%" PRIu32 "\t%s\t%s\t%s\n", xxwidgets_binaryviewer_cell(table, i, 0),
-                            xxwidgets_binaryviewer_cell(table, i, 1), xxwidgets_binaryviewer_cell(table, i, 2), r.hint, offset,
-                            xxwidgets_binaryviewer_cell(table, i, 3), xxwidgets_binaryviewer_cell(table, i, 4));
+    if (r.offset < 0) strcpy(offset, "-");
+    else snprintf(offset, sizeof(offset), "0x%" PRIX64, (uint64_t)r.offset);
+    return (size_t)snprintf(out, capacity, "%s\t%s\t%s\t%" PRIu32 "\t%s\t%s\t%s\n", xxwidgets_binaryviewer_cell(table, i, 0), xxwidgets_binaryviewer_cell(table, i, 1),
+                            xxwidgets_binaryviewer_cell(table, i, 2), r.hint, offset, xxwidgets_binaryviewer_cell(table, i, 3), xxwidgets_binaryviewer_cell(table, i, 4));
 }
 xxwidgets_status xxwidgets_imports_export_text(const xxwidgets_imports *v, size_t index, char *buffer, size_t capacity, size_t *required)
 {
     static const char header[] = "Library\tName\tOrdinal\tHint\tFile offset\tAddress\tKind\n";
     size_t count, first, last, length = sizeof(header) - 1, pos = 0;
     xxwidgets_widget *table;
-    if (!v || (!buffer && capacity))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!v || (!buffer && capacity)) return XXWIDGETS_INVALID_ARGUMENT;
     table = C(v, TABLE);
     count = xxwidget_importsviewer_count(table);
-    if (index != SIZE_MAX && (index >= count || xxwidgets_tabular_display_row(table, index) == SIZE_MAX))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (index != SIZE_MAX && (index >= count || xxwidgets_tabular_display_row(table, index) == SIZE_MAX)) return XXWIDGETS_INVALID_ARGUMENT;
     first = index == SIZE_MAX ? 0 : index;
     last = index == SIZE_MAX ? count : index + 1;
     for (size_t i = first; i < last; ++i) {
-        if (xxwidgets_tabular_display_row(table, i) == SIZE_MAX)
-            continue;
+        if (xxwidgets_tabular_display_row(table, i) == SIZE_MAX) continue;
         length += row_text(table, i, NULL, 0);
-        if (length > 32U * 1024U * 1024U)
-            return XXWIDGETS_UNAVAILABLE;
+        if (length > 32U * 1024U * 1024U) return XXWIDGETS_UNAVAILABLE;
     }
-    if (required)
-        *required = length + 1;
-    if (!buffer && !capacity)
-        return XXWIDGETS_OK;
+    if (required) *required = length + 1;
+    if (!buffer && !capacity) return XXWIDGETS_OK;
     if (capacity <= length) {
-        if (capacity)
-            buffer[0] = 0;
+        if (capacity) buffer[0] = 0;
         return XXWIDGETS_BUFFER_TOO_SMALL;
     }
     memcpy(buffer, header, sizeof(header) - 1);
     pos = sizeof(header) - 1;
     for (size_t i = first; i < last; ++i)
-        if (xxwidgets_tabular_display_row(table, i) != SIZE_MAX)
-            pos += row_text(table, i, buffer + pos, capacity - pos);
+        if (xxwidgets_tabular_display_row(table, i) != SIZE_MAX) pos += row_text(table, i, buffer + pos, capacity - pos);
     buffer[pos] = 0;
     return XXWIDGETS_OK;
 }
 xxwidgets_status xxwidgets_imports_handle_event(xxwidgets_imports *v, const xxwidgets_event *event)
 {
-    if (!v || !event)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, TABLE))
-        return update_visible_state(v);
+    if (!v || !event) return XXWIDGETS_INVALID_ARGUMENT;
+    if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, TABLE)) return update_visible_state(v);
     if (event->type == XXWIDGETS_EVENT_SELECT && event->widget == C(v, TABLE)) {
         size_t index;
         xx_import_record r;
         char details[256];
         xxwidgets_status status = xxwidget_importsviewer_get_selection(C(v, TABLE), &index, &r);
-        if (status != XXWIDGETS_OK)
-            return status;
+        if (status != XXWIDGETS_OK) return status;
         describe(v->owner->app, index == SIZE_MAX ? NULL : &r, details, sizeof(details));
         return xxwidgets_widget_set_text(C(v, DETAILS), details);
     }
-    if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, FILTER))
-        v->pending = FILTER;
+    if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == C(v, FILTER)) v->pending = FILTER;
     if (event->type == XXWIDGETS_EVENT_CLICK) {
-        if (event->widget == C(v, RESET))
-            v->pending = RESET;
-        else if (event->widget == C(v, COPY))
-            v->pending = COPY;
-        else if (event->widget == C(v, COPY_ALL))
-            v->pending = COPY_ALL;
+        if (event->widget == C(v, RESET)) v->pending = RESET;
+        else if (event->widget == C(v, COPY)) v->pending = COPY;
+        else if (event->widget == C(v, COPY_ALL)) v->pending = COPY_ALL;
     }
     return XXWIDGETS_OK;
 }
@@ -418,25 +362,18 @@ xxwidgets_status xxwidgets_imports_process(xxwidgets_imports *v)
 {
     int action;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!v)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (!v) return XXWIDGETS_INVALID_ARGUMENT;
+    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
     status = update_visible_state(v);
-    if (status != XXWIDGETS_OK)
-        return status;
+    if (status != XXWIDGETS_OK) return status;
     action = v->pending;
     v->pending = 0;
-    if (!action)
-        return XXWIDGETS_OK;
+    if (!action) return XXWIDGETS_OK;
     if (action == FILTER || action == RESET) {
         char filter[257] = {0};
-        if (action == FILTER)
-            status = xxwidgets_widget_get_text(C(v, FILTER), filter, sizeof(filter), NULL);
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_imports_set_filter(v, filter);
-        if (status == XXWIDGETS_OK)
-            return status;
+        if (action == FILTER) status = xxwidgets_widget_get_text(C(v, FILTER), filter, sizeof(filter), NULL);
+        if (status == XXWIDGETS_OK) status = xxwidgets_imports_set_filter(v, filter);
+        if (status == XXWIDGETS_OK) return status;
         (void)xxwidgets_widget_set_text(C(v, FILTER), v->filter ? v->filter : "");
         return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot apply filter (maximum 256 bytes)"));
     }
@@ -446,21 +383,16 @@ xxwidgets_status xxwidgets_imports_process(xxwidgets_imports *v)
         xx_import_record r;
         if (action == COPY) {
             status = xxwidget_importsviewer_get_selection(C(v, TABLE), &index, &r);
-            if (status != XXWIDGETS_OK || index == SIZE_MAX)
-                return status;
+            if (status != XXWIDGETS_OK || index == SIZE_MAX) return status;
         }
         status = xxwidgets_imports_export_text(v, index, NULL, 0, &required);
-        if (status != XXWIDGETS_OK)
-            return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot copy that many imports"));
+        if (status != XXWIDGETS_OK) return xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(v->owner->app, "Cannot copy that many imports"));
         text = malloc(required);
-        if (!text)
-            return XXWIDGETS_OUT_OF_MEMORY;
+        if (!text) return XXWIDGETS_OUT_OF_MEMORY;
         status = xxwidgets_imports_export_text(v, index, text, required, NULL);
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_clipboard_set_text(v->owner, text);
+        if (status == XXWIDGETS_OK) status = xxwidgets_clipboard_set_text(v->owner, text);
         free(text);
-        return xxwidgets_widget_set_text(C(v, STATUS),
-                                         status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
+        return xxwidgets_widget_set_text(C(v, STATUS), status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
     }
     return status;
 }

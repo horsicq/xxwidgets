@@ -13,8 +13,8 @@
 int xxwidgets_table_filterable(const xxwidgets_widget *widget)
 {
     return widget && (xxwidgets_binaryviewer_kind(widget) || widget->kind == XXWIDGETS_MEMORY_MAP || widget->kind == XXWIDGETS_TABLE ||
-        widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || widget->kind == XXWIDGETS_ENTROPY_REGIONS ||
-        widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER);
+                      widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || widget->kind == XXWIDGETS_ENTROPY_REGIONS || widget->kind == XXWIDGETS_SCANRESULTS ||
+                      widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER);
 }
 
 static int filters_active(const xxwidgets_widget *widget)
@@ -65,7 +65,10 @@ static void ensure_rows(const xxwidgets_widget *constant)
     widget->table_rows_filter = widget->table_filter_revision;
     if (!filters_active(widget) || !widget->item_count) return;
     widget->table_rows = (size_t *)malloc(widget->item_count * sizeof(*widget->table_rows));
-    if (!widget->table_rows) { widget->table_rows_valid = 0; return; }
+    if (!widget->table_rows) {
+        widget->table_rows_valid = 0;
+        return;
+    }
     columns = xxwidgets_tabular_column_count(widget);
     for (row = 0; row < widget->item_count; ++row) {
         int keep = 1;
@@ -155,8 +158,7 @@ static xxwidgets_status store_filter(xxwidgets_widget *widget, size_t column, co
     *changed = 0;
     if (!xxwidgets_table_filterable(widget) || !text || !xxwidgets_valid_utf8(text) || column >= xxwidgets_tabular_column_count(widget))
         return XXWIDGETS_INVALID_ARGUMENT;
-    if (column < widget->table_filter_count && widget->table_filters[column] ? !strcmp(widget->table_filters[column], text) : !text[0])
-        return XXWIDGETS_OK;
+    if (column < widget->table_filter_count && widget->table_filters[column] ? !strcmp(widget->table_filters[column], text) : !text[0]) return XXWIDGETS_OK;
     if (column >= widget->table_filter_count) {
         char **grown = (char **)realloc(widget->table_filters, (column + 1) * sizeof(*grown));
         if (!grown) return XXWIDGETS_OUT_OF_MEMORY;
@@ -209,8 +211,7 @@ xxwidgets_status xxwidgets_table_filter_input(xxwidgets_widget *widget, size_t c
 
 const char *xxwidgets_table_filter(const xxwidgets_widget *table, size_t column)
 {
-    return xxwidgets_table_filterable(table) && column < table->table_filter_count && table->table_filters[column]
-        ? table->table_filters[column] : "";
+    return xxwidgets_table_filterable(table) && column < table->table_filter_count && table->table_filters[column] ? table->table_filters[column] : "";
 }
 
 xxwidgets_status xxwidgets_table_clear_filters(xxwidgets_widget *table)
@@ -219,7 +220,10 @@ xxwidgets_status xxwidgets_table_clear_filters(xxwidgets_widget *table)
     size_t i;
     if (!xxwidgets_table_filterable(table)) return XXWIDGETS_INVALID_ARGUMENT;
     if (!filters_active(table) && !table->table_external_filters) return XXWIDGETS_OK;
-    for (i = 0; i < table->table_filter_count; ++i) { free(table->table_filters[i]); table->table_filters[i] = NULL; }
+    for (i = 0; i < table->table_filter_count; ++i) {
+        free(table->table_filters[i]);
+        table->table_filters[i] = NULL;
+    }
     ++table->table_filter_revision;
     table->table_rows_valid = 0;
     return refilter(table, &selection);

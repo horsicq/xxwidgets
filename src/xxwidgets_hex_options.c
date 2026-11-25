@@ -38,16 +38,15 @@ struct xxwidgets_hex_options_widget {
 static int valid_options(const xxwidgets_hex_options *options)
 {
     return options &&
-        (options->bytes_per_row == 8 || options->bytes_per_row == 16 || options->bytes_per_row == 24 || options->bytes_per_row == 32 || options->bytes_per_row == 48 || options->bytes_per_row == 64) &&
-        (options->editable == 0 || options->editable == 1) &&
-        (options->bold_nonzero == 0 || options->bold_nonzero == 1) &&
-        (options->location_colon == 0 || options->location_colon == 1) && xxwidgets_font_valid(&options->font);
+           (options->bytes_per_row == 8 || options->bytes_per_row == 16 || options->bytes_per_row == 24 || options->bytes_per_row == 32 || options->bytes_per_row == 48 ||
+            options->bytes_per_row == 64) &&
+           (options->editable == 0 || options->editable == 1) && (options->bold_nonzero == 0 || options->bold_nonzero == 1) &&
+           (options->location_colon == 0 || options->location_colon == 1) && xxwidgets_font_valid(&options->font);
 }
 
 static int valid_bounds(xxwidgets_rect bounds)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 44 && bounds.height >= 5 &&
-        bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 44 && bounds.height >= 5 && bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
 }
 
 static void option_rects(xxwidgets_rect bounds, xxwidgets_rect rects[XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT])
@@ -88,8 +87,7 @@ xxwidgets_status xxwidgets_hex_options_init(xxwidgets_hex_options *options)
     return XXWIDGETS_OK;
 }
 
-xxwidgets_widget *xxwidgets_hex_options_widget_control(const xxwidgets_hex_options_widget *widget,
-                                                        xxwidgets_hex_options_control_id control)
+xxwidgets_widget *xxwidgets_hex_options_widget_control(const xxwidgets_hex_options_widget *widget, xxwidgets_hex_options_control_id control)
 {
     return widget && control >= 0 && control < XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT ? widget->controls[control] : NULL;
 }
@@ -109,7 +107,8 @@ xxwidgets_status xxwidgets_hex_options_widget_get(const xxwidgets_hex_options_wi
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_value(widget->controls[XXWIDGETS_HEX_OPTIONS_BOLD_NONZERO], &result.bold_nonzero);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_value(widget->controls[XXWIDGETS_HEX_OPTIONS_LOCATION_COLON], &result.location_colon);
     result.font = widget->font;
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_text(widget->controls[XXWIDGETS_HEX_OPTIONS_FONT_FAMILY], result.font.family, sizeof(result.font.family), NULL);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_get_text(widget->controls[XXWIDGETS_HEX_OPTIONS_FONT_FAMILY], result.font.family, sizeof(result.font.family), NULL);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_text(widget->controls[XXWIDGETS_HEX_OPTIONS_FONT_SIZE], size_text, sizeof(size_text), NULL);
     if (status != XXWIDGETS_OK) return status;
     if (!size_text[0]) return XXWIDGETS_INVALID_ARGUMENT;
@@ -138,12 +137,21 @@ xxwidgets_status xxwidgets_hex_options_widget_set(xxwidgets_hex_options_widget *
     size = widget->controls[XXWIDGETS_HEX_OPTIONS_FONT_SIZE];
     previous_family = xxwidgets_strdup(family->text);
     previous_size = xxwidgets_strdup(size->text);
-    if (!previous_family || !previous_size) { free(previous_family); free(previous_size); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!previous_family || !previous_size) {
+        free(previous_family);
+        free(previous_size);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     previous_columns = columns->value;
     previous_editable = editable->value;
     previous_bold = bold->value;
     previous_colon = widget->controls[XXWIDGETS_HEX_OPTIONS_LOCATION_COLON]->value;
-    selected = options->bytes_per_row == 8 ? 0 : options->bytes_per_row == 16 ? 1 : options->bytes_per_row == 24 ? 2 : options->bytes_per_row == 32 ? 3 : options->bytes_per_row == 48 ? 4 : 5;
+    selected = options->bytes_per_row == 8    ? 0
+               : options->bytes_per_row == 16 ? 1
+               : options->bytes_per_row == 24 ? 2
+               : options->bytes_per_row == 32 ? 3
+               : options->bytes_per_row == 48 ? 4
+                                              : 5;
     status = xxwidgets_widget_set_value(columns, selected);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(editable, options->editable);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(bold, options->bold_nonzero);
@@ -164,11 +172,15 @@ xxwidgets_status xxwidgets_hex_options_widget_set(xxwidgets_hex_options_widget *
         recover_control(bold);
     }
     if (status != XXWIDGETS_OK && strcmp(family->text, previous_family)) {
-        free(family->text); family->text = previous_family; previous_family = NULL;
+        free(family->text);
+        family->text = previous_family;
+        previous_family = NULL;
         recover_control(family);
     }
     if (status != XXWIDGETS_OK && strcmp(size->text, previous_size)) {
-        free(size->text); size->text = previous_size; previous_size = NULL;
+        free(size->text);
+        size->text = previous_size;
+        previous_size = NULL;
         recover_control(size);
     }
     if (status != XXWIDGETS_OK && widget->controls[XXWIDGETS_HEX_OPTIONS_LOCATION_COLON]->value != previous_colon) {
@@ -176,18 +188,19 @@ xxwidgets_status xxwidgets_hex_options_widget_set(xxwidgets_hex_options_widget *
         recover_control(widget->controls[XXWIDGETS_HEX_OPTIONS_LOCATION_COLON]);
     }
     if (status == XXWIDGETS_OK) widget->font = options->font;
-    free(previous_family); free(previous_size);
+    free(previous_family);
+    free(previous_size);
     return status;
 }
 
-xxwidgets_status xxwidgets_hex_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-                                                      xxwidgets_hex_options_widget **out_widget)
+xxwidgets_status xxwidgets_hex_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_hex_options_widget **out_widget)
 {
     static const char *const labels[XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT] = {
-        XXW_N_("Bytes per row"), XXW_N_("Editable"), XXW_N_("Bytes per row"), XXW_N_("Bold non-zero"), "", "0", XXW_N_("Hex font"), XXW_N_("Point size"), XXW_N_("0 = automatic; 4..96 pt"), XXW_N_("Show colons in addresses")};
-    static const xxwidgets_kind kinds[XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT] = {
-        XXWIDGETS_COMBOBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_LABEL, XXWIDGETS_CHECKBOX,
-        XXWIDGETS_EDIT, XXWIDGETS_EDIT, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_CHECKBOX};
+        XXW_N_("Bytes per row"), XXW_N_("Editable"),   XXW_N_("Bytes per row"),           XXW_N_("Bold non-zero"),           "", "0",
+        XXW_N_("Hex font"),      XXW_N_("Point size"), XXW_N_("0 = automatic; 4..96 pt"), XXW_N_("Show colons in addresses")};
+    static const xxwidgets_kind kinds[XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT] = {XXWIDGETS_COMBOBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_LABEL, XXWIDGETS_CHECKBOX,
+                                                                              XXWIDGETS_EDIT,     XXWIDGETS_EDIT,     XXWIDGETS_LABEL, XXWIDGETS_LABEL,
+                                                                              XXWIDGETS_LABEL,    XXWIDGETS_CHECKBOX};
     xxwidgets_hex_options_widget *widget;
     xxwidgets_hex_options defaults;
     xxwidgets_rect rects[XXWIDGETS_HEX_OPTIONS_CONTROL_COUNT];

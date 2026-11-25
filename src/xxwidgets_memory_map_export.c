@@ -50,7 +50,10 @@ static wchar_t *absolute_path(const char *path)
         absolute = malloc((size_t)count * sizeof(*absolute));
         if (absolute) {
             DWORD length = GetFullPathNameW(wide, count, absolute, NULL);
-            if (!length || length >= count) { free(absolute); absolute = NULL; }
+            if (!length || length >= count) {
+                free(absolute);
+                absolute = NULL;
+            }
         }
     }
     free(wide);
@@ -65,7 +68,8 @@ static int same_path(const char *a, const char *b)
     {
         wchar_t *left = absolute_path(a), *right = absolute_path(b);
         int same = left && right ? !_wcsicmp(left, right) : !strcmp(a, b);
-        free(left); free(right);
+        free(left);
+        free(right);
         return same;
     }
 #else
@@ -129,7 +133,9 @@ typedef struct map_export_job {
 
 static void free_snapshot(map_export_job *job)
 {
-    free(job->rows); free(job->source_name); free(job->label_name);
+    free(job->rows);
+    free(job->source_name);
+    free(job->label_name);
 }
 
 /* Snapshot table/filter state on the UI thread. Workers receive no widget
@@ -191,12 +197,22 @@ static int write_escaped_cell(map_export_job *job, xx_io_device *destination, co
         char escaped[5];
         const char *chunk = escaped;
         size_t length = 1;
-        if (*p == '\t') { chunk = "\\t"; length = 2; }
-        else if (*p == '\r') { chunk = "\\r"; length = 2; }
-        else if (*p == '\n') { chunk = "\\n"; length = 2; }
-        else if (*p == '\\') { chunk = "\\\\"; length = 2; }
-        else if (*p < 32 || *p == 127) { snprintf(escaped, sizeof(escaped), "\\x%02x", *p); length = 4; }
-        else escaped[0] = (char)*p;
+        if (*p == '\t') {
+            chunk = "\\t";
+            length = 2;
+        } else if (*p == '\r') {
+            chunk = "\\r";
+            length = 2;
+        } else if (*p == '\n') {
+            chunk = "\\n";
+            length = 2;
+        } else if (*p == '\\') {
+            chunk = "\\\\";
+            length = 2;
+        } else if (*p < 32 || *p == 127) {
+            snprintf(escaped, sizeof(escaped), "\\x%02x", *p);
+            length = 4;
+        } else escaped[0] = (char)*p;
         if (!write_bytes(job, destination, chunk, length)) return 0;
         ++p;
     }
@@ -214,7 +230,8 @@ static xxwidgets_status save_worker(void *user, xx_pd_struct *progress, xxwidget
     map_export_job *job = user;
     xx_io_device *destination;
     xxwidgets_status status = XXWIDGETS_OK;
-    job->progress = progress; job->reporter = reporter;
+    job->progress = progress;
+    job->reporter = reporter;
     if (xx_pd_is_stopped(progress)) return XXWIDGETS_UNAVAILABLE;
     (void)xxwidgets_disk_write_set_file(reporter, job->path, 0, 1, 1);
     destination = xx_io_file_open(job->path, "wbx");
@@ -267,7 +284,8 @@ static xxwidgets_status dump_range(map_export_job *job, const xxwidgets_memory_m
     if (!destination) return XXWIDGETS_PLATFORM_ERROR;
     while (position < row->size) {
         size_t length = row->size - position < sizeof(buffer) ? (size_t)(row->size - position) : sizeof(buffer);
-        if (xx_pd_is_stopped(job->progress) || !xx_io_read_at(job->source, row->offset + (int64_t)position, buffer, length) || !write_bytes(job, destination, buffer, length)) {
+        if (xx_pd_is_stopped(job->progress) || !xx_io_read_at(job->source, row->offset + (int64_t)position, buffer, length) ||
+            !write_bytes(job, destination, buffer, length)) {
             status = XXWIDGETS_PLATFORM_ERROR;
             break;
         }
@@ -283,8 +301,10 @@ static xxwidgets_status dump_worker(void *user, xx_pd_struct *progress, xxwidget
 {
     map_export_job *job = user;
     xxwidgets_status status;
-    job->progress = progress; job->reporter = reporter;
-    job->total = job->rows[0].record.size; job->bytes_known = 1;
+    job->progress = progress;
+    job->reporter = reporter;
+    job->total = job->rows[0].record.size;
+    job->bytes_known = 1;
     (void)xxwidgets_disk_write_set_bytes(reporter, 0, job->total, 1);
     (void)xxwidgets_disk_write_set_file(reporter, job->path, 0, 1, 1);
     status = dump_range(job, &job->rows[0].record, job->path);
@@ -301,7 +321,8 @@ xxwidgets_status xxwidgets_memory_map_dump(xxwidgets_memory_map *view, xx_io_dev
     if (!source || !valid_path(path) || source_path(view, source, path)) return XXWIDGETS_INVALID_ARGUMENT;
     /* Selections and public table getters use model indexes. */
     if (xxwidgets_tabular_display_row(table, row_index) == SIZE_MAX) return XXWIDGETS_UNAVAILABLE;
-    job.source = source; job.path = path;
+    job.source = source;
+    job.path = path;
     status = snapshot(&job, view, table, row_index);
     if (status == XXWIDGETS_OK) status = xxwidgets_disk_write_run(table->parent, "Dumping memory region", path, dump_worker, &job, NULL);
     free_snapshot(&job);
@@ -312,10 +333,12 @@ static void safe_name(char *destination, const char *name)
 {
     size_t used = 0;
     for (const unsigned char *p = (const unsigned char *)name; *p && used < 80; ++p)
-        destination[used++] = (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') ||
-                              *p == '-' || *p == '_' || *p == '.' ? (char)*p : '_';
+        destination[used++] = (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.' ? (char)*p : '_';
     while (used && destination[used - 1] == '.') --used;
-    if (!used) { memcpy(destination, "region", 6); used = 6; }
+    if (!used) {
+        memcpy(destination, "region", 6);
+        used = 6;
+    }
     destination[used] = 0;
     /* Every leaf also has a numeric index prefix, so CON/AUX/COM1 etc. can
      * never become a reserved device leaf; separators/ADS are replaced above. */
@@ -329,7 +352,8 @@ static xxwidgets_status dump_all_worker(void *user, xx_pd_struct *progress, xxwi
     char *manifest_path = NULL, **created = NULL;
     size_t created_count = 0, count;
     xxwidgets_status status = XXWIDGETS_OK;
-    job->progress = progress; job->reporter = reporter;
+    job->progress = progress;
+    job->reporter = reporter;
     if (!directory_exists(directory)) return XXWIDGETS_INVALID_ARGUMENT;
     if (xx_pd_is_stopped(progress)) return XXWIDGETS_UNAVAILABLE;
     count = job->count;
@@ -338,39 +362,67 @@ static xxwidgets_status dump_all_worker(void *user, xx_pd_struct *progress, xxwi
         if (job->rows[i].record.offset >= 0 && !(job->rows[i].record.flags & XXWIDGETS_MEMORY_MAP_VIRTUAL)) ++job->file_total;
     created = calloc(count ? count : 1, sizeof(*created));
     manifest_path = join_path(directory, "memory-map.patch.json");
-    if (!created || !manifest_path) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
-    if (job_source_path(job, manifest_path)) { status = XXWIDGETS_INVALID_ARGUMENT; goto finish; }
+    if (!created || !manifest_path) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto finish;
+    }
+    if (job_source_path(job, manifest_path)) {
+        status = XXWIDGETS_INVALID_ARGUMENT;
+        goto finish;
+    }
     (void)xxwidgets_disk_write_set_file(reporter, manifest_path, 0, job->file_total, 1);
     manifest = xx_io_file_open(manifest_path, "wbx");
-    if (!manifest) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
-    if (!write_text(job, manifest, "{\n  \"version\": 1,\n  \"regions\": [\n")) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+    if (!manifest) {
+        status = XXWIDGETS_PLATFORM_ERROR;
+        goto finish;
+    }
+    if (!write_text(job, manifest, "{\n  \"version\": 1,\n  \"regions\": [\n")) {
+        status = XXWIDGETS_PLATFORM_ERROR;
+        goto finish;
+    }
     for (size_t shown = 0; shown < count; ++shown) {
         xxwidgets_memory_map_record row = job->rows[shown].record;
         size_t model = job->rows[shown].model;
         char name[81], leaf[200], json[400];
         char *path = NULL;
         unsigned suffix;
-        if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; goto finish; }
+        if (xx_pd_is_stopped(progress)) {
+            status = XXWIDGETS_UNAVAILABLE;
+            goto finish;
+        }
         if (row.offset < 0 || (row.flags & XXWIDGETS_MEMORY_MAP_VIRTUAL)) continue;
         safe_name(name, row.name);
         for (suffix = 0; suffix < 10000; ++suffix) {
             if (suffix) snprintf(leaf, sizeof(leaf), "%04zu_%016" PRIx64 "_%016" PRIx64 "_%s_%u.bin", model, (uint64_t)row.offset, row.size, name, suffix);
             else snprintf(leaf, sizeof(leaf), "%04zu_%016" PRIx64 "_%016" PRIx64 "_%s.bin", model, (uint64_t)row.offset, row.size, name);
             path = join_path(directory, leaf);
-            if (!path) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
+            if (!path) {
+                status = XXWIDGETS_OUT_OF_MEMORY;
+                goto finish;
+            }
             if (!xx_io_file_exists_a(path) && !job_source_path(job, path)) break;
-            free(path); path = NULL;
+            free(path);
+            path = NULL;
         }
-        if (!path) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+        if (!path) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto finish;
+        }
         (void)xxwidgets_disk_write_set_file(reporter, path, job->files, job->file_total, 1);
         status = dump_range(job, &row, path);
-        if (status != XXWIDGETS_OK) { free(path); goto finish; }
+        if (status != XXWIDGETS_OK) {
+            free(path);
+            goto finish;
+        }
         created[created_count++] = path;
         ++job->files;
         (void)xxwidgets_disk_write_set_file(reporter, path, job->files, job->file_total, 1);
         snprintf(json, sizeof(json), "%s    {\"index\": %zu, \"offset\": \"%016" PRIx64 "\", \"size\": \"%016" PRIx64 "\", \"file\": \"%s\"}",
                  created_count > 1 ? ",\n" : "", model, (uint64_t)row.offset, row.size, leaf);
-        if (!write_text(job, manifest, json)) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+        if (!write_text(job, manifest, json)) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto finish;
+        }
     }
     (void)xxwidgets_disk_write_set_file(reporter, manifest_path, job->files, job->file_total, 1);
     if (!write_text(job, manifest, "\n  ]\n}\n")) status = XXWIDGETS_PLATFORM_ERROR;
@@ -388,7 +440,8 @@ finish:
         if (status != XXWIDGETS_OK) (void)xx_io_file_remove_a(created[i]);
         free(created[i]);
     }
-    free(created); free(manifest_path);
+    free(created);
+    free(manifest_path);
     return status;
 }
 
@@ -399,7 +452,8 @@ xxwidgets_status xxwidgets_memory_map_dump_all(xxwidgets_memory_map *view, xx_io
     xxwidgets_status status = export_ready(view, &table);
     if (status != XXWIDGETS_OK) return status;
     if (!source || !valid_path(directory)) return XXWIDGETS_INVALID_ARGUMENT;
-    job.source = source; job.path = directory;
+    job.source = source;
+    job.path = directory;
     status = snapshot(&job, view, table, SIZE_MAX);
     if (status == XXWIDGETS_OK) status = xxwidgets_disk_write_run(table->parent, "Dumping memory regions", directory, dump_all_worker, &job, NULL);
     free_snapshot(&job);
@@ -409,10 +463,11 @@ xxwidgets_status xxwidgets_memory_map_dump_all(xxwidgets_memory_map *view, xx_io
 xxwidgets_status xxwidgets_memory_map_choose_directory(xxwidgets_widget *owner, char **path, int *accepted)
 {
     if (!path || !accepted) return XXWIDGETS_INVALID_ARGUMENT;
-    *path = NULL; *accepted = 0;
+    *path = NULL;
+    *accepted = 0;
     if (!owner || owner->kind != XXWIDGETS_WINDOW) return XXWIDGETS_INVALID_ARGUMENT;
-    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing ||
-        (owner->app->modal_window && owner->app->modal_window != owner)) return XXWIDGETS_BUSY;
+    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing || (owner->app->modal_window && owner->app->modal_window != owner))
+        return XXWIDGETS_BUSY;
     /* "Dump all" writes into a folder; every native backend has a folder picker. */
     return xxwidgets_file_dialog(owner, XXWIDGETS_FILE_DIALOG_FOLDER, XXW_TR(owner->app, "Dump all memory map regions"), NULL, path, accepted);
 }

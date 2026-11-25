@@ -16,13 +16,13 @@ struct xxwidget_treediffviewer {
     xxwidget_treediff_source source;
     xxwidgets_tree_source tree_source;
     unsigned int kinds;
-    char *path;          /* Path filter in effect, owned. */
-    int flat;            /* The roots are search results. */
-    uint64_t selected;   /* Row whose fields are shown, 0 for none. */
+    char *path;        /* Path filter in effect, owned. */
+    int flat;          /* The roots are search results. */
+    uint64_t selected; /* Row whose fields are shown, 0 for none. */
     xxwidget_treediff_change selected_change;
     xxwidget_treediff_row *rows;
     size_t row_capacity;
-    char *text;          /* Formatted row texts of the last request. */
+    char *text; /* Formatted row texts of the last request. */
     size_t text_capacity;
     xxwidget_treediff_field *fields;
     size_t field_capacity, field_count;
@@ -30,9 +30,8 @@ struct xxwidget_treediffviewer {
 
 #define C(v, id) ((v)->controls[XXWIDGET_TREEDIFF_##id])
 
-static const char *const change_names[XXWIDGET_TREEDIFF_CHANGE_COUNT] = {
-    XXW_N_("Context"), XXW_N_("Added"), XXW_N_("Removed"), XXW_N_("Modified"), XXW_N_("Kind changed"), XXW_N_("Access changed")
-};
+static const char *const change_names[XXWIDGET_TREEDIFF_CHANGE_COUNT] = {XXW_N_("Context"),  XXW_N_("Added"),        XXW_N_("Removed"),
+                                                                         XXW_N_("Modified"), XXW_N_("Kind changed"), XXW_N_("Access changed")};
 static const char change_signs[XXWIDGET_TREEDIFF_CHANGE_COUNT] = {' ', '+', '-', '*', '!', '~'};
 
 static xxwidget_treediff_change valid_change(xxwidget_treediff_change change)
@@ -44,13 +43,8 @@ xxwidgets_tree_color xxwidget_treediff_change_color(xxwidget_treediff_change cha
 {
     /* Light / dark foreground pairs; the dark ones are the terminal's colors. */
     static const xxwidgets_tree_color colors[XXWIDGET_TREEDIFF_CHANGE_COUNT] = {
-        {UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX},
-        {0x008000, UINT32_MAX, 0x00ff00, UINT32_MAX},
-        {0xc00000, UINT32_MAX, 0xff0000, UINT32_MAX},
-        {0xa06000, UINT32_MAX, 0xffbf00, UINT32_MAX},
-        {0x800080, UINT32_MAX, 0xd080ff, UINT32_MAX},
-        {0x808080, UINT32_MAX, 0xc0c0c0, UINT32_MAX}
-    };
+        {UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX}, {0x008000, UINT32_MAX, 0x00ff00, UINT32_MAX}, {0xc00000, UINT32_MAX, 0xff0000, UINT32_MAX},
+        {0xa06000, UINT32_MAX, 0xffbf00, UINT32_MAX},     {0x800080, UINT32_MAX, 0xd080ff, UINT32_MAX}, {0x808080, UINT32_MAX, 0xc0c0c0, UINT32_MAX}};
     return colors[valid_change(change)];
 }
 
@@ -184,8 +178,7 @@ static xxwidgets_status show_status(xxwidget_treediffviewer *v)
     const char *name = "";
     xxwidgets_tree_node node;
     size_t index;
-    if (xxwidgets_treeview_get_selection(C(v, TREE), &index, &node) == XXWIDGETS_OK && index != SIZE_MAX && node.text)
-        name = node.text;
+    if (xxwidgets_treeview_get_selection(C(v, TREE), &index, &node) == XXWIDGETS_OK && index != SIZE_MAX && node.text) name = node.text;
     if (!v->selected) snprintf(text, sizeof(text), "%s", XXW_TR(v->owner->app, "No selection"));
     else
         snprintf(text, sizeof(text), "%s: %s | %zu %s", XXW_TR(v->owner->app, change_names[v->selected_change]), name, v->field_count,
@@ -204,8 +197,7 @@ static xxwidget_treediff_change selected_change(xxwidget_treediffviewer *v)
 {
     xxwidgets_tree_node node;
     size_t index, i;
-    if (xxwidgets_treeview_get_selection(C(v, TREE), &index, &node) != XXWIDGETS_OK || index == SIZE_MAX || !node.text)
-        return XXWIDGET_TREEDIFF_CONTEXT;
+    if (xxwidgets_treeview_get_selection(C(v, TREE), &index, &node) != XXWIDGETS_OK || index == SIZE_MAX || !node.text) return XXWIDGET_TREEDIFF_CONTEXT;
     for (i = 1; i < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i)
         if (node.text[0] == change_signs[i]) return (xxwidget_treediff_change)i;
     return XXWIDGET_TREEDIFF_CONTEXT;
@@ -334,8 +326,7 @@ static unsigned int checked_kinds(xxwidget_treediffviewer *v)
     size_t i;
     for (i = 1; i < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i) {
         int checked = 0;
-        if (xxwidgets_checkcombobox_is_checked(C(v, KINDS), i - 1, &checked) == XXWIDGETS_OK && checked)
-            kinds |= XXWIDGET_TREEDIFF_MASK(i);
+        if (xxwidgets_checkcombobox_is_checked(C(v, KINDS), i - 1, &checked) == XXWIDGETS_OK && checked) kinds |= XXWIDGET_TREEDIFF_MASK(i);
     }
     return kinds;
 }
@@ -366,7 +357,11 @@ xxwidgets_status xxwidget_treediffviewer_set_rect(xxwidget_treediffviewer *v, xx
     right_width = b.width - right;
     main_height = b.height - 4;
     details_height = (main_height - 2) / 2;
-#define R(id, dx, dy, w, h) r[XXWIDGET_TREEDIFF_##id] = (xxwidgets_rect){b.x + (dx), b.y + (dy), w, h}
+#define R(id, dx, dy, w, h)                      \
+    r[XXWIDGET_TREEDIFF_##id] = (xxwidgets_rect) \
+    {                                            \
+        b.x + (dx), b.y + (dy), w, h             \
+    }
     R(PATH_LABEL, 0, 0, 5, 2);
     R(PATH, 6, 0, b.width - 6 - 27, 2);
     R(KINDS, b.width - 26, 0, 26, 2);
@@ -389,13 +384,13 @@ xxwidgets_status xxwidget_treediffviewer_set_rect(xxwidget_treediffviewer *v, xx
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidget_treediffviewer_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidget_treediff_source *source,
-                                               xxwidget_treediffviewer **out)
+xxwidgets_status xxwidget_treediffviewer_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidget_treediff_source *source, xxwidget_treediffviewer **out)
 {
-    static const xxwidgets_kind kinds[XXWIDGET_TREEDIFF_CONTROL_COUNT] = {XXWIDGETS_LABEL, XXWIDGETS_EDIT, XXWIDGETS_CHECKCOMBOBOX,
-        XXWIDGETS_TREEVIEW, XXWIDGETS_TABLE, XXWIDGETS_LABEL, XXWIDGETS_COMBOBOX, XXWIDGETS_HEXVIEW, XXWIDGETS_LABEL};
-    static const char *const texts[XXWIDGET_TREEDIFF_CONTROL_COUNT] = {XXW_N_("Path"), "", XXW_N_("Changes"), XXW_N_("Changes"),
-        "", XXW_N_("Value"), "", XXW_N_("Value bytes"), ""};
+    static const xxwidgets_kind kinds[XXWIDGET_TREEDIFF_CONTROL_COUNT] = {XXWIDGETS_LABEL,    XXWIDGETS_EDIT,    XXWIDGETS_CHECKCOMBOBOX,
+                                                                          XXWIDGETS_TREEVIEW, XXWIDGETS_TABLE,   XXWIDGETS_LABEL,
+                                                                          XXWIDGETS_COMBOBOX, XXWIDGETS_HEXVIEW, XXWIDGETS_LABEL};
+    static const char *const texts[XXWIDGET_TREEDIFF_CONTROL_COUNT] = {XXW_N_("Path"),        "", XXW_N_("Changes"), XXW_N_("Changes"), "", XXW_N_("Value"), "",
+                                                                       XXW_N_("Value bytes"), ""};
     static const char *const sides[] = {XXW_N_("Before"), XXW_N_("After")};
     const char *titles[3];
     xxwidget_treediffviewer *v;
@@ -403,8 +398,7 @@ xxwidgets_status xxwidget_treediffviewer_create(xxwidgets_widget *owner, xxwidge
     size_t i;
     if (!out) return XXWIDGETS_INVALID_ARGUMENT;
     *out = NULL;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !bounds_valid(bounds) || !source || !source->children ||
-        source->page_size > XXWIDGETS_TREE_PAGE_MAX)
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !bounds_valid(bounds) || !source || !source->children || source->page_size > XXWIDGETS_TREE_PAGE_MAX)
         return XXWIDGETS_INVALID_ARGUMENT;
     if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing) return XXWIDGETS_BUSY;
     v = (xxwidget_treediffviewer *)calloc(1, sizeof(*v));
@@ -425,16 +419,13 @@ xxwidgets_status xxwidget_treediffviewer_create(xxwidgets_widget *owner, xxwidge
     titles[1] = XXW_TR(owner->app, "Before");
     titles[2] = XXW_TR(owner->app, "After");
     for (i = 0; i < XXWIDGET_TREEDIFF_CONTROL_COUNT && status == XXWIDGETS_OK; ++i) {
-        if (kinds[i] == XXWIDGETS_TABLE)
-            status = xxwidgets_table_create(owner, (xxwidgets_rect){0, 0, 1, 1}, titles, 3, &v->controls[i]);
+        if (kinds[i] == XXWIDGETS_TABLE) status = xxwidgets_table_create(owner, (xxwidgets_rect){0, 0, 1, 1}, titles, 3, &v->controls[i]);
         else
-            status = xxwidgets_widget_create(owner->app, owner, kinds[i], texts[i][0] ? XXW_TR(owner->app, texts[i]) : "",
-                                             (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
+            status = xxwidgets_widget_create(owner->app, owner, kinds[i], texts[i][0] ? XXW_TR(owner->app, texts[i]) : "", (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
     }
     if (status == XXWIDGETS_OK) status = xxwidget_treediffviewer_set_rect(v, bounds);
     if (status == XXWIDGETS_OK) status = xxwidgets_translated_choices(C(v, KINDS), change_names + 1, NULL, XXWIDGET_TREEDIFF_CHANGE_COUNT - 1);
-    for (i = 0; status == XXWIDGETS_OK && i + 1 < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i)
-        status = xxwidgets_checkcombobox_set_checked(C(v, KINDS), i, 1);
+    for (i = 0; status == XXWIDGETS_OK && i + 1 < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i) status = xxwidgets_checkcombobox_set_checked(C(v, KINDS), i, 1);
     if (status == XXWIDGETS_OK) status = xxwidgets_translated_choices(C(v, SIDE), sides, NULL, 2);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(C(v, SIDE), 1);
     if (status == XXWIDGETS_OK) status = xxwidgets_hexview_set_layout(C(v, HEX), 0, 8);
@@ -511,8 +502,7 @@ xxwidgets_status xxwidget_treediffviewer_set_filter(xxwidget_treediffviewer *v, 
     if (!xxwidgets_valid_utf8(path)) return XXWIDGETS_INVALID_ARGUMENT;
     previous_text = xxwidgets_strdup(C(v, PATH)->text);
     if (!previous_text) return XXWIDGETS_OUT_OF_MEMORY;
-    for (i = 1; i < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i)
-        (void)xxwidgets_checkcombobox_is_checked(C(v, KINDS), i - 1, &previous_checks[i]);
+    for (i = 1; i < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i) (void)xxwidgets_checkcombobox_is_checked(C(v, KINDS), i - 1, &previous_checks[i]);
     status = xxwidgets_widget_set_text(C(v, PATH), path);
     for (i = 1; status == XXWIDGETS_OK && i < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i)
         status = xxwidgets_checkcombobox_set_checked(C(v, KINDS), i - 1, (kinds & XXWIDGET_TREEDIFF_MASK(i)) != 0);
@@ -520,8 +510,7 @@ xxwidgets_status xxwidget_treediffviewer_set_filter(xxwidget_treediffviewer *v, 
     if (status != XXWIDGETS_OK) {
         /* Not applied: the controls show the filter in effect again. */
         (void)xxwidgets_widget_set_text(C(v, PATH), previous_text);
-        for (i = 1; i < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i)
-            (void)xxwidgets_checkcombobox_set_checked(C(v, KINDS), i - 1, previous_checks[i] != 0);
+        for (i = 1; i < XXWIDGET_TREEDIFF_CHANGE_COUNT; ++i) (void)xxwidgets_checkcombobox_set_checked(C(v, KINDS), i - 1, previous_checks[i] != 0);
     }
     free(previous_text);
     return status;

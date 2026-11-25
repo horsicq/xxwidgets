@@ -19,12 +19,12 @@ extern "C" {
  * and addresses preserve xxfclib's conventions: -1 / UINT64_MAX are unknown.
  * ExportsViewer also displays ordinal UINT64_MAX as unknown.
  * All APIs belong to the UI thread. */
-#define XXWIDGET_DECLARE_BINARYVIEWER(name, record) \
+#define XXWIDGET_DECLARE_BINARYVIEWER(name, record)                                                                 \
     XXWIDGETS_API xxwidgets_status xxwidget_##name##_set_records(xxwidgets_widget *, const record *, size_t count); \
-    XXWIDGETS_API xxwidgets_status xxwidget_##name##_clear(xxwidgets_widget *); \
-    XXWIDGETS_API size_t xxwidget_##name##_count(const xxwidgets_widget *); \
-    XXWIDGETS_API xxwidgets_status xxwidget_##name##_get_record(const xxwidgets_widget *, size_t index, record *); \
-    XXWIDGETS_API xxwidgets_status xxwidget_##name##_get_selection(xxwidgets_widget *, size_t *index, record *); \
+    XXWIDGETS_API xxwidgets_status xxwidget_##name##_clear(xxwidgets_widget *);                                     \
+    XXWIDGETS_API size_t xxwidget_##name##_count(const xxwidgets_widget *);                                         \
+    XXWIDGETS_API xxwidgets_status xxwidget_##name##_get_record(const xxwidgets_widget *, size_t index, record *);  \
+    XXWIDGETS_API xxwidgets_status xxwidget_##name##_get_selection(xxwidgets_widget *, size_t *index, record *);    \
     xxwidgets_status xxwidget_##name##_load_file(xxwidgets_widget *, const char *path)
 XXWIDGET_DECLARE_BINARYVIEWER(resourcesviewer, xx_resource_record);
 XXWIDGET_DECLARE_BINARYVIEWER(importsviewer, xx_import_record);

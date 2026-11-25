@@ -22,9 +22,8 @@ extern "C" {
  * backslash is an incomplete escape: use two backslashes for a final literal
  * one, including before a closing quote. No expansion, command substitution,
  * wildcard processing, or environment lookup occurs. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_arguments_parse(
-    const char *program, const char *arguments, int *argc, char ***argv,
-    char *error, size_t error_capacity);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_arguments_parse(const char *program, const char *arguments, int *argc, char ***argv, char *error,
+                                                                  size_t error_capacity);
 XXWIDGETS_API void xxwidgets_debugger_arguments_free(int argc, char **argv);
 
 #ifdef __cplusplus

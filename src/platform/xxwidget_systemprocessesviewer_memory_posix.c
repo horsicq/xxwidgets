@@ -45,8 +45,7 @@ typedef struct process_memory_native {
 static xxwidgets_status process_memory_errno(int error)
 {
     if (error == ENOMEM) return XXWIDGETS_OUT_OF_MEMORY;
-    if (error == EACCES || error == EPERM || error == EBADF || error == ESRCH || error == ENOENT || error == ENOTSUP)
-        return XXWIDGETS_UNAVAILABLE;
+    if (error == EACCES || error == EPERM || error == EBADF || error == ESRCH || error == ENOENT || error == ENOTSUP) return XXWIDGETS_UNAVAILABLE;
     return XXWIDGETS_PLATFORM_ERROR;
 }
 
@@ -61,12 +60,18 @@ static uint64_t process_memory_start(int proc)
     while (used < sizeof(bytes) - 1) {
         ssize_t got = read(fd, bytes + used, sizeof(bytes) - 1 - used);
         if (got < 0 && errno == EINTR) continue;
-        if (got < 0) { saved = errno; break; }
+        if (got < 0) {
+            saved = errno;
+            break;
+        }
         if (!got) break;
         used += (size_t)got;
     }
     close(fd);
-    if (saved) { errno = saved; return 0; }
+    if (saved) {
+        errno = saved;
+        return 0;
+    }
     if (!used || used == sizeof(bytes) - 1) return 0;
     bytes[used] = '\0';
     last = strrchr(bytes, ')');
@@ -93,17 +98,26 @@ static xxwidgets_status process_memory_region(int proc, const struct stat *execu
     xxwidgets_status status = XXWIDGETS_UNAVAILABLE;
     if (fd < 0) return process_memory_errno(errno);
     stream = fdopen(fd, "r");
-    if (!stream) { int error = errno; close(fd); return process_memory_errno(error); }
+    if (!stream) {
+        int error = errno;
+        close(fd);
+        return process_memory_errno(error);
+    }
     while (fgets(line, sizeof(line), stream)) {
         unsigned long long start, end, offset, inode;
         unsigned device_major, device_minor;
         size_t length = strlen(line);
         if (++lines > 1048576 || ((!length || line[length - 1] != '\n') && !feof(stream))) break;
-        if (sscanf(line, "%llx-%llx %4s %llx %x:%x %llu", &start, &end, permissions, &offset,
-                   &device_major, &device_minor, &inode) != 7) { status = XXWIDGETS_PLATFORM_ERROR; break; }
+        if (sscanf(line, "%llx-%llx %4s %llx %x:%x %llu", &start, &end, permissions, &offset, &device_major, &device_minor, &inode) != 7) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            break;
+        }
         (void)offset;
         if (permissions[0] != 'r' || start >= end || end - 1U > (unsigned long long)INT64_MAX) continue;
-        if (!first_size) { first_base = (uint64_t)start; first_size = (uint64_t)(end - start); }
+        if (!first_size) {
+            first_base = (uint64_t)start;
+            first_size = (uint64_t)(end - start);
+        }
         if (executable && (uint64_t)inode == (uint64_t)executable->st_ino && device_major == major(executable->st_dev) && device_minor == minor(executable->st_dev)) {
             *base = (uint64_t)start;
             *size = (uint64_t)(end - start);
@@ -112,7 +126,11 @@ static xxwidgets_status process_memory_region(int proc, const struct stat *execu
         }
     }
     if (ferror(stream)) status = XXWIDGETS_PLATFORM_ERROR;
-    else if (status == XXWIDGETS_UNAVAILABLE && first_size) { *base = first_base; *size = first_size; status = XXWIDGETS_OK; }
+    else if (status == XXWIDGETS_UNAVAILABLE && first_size) {
+        *base = first_base;
+        *size = first_size;
+        status = XXWIDGETS_OK;
+    }
     fclose(stream);
     return status;
 }
@@ -121,8 +139,8 @@ static xxwidgets_status process_memory_region(int proc, const struct stat *execu
 static uint64_t process_memory_start(pid_t pid)
 {
     struct proc_bsdinfo info;
-    if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) != (int)sizeof(info) ||
-        info.pbi_start_tvsec > (UINT64_MAX - info.pbi_start_tvusec) / 1000000) return 0;
+    if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) != (int)sizeof(info) || info.pbi_start_tvsec > (UINT64_MAX - info.pbi_start_tvusec) / 1000000)
+        return 0;
     return (uint64_t)info.pbi_start_tvsec * 1000000 + info.pbi_start_tvusec;
 }
 
@@ -141,8 +159,7 @@ static xxwidgets_status process_memory_region(task_t task, uint64_t *base, uint6
         vm_region_submap_info_data_64_t info = {0};
         mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
         mach_vm_size_t length = 0;
-        kern_return_t result = mach_vm_region_recurse(task, &address, &length, &depth,
-                                                     (vm_region_recurse_info_t)&info, &count);
+        kern_return_t result = mach_vm_region_recurse(task, &address, &length, &depth, (vm_region_recurse_info_t)&info, &count);
         if (result != KERN_SUCCESS) return process_memory_mach_error(result);
         if (count < VM_REGION_SUBMAP_INFO_V0_COUNT_64) return XXWIDGETS_UNAVAILABLE;
         if (info.is_submap) {
@@ -204,17 +221,24 @@ xxwidgets_status xxwidgets_process_memory_open(const xxwidgets_process_info *pro
         native->proc = native->memory = -1;
         snprintf(path, sizeof(path), "/proc/%" PRIu64, process->pid);
         native->proc = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-        if (native->proc < 0) { status = process_memory_errno(errno); goto fail; }
+        if (native->proc < 0) {
+            status = process_memory_errno(errno);
+            goto fail;
+        }
         if (process_memory_start(native->proc) != process->start_time) goto fail;
         has_executable = fstatat(native->proc, "exe", &executable, 0) == 0;
         native->memory = openat(native->proc, "mem", O_RDONLY | O_CLOEXEC);
-        if (native->memory < 0) { status = process_memory_errno(errno); goto fail; }
+        if (native->memory < 0) {
+            status = process_memory_errno(errno);
+            goto fail;
+        }
         if (process_memory_start(native->proc) != process->start_time) goto fail;
         status = process_memory_region(native->proc, has_executable ? &executable : NULL, &memory->base, &memory->size);
         if (status != XXWIDGETS_OK) goto fail;
         if (process_memory_start(native->proc) != process->start_time ||
             (has_executable && (fstatat(native->proc, "exe", &after, 0) || after.st_dev != executable.st_dev || after.st_ino != executable.st_ino))) {
-            status = XXWIDGETS_UNAVAILABLE; goto fail;
+            status = XXWIDGETS_UNAVAILABLE;
+            goto fail;
         }
         memory->device = xx_io_process_open_handle_ex((void *)(intptr_t)native->memory, XX_IO_PROCESS_READ);
     }
@@ -225,21 +249,35 @@ xxwidgets_status xxwidgets_process_memory_open(const xxwidgets_process_info *pro
         if (process->pid == (uint64_t)getpid()) {
             native->task = mach_task_self();
             result = mach_port_mod_refs(mach_task_self(), native->task, MACH_PORT_RIGHT_SEND, 1);
-            if (result != KERN_SUCCESS) { native->task = MACH_PORT_NULL; status = process_memory_mach_error(result); goto fail; }
+            if (result != KERN_SUCCESS) {
+                native->task = MACH_PORT_NULL;
+                status = process_memory_mach_error(result);
+                goto fail;
+            }
         } else {
             result = task_for_pid(mach_task_self(), (pid_t)process->pid, &native->task);
-            if (result != KERN_SUCCESS) { native->task = MACH_PORT_NULL; status = process_memory_mach_error(result); goto fail; }
+            if (result != KERN_SUCCESS) {
+                native->task = MACH_PORT_NULL;
+                status = process_memory_mach_error(result);
+                goto fail;
+            }
         }
         if (process_memory_start((pid_t)process->pid) != process->start_time) goto fail;
         status = process_memory_region(native->task, &memory->base, &memory->size);
         if (status != XXWIDGETS_OK) goto fail;
-        if (process_memory_start((pid_t)process->pid) != process->start_time) { status = XXWIDGETS_UNAVAILABLE; goto fail; }
+        if (process_memory_start((pid_t)process->pid) != process->start_time) {
+            status = XXWIDGETS_UNAVAILABLE;
+            goto fail;
+        }
         memory->device = xx_io_process_open_handle_ex((void *)(uintptr_t)native->task, XX_IO_PROCESS_READ);
     }
 #else
     goto fail;
 #endif
-    if (!memory->device) { status = process_memory_errno(errno); goto fail; }
+    if (!memory->device) {
+        status = process_memory_errno(errno);
+        goto fail;
+    }
     return XXWIDGETS_OK;
 fail:
     xxwidgets_process_memory_close(memory);

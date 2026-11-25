@@ -14,7 +14,7 @@ extern "C" {
 typedef struct xxwidgets_process_info {
     const char *name; /* UTF-8 process display name. */
     uint64_t pid;
-    const char *path; /* UTF-8 executable path; empty when inaccessible. */
+    const char *path;    /* UTF-8 executable path; empty when inaccessible. */
     uint64_t start_time; /* OS identity token; zero when unavailable. */
 } xxwidgets_process_info;
 
@@ -56,13 +56,13 @@ XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_open_process_path(
  * overwrite == 0 preserves any existing destination. OS access rights apply.
  * Core capture may briefly suspend the target. Large dumps can take time;
  * applications can call this standalone adapter from their worker thread. */
-XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *, const char *destination,
-    xxwidgets_process_dump_type type, int overwrite);
+XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *, const char *destination, xxwidgets_process_dump_type type,
+                                                                           int overwrite);
 /* Worker-friendly variant. Progress is worker-owned; Cancel stops image
  * copying or native core capture and prevents publication of the staging
  * output. The original destination is preserved on cancellation/failure. */
-XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_process_info *, const char *destination,
-    xxwidgets_process_dump_type type, int overwrite, xx_pd_struct *progress);
+XXWIDGETS_API xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_process_info *, const char *destination, xxwidgets_process_dump_type type,
+                                                                              int overwrite, xx_pd_struct *progress);
 
 /* Call outside an input callback, after a CONTEXT_MENU/ACTIVATE request or an
  * Actions button. Shows Open path, Copy PID, Refresh, Kill process, Dump process

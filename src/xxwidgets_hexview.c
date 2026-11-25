@@ -76,8 +76,7 @@ static xxwidgets_status queue_hex_payload(xxwidgets_widget *w, int action, uint6
     }
     if (w->hex_edit_queue_count == w->hex_edit_queue_capacity) {
         size_t capacity = w->hex_edit_queue_capacity ? w->hex_edit_queue_capacity * 2 : 8;
-        if (capacity < w->hex_edit_queue_capacity || capacity > SIZE_MAX / sizeof(*w->hex_edit_queue))
-            return XXWIDGETS_OUT_OF_MEMORY;
+        if (capacity < w->hex_edit_queue_capacity || capacity > SIZE_MAX / sizeof(*w->hex_edit_queue)) return XXWIDGETS_OUT_OF_MEMORY;
         struct xxwidgets_hex_pending_action *queue = realloc(w->hex_edit_queue, capacity * sizeof(*queue));
         if (!queue) return XXWIDGETS_OUT_OF_MEMORY;
         w->hex_edit_queue = queue;
@@ -141,8 +140,7 @@ static xxwidgets_status sync_hexview(xxwidgets_widget *widget)
 
 static void source_local_selection(xxwidgets_widget *w)
 {
-    if (!w->hex_source_read || w->hex_source_seeking)
-        return;
+    if (!w->hex_source_read || w->hex_source_seeking) return;
     w->hex_source_anchor = w->hex_anchor < w->hex_size ? w->hex_base + w->hex_anchor : UINT64_MAX;
     w->hex_source_anchor_bytes = w->hex_anchor < w->hex_size ? w->hex_anchor_bytes : 0;
     w->hex_source_selection = w->hex_selection_length ? w->hex_base + w->hex_selection : UINT64_MAX;
@@ -169,10 +167,8 @@ void xxwidgets_hexview_init(xxwidgets_widget *widget)
 
 void xxwidgets_hexview_activate_column(xxwidgets_widget *widget, unsigned int column)
 {
-    if (!widget || widget->kind != XXWIDGETS_HEXVIEW || column > 2)
-        return;
-    if (widget->hex_header != column)
-        widget->hex_vertical_active = 0;
+    if (!widget || widget->kind != XXWIDGETS_HEXVIEW || column > 2) return;
+    if (widget->hex_header != column) widget->hex_vertical_active = 0;
     widget->hex_header = column;
 }
 
@@ -202,8 +198,12 @@ void xxwidgets_hexview_dispose(xxwidgets_widget *widget)
     clear_hex_edit_queue(widget);
     xxwidgets_hexview_history_dispose(widget);
     dispose_hex_io(widget);
-    free(widget->hex_highlights); widget->hex_highlights = NULL; widget->hex_highlight_count = 0;
-    free(widget->hex_overview_markers); widget->hex_overview_markers = NULL; widget->hex_overview_marker_count = 0;
+    free(widget->hex_highlights);
+    widget->hex_highlights = NULL;
+    widget->hex_highlight_count = 0;
+    free(widget->hex_overview_markers);
+    widget->hex_overview_markers = NULL;
+    widget->hex_overview_marker_count = 0;
     free(widget->hex_data);
     widget->hex_data = NULL;
     widget->hex_size = 0;
@@ -232,7 +232,10 @@ int xxwidgets_hexview_tooltip_text(xxwidgets_widget *w, size_t offset, unsigned 
     text[0] = '\0';
     if (!w || w->kind != XXWIDGETS_HEXVIEW || !w->hex_tooltip_handler || offset >= w->hex_size || (column != 1U && column != 2U) ||
         (uint64_t)offset > UINT64_MAX - w->hex_base) {
-        if (w && w->kind == XXWIDGETS_HEXVIEW && w->hex_tooltip_offset != UINT64_MAX) { w->hex_tooltip_offset = UINT64_MAX; return 1; }
+        if (w && w->kind == XXWIDGETS_HEXVIEW && w->hex_tooltip_offset != UINT64_MAX) {
+            w->hex_tooltip_offset = UINT64_MAX;
+            return 1;
+        }
         return 0;
     }
     at = w->hex_base + (uint64_t)offset;
@@ -251,7 +254,9 @@ int xxwidgets_hexview_highlight_at(const xxwidgets_widget *w, uint64_t at, uint3
     for (size_t i = 0; i < w->hex_highlight_count; ++i) {
         const xxwidgets_hexview_highlight *r = w->hex_highlights + i;
         if (at >= r->offset && at - r->offset < r->length && (!found || r->priority >= priority)) {
-            *color = r->color; priority = r->priority; found = 1;
+            *color = r->color;
+            priority = r->priority;
+            found = 1;
         }
     }
     return found;
@@ -264,7 +269,11 @@ int xxwidgets_hexview_highlight_span(const xxwidgets_widget *w, size_t offset, s
     for (size_t i = 0; i < w->hex_highlight_count; ++i) {
         const xxwidgets_hexview_highlight *r = w->hex_highlights + i;
         int overlap = r->length && (at >= r->offset ? at - r->offset < r->length : r->offset - at < length);
-        if (overlap && (!found || r->priority >= priority)) { *color = r->color; priority = r->priority; found = 1; }
+        if (overlap && (!found || r->priority >= priority)) {
+            *color = r->color;
+            priority = r->priority;
+            found = 1;
+        }
     }
     return found;
 }
@@ -274,13 +283,25 @@ xxwidgets_status xxwidgets_hexview_set_highlights(xxwidgets_widget *w, const xxw
     if (!w || w->kind != XXWIDGETS_HEXVIEW || (!ranges && count) || count > SIZE_MAX / sizeof(*copy)) return XXWIDGETS_INVALID_ARGUMENT;
     for (size_t i = 0; i < count; ++i)
         if ((ranges[i].length && ranges[i].length - 1 > UINT64_MAX - ranges[i].offset) || ranges[i].color > 0xFFFFFF) return XXWIDGETS_INVALID_ARGUMENT;
-    if (count) { copy = malloc(count * sizeof(*copy)); if (!copy) return XXWIDGETS_OUT_OF_MEMORY; memcpy(copy, ranges, count * sizeof(*copy)); }
-    xxwidgets_hexview_highlight *old = w->hex_highlights; size_t old_count = w->hex_highlight_count;
-    w->hex_highlights = copy; w->hex_highlight_count = count; w->hex_sync_full = 1;
+    if (count) {
+        copy = malloc(count * sizeof(*copy));
+        if (!copy) return XXWIDGETS_OUT_OF_MEMORY;
+        memcpy(copy, ranges, count * sizeof(*copy));
+    }
+    xxwidgets_hexview_highlight *old = w->hex_highlights;
+    size_t old_count = w->hex_highlight_count;
+    w->hex_highlights = copy;
+    w->hex_highlight_count = count;
+    w->hex_sync_full = 1;
     xxwidgets_status status = sync_hexview(w);
-    if (status != XXWIDGETS_OK) { w->hex_highlights = old; w->hex_highlight_count = old_count; free(copy); sync_hexview(w); }
-    else free(old);
-    w->hex_sync_full = 0; return status;
+    if (status != XXWIDGETS_OK) {
+        w->hex_highlights = old;
+        w->hex_highlight_count = old_count;
+        free(copy);
+        sync_hexview(w);
+    } else free(old);
+    w->hex_sync_full = 0;
+    return status;
 }
 
 xxwidgets_status xxwidgets_hexview_set_overview_markers(xxwidgets_widget *w, const xxwidgets_hexview_highlight *ranges, size_t count)
@@ -288,22 +309,25 @@ xxwidgets_status xxwidgets_hexview_set_overview_markers(xxwidgets_widget *w, con
     xxwidgets_hexview_highlight *copy = NULL, *old;
     size_t old_count;
     xxwidgets_status status;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || (!ranges && count) || count > SIZE_MAX / sizeof(*copy))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || (!ranges && count) || count > SIZE_MAX / sizeof(*copy)) return XXWIDGETS_INVALID_ARGUMENT;
     for (size_t i = 0; i < count; ++i)
-        if ((ranges[i].length && ranges[i].length - 1 > UINT64_MAX - ranges[i].offset) || ranges[i].color > 0xFFFFFF)
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if ((ranges[i].length && ranges[i].length - 1 > UINT64_MAX - ranges[i].offset) || ranges[i].color > 0xFFFFFF) return XXWIDGETS_INVALID_ARGUMENT;
     if (count) {
         copy = malloc(count * sizeof(*copy));
         if (!copy) return XXWIDGETS_OUT_OF_MEMORY;
         memcpy(copy, ranges, count * sizeof(*copy));
     }
-    old = w->hex_overview_markers; old_count = w->hex_overview_marker_count;
-    w->hex_overview_markers = copy; w->hex_overview_marker_count = count; w->hex_sync_full = 1;
+    old = w->hex_overview_markers;
+    old_count = w->hex_overview_marker_count;
+    w->hex_overview_markers = copy;
+    w->hex_overview_marker_count = count;
+    w->hex_sync_full = 1;
     status = sync_hexview(w);
     if (status != XXWIDGETS_OK) {
-        w->hex_overview_markers = old; w->hex_overview_marker_count = old_count;
-        free(copy); sync_hexview(w);
+        w->hex_overview_markers = old;
+        w->hex_overview_marker_count = old_count;
+        free(copy);
+        sync_hexview(w);
     } else free(old);
     w->hex_sync_full = 0;
     return status;
@@ -322,11 +346,13 @@ static uint64_t overview_scale(uint64_t value, uint64_t numerator, uint64_t deno
     for (unsigned int bit = 64; bit--;) {
         unsigned int carry = 0;
         if (remainder >= denominator - remainder) {
-            remainder -= denominator - remainder; carry = 1;
+            remainder -= denominator - remainder;
+            carry = 1;
         } else remainder += remainder;
         if ((value >> bit) & 1) {
             if (remainder >= denominator - numerator) {
-                remainder -= denominator - numerator; ++carry;
+                remainder -= denominator - numerator;
+                ++carry;
             } else remainder += numerator;
         }
         quotient = quotient * 2 + carry;
@@ -369,7 +395,9 @@ int xxwidgets_hexview_overview_color(const xxwidgets_widget *w, size_t row, size
             else --first_row;
         }
         if (row >= first_row && row <= last_row && (!found || marker->priority >= priority)) {
-            *color = marker->color; priority = marker->priority; found = 1;
+            *color = marker->color;
+            priority = marker->priority;
+            found = 1;
         }
     }
     return found;
@@ -415,7 +443,7 @@ static xxwidgets_status hex_row(const unsigned char *data, size_t size, uint64_t
 }
 
 static xxwidgets_status hex_rows(const unsigned char *data, size_t size, uint64_t base, unsigned int columns, int editable, size_t cursor, char ***out_rows,
-                                  size_t *out_count)
+                                 size_t *out_count)
 {
     size_t count = size / columns + (size % columns != 0), row;
     char **rows;
@@ -524,8 +552,7 @@ static xxwidgets_status replace_hex(xxwidgets_widget *widget, unsigned char *dat
         free_hex_rows(rows, count);
     } else {
         widget->hex_vertical_active = 0;
-        if (reset_selection || base != previous_base)
-            source_local_selection(widget);
+        if (reset_selection || base != previous_base) source_local_selection(widget);
         free_hex_rows(previous_rows, previous_count);
         if (data != previous_data) free(previous_data);
     }
@@ -567,8 +594,7 @@ static xxwidgets_status refresh_hex(xxwidgets_widget *widget, int editable, size
     int previous_editable = widget->hex_editable, previous_value = widget->value;
     unsigned char previous_byte = 0;
     xxwidgets_status status;
-    if (widget->hex_editable && previous_cursor < widget->hex_size)
-        add_hex_refresh_row(rows, &count, previous_cursor / widget->hex_columns);
+    if (widget->hex_editable && previous_cursor < widget->hex_size) add_hex_refresh_row(rows, &count, previous_cursor / widget->hex_columns);
     if (editable && cursor < widget->hex_size) add_hex_refresh_row(rows, &count, cursor / widget->hex_columns);
     if (changed_offset < widget->hex_size) add_hex_refresh_row(rows, &count, changed_offset / widget->hex_columns);
     for (i = 0; i < count; ++i) {
@@ -625,8 +651,7 @@ static xxwidgets_status refresh_hex(xxwidgets_widget *widget, int editable, size
 
 /* The history engine owns the command bytes. Only the changed range and its
  * rows are staged here; typing a nibble never copies the entire view. */
-xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *w, size_t offset, const void *data, size_t length,
-                                                        const xxwidgets_hex_position *position)
+xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *w, size_t offset, const void *data, size_t length, const xxwidgets_hex_position *position)
 {
     hex_refresh_row *rows = NULL;
     unsigned char *previous = NULL;
@@ -635,21 +660,23 @@ xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *w, s
     uint64_t revision;
     int old_value, value;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || w->hex_source_read || !position || (!data && length) ||
-        offset > w->hex_size || length > w->hex_size - offset || position->nibble > 1 ||
-        (position->cursor != SIZE_MAX && position->cursor >= w->hex_size)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || w->hex_source_read || !position || (!data && length) || offset > w->hex_size || length > w->hex_size - offset ||
+        position->nibble > 1 || (position->cursor != SIZE_MAX && position->cursor >= w->hex_size))
+        return XXWIDGETS_INVALID_ARGUMENT;
     value = position->cursor == SIZE_MAX ? -1 : (int)(position->cursor / w->hex_columns);
     if (length <= 1 && (w->hex_header != 2 || !length))
-        return refresh_hex(w, w->hex_editable, position->cursor, position->nibble, value,
-            length ? offset : SIZE_MAX, length ? *(const unsigned char *)data : 0,
-            position->anchor, position->anchor_bytes, position->selection, position->length);
+        return refresh_hex(w, w->hex_editable, position->cursor, position->nibble, value, length ? offset : SIZE_MAX, length ? *(const unsigned char *)data : 0,
+                           position->anchor, position->anchor_bytes, position->selection, position->length);
     first = offset / w->hex_columns;
     last = (offset + length - 1) / w->hex_columns;
     capacity = last - first + 3;
     if (capacity > SIZE_MAX / sizeof(*rows)) return XXWIDGETS_OUT_OF_MEMORY;
     rows = calloc(capacity, sizeof(*rows));
     previous = malloc(length);
-    if (!rows || !previous) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
+    if (!rows || !previous) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto finish;
+    }
     memcpy(previous, w->hex_data + offset, length);
     memmove(w->hex_data + offset, data, length);
     /* History records byte coordinates while presentation can change later.
@@ -660,12 +687,11 @@ xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *w, s
         normalized.nibble = 0;
         if (symbol_at(w, normalized.cursor, &span)) normalized.cursor = span.offset;
         if (normalized.anchor_bytes && symbol_at(w, normalized.anchor, &span)) {
-            normalized.anchor = span.offset; normalized.anchor_bytes = span.bytes;
+            normalized.anchor = span.offset;
+            normalized.anchor_bytes = span.bytes;
         }
-        if (normalized.length && normalized.selection < w->hex_size &&
-            normalized.length <= w->hex_size - normalized.selection &&
-            symbol_at(w, normalized.selection, &span) &&
-            symbol_at(w, normalized.selection + normalized.length - 1, &end)) {
+        if (normalized.length && normalized.selection < w->hex_size && normalized.length <= w->hex_size - normalized.selection &&
+            symbol_at(w, normalized.selection, &span) && symbol_at(w, normalized.selection + normalized.length - 1, &end)) {
             normalized.selection = span.offset;
             normalized.length = end.offset + end.bytes - span.offset;
         }
@@ -673,30 +699,31 @@ xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *w, s
         value = position->cursor == SIZE_MAX ? -1 : (int)(position->cursor / w->hex_columns);
     }
     for (size_t row = first; row <= last; ++row) rows[count++].index = row;
-    if (w->hex_editable && w->hex_cursor < w->hex_size &&
-        (w->hex_cursor / w->hex_columns < first || w->hex_cursor / w->hex_columns > last))
+    if (w->hex_editable && w->hex_cursor < w->hex_size && (w->hex_cursor / w->hex_columns < first || w->hex_cursor / w->hex_columns > last))
         rows[count++].index = w->hex_cursor / w->hex_columns;
-    if (w->hex_editable && position->cursor < w->hex_size &&
-        (position->cursor / w->hex_columns < first || position->cursor / w->hex_columns > last) &&
+    if (w->hex_editable && position->cursor < w->hex_size && (position->cursor / w->hex_columns < first || position->cursor / w->hex_columns > last) &&
         (!count || rows[count - 1].index != position->cursor / w->hex_columns))
         rows[count++].index = position->cursor / w->hex_columns;
     for (size_t i = 0; i < count; ++i) {
-        status = hex_row(w->hex_data, w->hex_size, w->hex_base, w->hex_columns, rows[i].index, w->hex_editable,
-                         position->cursor, SIZE_MAX, 0, &rows[i].replacement);
+        status = hex_row(w->hex_data, w->hex_size, w->hex_base, w->hex_columns, rows[i].index, w->hex_editable, position->cursor, SIZE_MAX, 0, &rows[i].replacement);
         if (status != XXWIDGETS_OK) {
             memcpy(w->hex_data + offset, previous, length);
             goto finish;
         }
         rows[i].previous = w->items[rows[i].index];
     }
-    old = (xxwidgets_hex_position){w->hex_cursor, w->hex_anchor, w->hex_anchor_bytes,
-                                  w->hex_selection, w->hex_selection_length, w->hex_nibble};
-    revision = w->hex_revision; old_value = w->value;
+    old = (xxwidgets_hex_position){w->hex_cursor, w->hex_anchor, w->hex_anchor_bytes, w->hex_selection, w->hex_selection_length, w->hex_nibble};
+    revision = w->hex_revision;
+    old_value = w->value;
     for (size_t i = 0; i < count; ++i) w->items[rows[i].index] = rows[i].replacement;
-    w->hex_cursor = position->cursor; w->hex_nibble = position->nibble;
-    w->hex_anchor = position->anchor; w->hex_anchor_bytes = position->anchor_bytes;
-    w->hex_selection = position->selection; w->hex_selection_length = position->length;
-    w->value = value; ++w->hex_revision;
+    w->hex_cursor = position->cursor;
+    w->hex_nibble = position->nibble;
+    w->hex_anchor = position->anchor;
+    w->hex_anchor_bytes = position->anchor_bytes;
+    w->hex_selection = position->selection;
+    w->hex_selection_length = position->length;
+    w->value = value;
+    ++w->hex_revision;
     w->hex_sync_full = w->hex_header == 2 || count > sizeof(w->hex_sync_dirty_rows) / sizeof(*w->hex_sync_dirty_rows);
     w->hex_sync_dirty_count = w->hex_sync_full ? 0 : count;
     for (size_t i = 0; i < w->hex_sync_dirty_count; ++i) w->hex_sync_dirty_rows[i] = rows[i].index;
@@ -704,11 +731,16 @@ xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *w, s
     if (status != XXWIDGETS_OK) {
         memcpy(w->hex_data + offset, previous, length);
         for (size_t i = 0; i < count; ++i) w->items[rows[i].index] = rows[i].previous;
-        w->hex_cursor = old.cursor; w->hex_nibble = old.nibble;
-        w->hex_anchor = old.anchor; w->hex_anchor_bytes = old.anchor_bytes;
-        w->hex_selection = old.selection; w->hex_selection_length = old.length;
-        w->value = old_value; w->hex_revision = revision;
-        w->hex_sync_full = 1; w->hex_sync_dirty_count = 0;
+        w->hex_cursor = old.cursor;
+        w->hex_nibble = old.nibble;
+        w->hex_anchor = old.anchor;
+        w->hex_anchor_bytes = old.anchor_bytes;
+        w->hex_selection = old.selection;
+        w->hex_selection_length = old.length;
+        w->value = old_value;
+        w->hex_revision = revision;
+        w->hex_sync_full = 1;
+        w->hex_sync_dirty_count = 0;
         (void)sync_hexview(w);
     } else {
         w->hex_vertical_active = 0;
@@ -717,10 +749,13 @@ xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *w, s
             rows[i].replacement = NULL;
         }
     }
-    w->hex_sync_full = 0; w->hex_sync_dirty_count = 0;
+    w->hex_sync_full = 0;
+    w->hex_sync_dirty_count = 0;
 finish:
-    if (rows) for (size_t i = 0; i < count; ++i) free(rows[i].replacement);
-    free(rows); free(previous);
+    if (rows)
+        for (size_t i = 0; i < count; ++i) free(rows[i].replacement);
+    free(rows);
+    free(previous);
     return status;
 }
 
@@ -749,7 +784,10 @@ xxwidgets_status xxwidgets_hexview_set_data(xxwidgets_widget *widget, const void
     status = replace_hex(widget, copy, size, widget->hex_base, widget->hex_columns, 1);
     if (status != XXWIDGETS_OK) {
         free(copy);
-        if (detached) { restore_hex_source(widget, &previous); resync_hex_source(widget); }
+        if (detached) {
+            restore_hex_source(widget, &previous);
+            resync_hex_source(widget);
+        }
     } else {
         if (!widget->hex_source_seeking) {
             clear_hex_edit_queue(widget);
@@ -766,15 +804,12 @@ xxwidgets_status xxwidgets_hexview_set_data(xxwidgets_widget *widget, const void
 /* A debugger snapshot must change bytes and their runtime address together.
  * Keep this internal: device-backed and callback-backed views use their own
  * paging operations, and their source must not be relabeled here. */
-xxwidgets_status xxwidgets_hexview_replace_snapshot(xxwidgets_widget *widget, uint64_t base,
-    const void *data, size_t size)
+xxwidgets_status xxwidgets_hexview_replace_snapshot(xxwidgets_widget *widget, uint64_t base, const void *data, size_t size)
 {
     unsigned char *copy = NULL;
     xxwidgets_status status;
-    if (!widget || widget->kind != XXWIDGETS_HEXVIEW || (!data && size) ||
-        widget->hex_source_read || widget->hex_io ||
-        (size && (uintmax_t)(size - 1) > UINT64_MAX - base) ||
-        size / widget->hex_columns + (size % widget->hex_columns != 0) > INT_MAX)
+    if (!widget || widget->kind != XXWIDGETS_HEXVIEW || (!data && size) || widget->hex_source_read || widget->hex_io ||
+        (size && (uintmax_t)(size - 1) > UINT64_MAX - base) || size / widget->hex_columns + (size % widget->hex_columns != 0) > INT_MAX)
         return XXWIDGETS_INVALID_ARGUMENT;
     if (widget->hex_edit_busy) return XXWIDGETS_BUSY;
     if (size) {
@@ -791,8 +826,8 @@ xxwidgets_status xxwidgets_hexview_replace_snapshot(xxwidgets_widget *widget, ui
     return status;
 }
 
-xxwidgets_status xxwidgets_hexview_set_source(xxwidgets_widget *w, uint64_t size, xxwidgets_hexview_source_read_fn read,
-                                             xxwidgets_hexview_source_seek_fn seek, void *user)
+xxwidgets_status xxwidgets_hexview_set_source(xxwidgets_widget *w, uint64_t size, xxwidgets_hexview_source_read_fn read, xxwidgets_hexview_source_seek_fn seek,
+                                              void *user)
 {
     if (!w || w->kind != XXWIDGETS_HEXVIEW || ((read == NULL) != (seek == NULL)) || (!read && size) || w->hex_source_seeking ||
         (read && (w->hex_editable || w->hex_base > size || w->hex_size > size - w->hex_base)))
@@ -833,14 +868,14 @@ static xxwidgets_status hex_io_read(void *user, uint64_t offset, void *data, siz
     return XXWIDGETS_OK;
 }
 
-static xxwidgets_status hex_io_read_window(xxwidgets_hex_io_state *state, uint64_t offset, uint64_t *total,
-                                           unsigned char **data, size_t *length)
+static xxwidgets_status hex_io_read_window(xxwidgets_hex_io_state *state, uint64_t offset, uint64_t *total, unsigned char **data, size_t *length)
 {
     int64_t known = xx_io_total_size(state->device);
     uint64_t available;
     xxwidgets_status status;
     *total = known >= 0 ? (uint64_t)known : UINT64_MAX;
-    *data = NULL; *length = 0;
+    *data = NULL;
+    *length = 0;
     if (offset > *total) return hex_io_failure(state, XXWIDGETS_INVALID_ARGUMENT);
     if (!xx_io_is_process(state->device) && offset > INT64_MAX) return hex_io_failure(state, XXWIDGETS_INVALID_ARGUMENT);
     available = *total - offset;
@@ -849,7 +884,10 @@ static xxwidgets_status hex_io_read_window(xxwidgets_hex_io_state *state, uint64
     *data = (unsigned char *)malloc(*length);
     if (!*data) return XXWIDGETS_OUT_OF_MEMORY;
     status = hex_io_read(state, offset, *data, *length);
-    if (status != XXWIDGETS_OK) { free(*data); *data = NULL; }
+    if (status != XXWIDGETS_OK) {
+        free(*data);
+        *data = NULL;
+    }
     return status;
 }
 
@@ -874,7 +912,8 @@ static void restore_hex_source(xxwidgets_widget *w, const xxwidgets_widget *old)
 
 static void resync_hex_source(xxwidgets_widget *w)
 {
-    w->hex_sync_full = 1; w->hex_sync_dirty_count = 0;
+    w->hex_sync_full = 1;
+    w->hex_sync_dirty_count = 0;
     (void)sync_hexview(w);
     w->hex_sync_full = 0;
 }
@@ -917,8 +956,7 @@ static xxwidgets_status hex_io_seek(xxwidgets_widget *w, uint64_t offset, void *
     encoding = xx_codepage_find(w->hex_display.encoding);
     /* Byte and single-byte-symbol navigation needs no speculative reads before
      * a readable process mapping merely because it starts at a nonzero address. */
-    if (offset >= w->hex_base && offset - w->hex_base < w->hex_size &&
-        (w->hex_header != 2 || (encoding && encoding->max_bytes == 1))) return XXWIDGETS_OK;
+    if (offset >= w->hex_base && offset - w->hex_base < w->hex_size && (w->hex_header != 2 || (encoding && encoding->max_bytes == 1))) return XXWIDGETS_OK;
     /* The source symbol decoder uses up to seven preceding bytes, aligned to
      * four bytes. Keep that context when paging to a new encoded symbol. */
     base = offset > 4 ? (offset - 4) & ~UINT64_C(3) : 0;
@@ -935,8 +973,7 @@ static xxwidgets_status hex_io_seek(xxwidgets_widget *w, uint64_t offset, void *
 
 static void begin_hex_io_input(xxwidgets_widget *w)
 {
-    if (w && w->kind == XXWIDGETS_HEXVIEW && w->hex_io)
-        w->hex_io->read_error = w->hex_io->backend_error = XXWIDGETS_OK;
+    if (w && w->kind == XXWIDGETS_HEXVIEW && w->hex_io) w->hex_io->read_error = w->hex_io->backend_error = XXWIDGETS_OK;
 }
 
 static xxwidgets_status finish_hex_io_input(xxwidgets_widget *w, xxwidgets_status status)
@@ -954,8 +991,7 @@ static xxwidgets_status finish_hex_io_input(xxwidgets_widget *w, xxwidgets_statu
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_hexview_set_device(xxwidgets_widget *w, xx_io_device *device, uint64_t offset,
-                                              size_t window_size, int take_ownership)
+xxwidgets_status xxwidgets_hexview_set_device(xxwidgets_widget *w, xx_io_device *device, uint64_t offset, size_t window_size, int take_ownership)
 {
     xxwidgets_hex_io_state *state, *previous;
     xxwidgets_widget old;
@@ -970,13 +1006,19 @@ xxwidgets_status xxwidgets_hexview_set_device(xxwidgets_widget *w, xx_io_device 
         return xxwidgets_hexview_set_source(w, 0, NULL, NULL, NULL);
     }
     if (w->hex_editable || window_size < 64 || window_size > 1048576 || !device->read ||
-        (!xx_io_is_process(device) && (!device->tell || (!device->seek64 && !device->seek)))) return XXWIDGETS_INVALID_ARGUMENT;
+        (!xx_io_is_process(device) && (!device->tell || (!device->seek64 && !device->seek))))
+        return XXWIDGETS_INVALID_ARGUMENT;
     state = (xxwidgets_hex_io_state *)calloc(1, sizeof(*state));
     if (!state) return XXWIDGETS_OUT_OF_MEMORY;
-    state->device = device; state->window_size = window_size;
+    state->device = device;
+    state->window_size = window_size;
     status = hex_io_read_window(state, offset, &total, &data, &length);
-    if (status != XXWIDGETS_OK) { free(state); return status; }
-    old = *w; previous = w->hex_io;
+    if (status != XXWIDGETS_OK) {
+        free(state);
+        return status;
+    }
+    old = *w;
+    previous = w->hex_io;
     w->hex_io = state;
     w->hex_source_read = hex_io_read;
     w->hex_source_seek = hex_io_seek;
@@ -987,7 +1029,8 @@ xxwidgets_status xxwidgets_hexview_set_device(xxwidgets_widget *w, xx_io_device 
     status = replace_hex(w, data, length, offset, w->hex_columns, 1);
     if (status != XXWIDGETS_OK) {
         restore_hex_source(w, &old);
-        free(data); free(state);
+        free(data);
+        free(state);
         resync_hex_source(w);
         return status;
     }
@@ -1027,8 +1070,7 @@ xx_io_device *xxwidgets_hexview_get_device(const xxwidgets_widget *w)
 
 xxwidgets_status xxwidgets_hexview_get_source_selection(const xxwidgets_widget *w, uint64_t *offset, uint64_t *length)
 {
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !offset || !length)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !offset || !length) return XXWIDGETS_INVALID_ARGUMENT;
     *offset = w->hex_source_read ? w->hex_source_selection : w->hex_selection_length ? w->hex_base + w->hex_selection : UINT64_MAX;
     *length = w->hex_source_read ? w->hex_source_length : w->hex_selection_length;
     return XXWIDGETS_OK;
@@ -1036,11 +1078,12 @@ xxwidgets_status xxwidgets_hexview_get_source_selection(const xxwidgets_widget *
 
 xxwidgets_status xxwidgets_hexview_set_layout(xxwidgets_widget *widget, uint64_t base_address, unsigned int bytes_per_row)
 {
-    if (!widget || widget->kind != XXWIDGETS_HEXVIEW || (bytes_per_row != 8 && bytes_per_row != 16 && bytes_per_row != 24 && bytes_per_row != 32 && bytes_per_row != 48 && bytes_per_row != 64)) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!widget || widget->kind != XXWIDGETS_HEXVIEW ||
+        (bytes_per_row != 8 && bytes_per_row != 16 && bytes_per_row != 24 && bytes_per_row != 32 && bytes_per_row != 48 && bytes_per_row != 64))
+        return XXWIDGETS_INVALID_ARGUMENT;
     if (widget->hex_io && !widget->hex_source_seeking && base_address != widget->hex_base)
         return XXWIDGETS_INVALID_ARGUMENT; /* Device addresses must be loaded, not relabeled. */
-    if (widget->hex_source_read && !widget->hex_source_seeking &&
-        (base_address > widget->hex_source_size || widget->hex_size > widget->hex_source_size - base_address))
+    if (widget->hex_source_read && !widget->hex_source_seeking && (base_address > widget->hex_source_size || widget->hex_size > widget->hex_source_size - base_address))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (base_address == widget->hex_base && bytes_per_row == widget->hex_columns) return XXWIDGETS_OK;
     return replace_hex(widget, widget->hex_data, widget->hex_size, base_address, bytes_per_row, 0);
@@ -1065,11 +1108,10 @@ xxwidgets_status xxwidgets_hexview_set_editable(xxwidgets_widget *widget, int ed
 {
     if (!widget || widget->kind != XXWIDGETS_HEXVIEW) return XXWIDGETS_INVALID_ARGUMENT;
     editable = editable != 0;
-    if (editable && widget->hex_source_read)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (editable && widget->hex_source_read) return XXWIDGETS_INVALID_ARGUMENT;
     if (editable == widget->hex_editable) return XXWIDGETS_OK;
-    return refresh_hex(widget, editable, widget->hex_cursor, widget->hex_nibble, widget->value, SIZE_MAX, 0, widget->hex_anchor,
-                       widget->hex_anchor_bytes, widget->hex_selection, widget->hex_selection_length);
+    return refresh_hex(widget, editable, widget->hex_cursor, widget->hex_nibble, widget->value, SIZE_MAX, 0, widget->hex_anchor, widget->hex_anchor_bytes,
+                       widget->hex_selection, widget->hex_selection_length);
 }
 
 xxwidgets_status xxwidgets_hexview_get_editable(const xxwidgets_widget *widget, int *editable)
@@ -1083,21 +1125,17 @@ xxwidgets_status xxwidgets_hexview_set_cursor(xxwidgets_widget *widget, size_t o
 {
     int value;
     xxwidgets_status status;
-    if (!widget || widget->kind != XXWIDGETS_HEXVIEW || nibble > 1 || (offset == SIZE_MAX ? nibble != 0 : offset >= widget->hex_size))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!widget || widget->kind != XXWIDGETS_HEXVIEW || nibble > 1 || (offset == SIZE_MAX ? nibble != 0 : offset >= widget->hex_size)) return XXWIDGETS_INVALID_ARGUMENT;
     value = offset == SIZE_MAX ? -1 : (int)(offset / widget->hex_columns);
-    if (offset == widget->hex_cursor && nibble == widget->hex_nibble && value == widget->value &&
-        widget->hex_anchor == offset && widget->hex_selection == offset &&
-        widget->hex_anchor_bytes == (offset < widget->hex_size ? 1u : 0u) &&
-        widget->hex_selection_length == (offset < widget->hex_size ? 1u : 0u)) {
+    if (offset == widget->hex_cursor && nibble == widget->hex_nibble && value == widget->value && widget->hex_anchor == offset && widget->hex_selection == offset &&
+        widget->hex_anchor_bytes == (offset < widget->hex_size ? 1u : 0u) && widget->hex_selection_length == (offset < widget->hex_size ? 1u : 0u)) {
         widget->hex_vertical_active = 0;
         source_local_selection(widget);
         return XXWIDGETS_OK;
     }
-    status = refresh_hex(widget, widget->hex_editable, offset, nibble, value, SIZE_MAX, 0, offset,
-                         offset < widget->hex_size ? 1 : 0, offset, offset < widget->hex_size ? 1 : 0);
-    if (status == XXWIDGETS_OK)
-        source_local_selection(widget);
+    status = refresh_hex(widget, widget->hex_editable, offset, nibble, value, SIZE_MAX, 0, offset, offset < widget->hex_size ? 1 : 0, offset,
+                         offset < widget->hex_size ? 1 : 0);
+    if (status == XXWIDGETS_OK) source_local_selection(widget);
     return status;
 }
 
@@ -1114,11 +1152,9 @@ xxwidgets_status xxwidgets_hexview_selection_input(xxwidgets_widget *widget, int
     size_t cursor;
     if (!widget || widget->kind != XXWIDGETS_HEXVIEW || row < -1 || (row >= 0 && (size_t)row >= widget->item_count)) return XXWIDGETS_INVALID_ARGUMENT;
     cursor = row < 0 ? SIZE_MAX : (size_t)row * widget->hex_columns;
-    if (row < 0)
-        return xxwidgets_hexview_set_selection(widget, SIZE_MAX, 0);
+    if (row < 0) return xxwidgets_hexview_set_selection(widget, SIZE_MAX, 0);
     size_t length = widget->hex_size - cursor;
-    if (length > widget->hex_columns)
-        length = widget->hex_columns;
+    if (length > widget->hex_columns) length = widget->hex_columns;
     return xxwidgets_hexview_set_selection(widget, cursor, length);
 }
 
@@ -1133,16 +1169,13 @@ xxwidgets_status xxwidgets_hexview_set_symbol_cursor(xxwidgets_widget *w, size_t
 {
     xxwidgets_hex_span symbol;
     xxwidgets_status status;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !symbol_at(w, offset, &symbol))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !symbol_at(w, offset, &symbol)) return XXWIDGETS_INVALID_ARGUMENT;
     status = select_bytes(w, symbol.offset, symbol.bytes, symbol.offset, symbol.offset, symbol.bytes);
-    if (status == XXWIDGETS_OK)
-        source_local_selection(w);
+    if (status == XXWIDGETS_OK) source_local_selection(w);
     return status;
 }
 
-static xxwidgets_status select_source_range(xxwidgets_widget *w, uint64_t anchor, uint64_t anchor_bytes, size_t cursor,
-                                            uint64_t start, uint64_t length)
+static xxwidgets_status select_source_range(xxwidgets_widget *w, uint64_t anchor, uint64_t anchor_bytes, size_t cursor, uint64_t start, uint64_t length)
 {
     uint64_t visible_start = start > w->hex_base ? start : w->hex_base;
     uint64_t end = start + length, window_end = w->hex_base + w->hex_size;
@@ -1167,9 +1200,7 @@ static xxwidgets_status select_source_range(xxwidgets_widget *w, uint64_t anchor
 static int source_needs_seek(const xxwidgets_widget *w, uint64_t offset)
 {
     uint64_t before, after;
-    if (offset < w->hex_base || offset - w->hex_base >= w->hex_size ||
-        w->hex_base > w->hex_source_size || w->hex_size > w->hex_source_size - w->hex_base)
-        return 1;
+    if (offset < w->hex_base || offset - w->hex_base >= w->hex_size || w->hex_base > w->hex_source_size || w->hex_size > w->hex_source_size - w->hex_base) return 1;
     before = offset < 3 ? offset : 3;
     after = w->hex_source_size - offset - 1;
     if (after > 3) after = 3;
@@ -1190,7 +1221,9 @@ static void source_guard_dispose(source_guard *guard)
 {
     free(guard->data);
     free_hex_rows(guard->rows, guard->rows ? guard->previous.item_count : 0);
-    guard->data = NULL; guard->rows = NULL; guard->active = 0;
+    guard->data = NULL;
+    guard->rows = NULL;
+    guard->active = 0;
 }
 
 static xxwidgets_status source_guard_begin(xxwidgets_widget *w, uint64_t offset, source_guard *guard)
@@ -1206,10 +1239,16 @@ static xxwidgets_status source_guard_begin(xxwidgets_widget *w, uint64_t offset,
     }
     if (w->item_count) {
         guard->rows = (char **)calloc(w->item_count, sizeof(*guard->rows));
-        if (!guard->rows) { source_guard_dispose(guard); return XXWIDGETS_OUT_OF_MEMORY; }
+        if (!guard->rows) {
+            source_guard_dispose(guard);
+            return XXWIDGETS_OUT_OF_MEMORY;
+        }
         for (i = 0; i < w->item_count; ++i) {
             guard->rows[i] = xxwidgets_strdup(w->items[i]);
-            if (!guard->rows[i]) { source_guard_dispose(guard); return XXWIDGETS_OUT_OF_MEMORY; }
+            if (!guard->rows[i]) {
+                source_guard_dispose(guard);
+                return XXWIDGETS_OUT_OF_MEMORY;
+            }
         }
     }
     guard->active = 1;
@@ -1220,26 +1259,41 @@ static void source_guard_restore(xxwidgets_widget *w, source_guard *guard)
 {
     const xxwidgets_widget *old = &guard->previous;
     if (!guard->active) return;
-    free(w->hex_data); free_hex_rows(w->items, w->item_count);
-    w->hex_data = guard->data; w->items = guard->rows;
-    guard->data = NULL; guard->rows = NULL;
-    w->hex_size = old->hex_size; w->item_count = old->item_count;
-    w->hex_base = old->hex_base; w->hex_columns = old->hex_columns;
-    w->hex_revision = old->hex_revision; w->hex_display = old->hex_display;
-    w->hex_cursor = old->hex_cursor; w->hex_nibble = old->hex_nibble; w->value = old->value;
-    w->hex_anchor = old->hex_anchor; w->hex_anchor_bytes = old->hex_anchor_bytes;
-    w->hex_selection = old->hex_selection; w->hex_selection_length = old->hex_selection_length;
-    w->hex_source_anchor = old->hex_source_anchor; w->hex_source_anchor_bytes = old->hex_source_anchor_bytes;
-    w->hex_source_selection = old->hex_source_selection; w->hex_source_length = old->hex_source_length;
+    free(w->hex_data);
+    free_hex_rows(w->items, w->item_count);
+    w->hex_data = guard->data;
+    w->items = guard->rows;
+    guard->data = NULL;
+    guard->rows = NULL;
+    w->hex_size = old->hex_size;
+    w->item_count = old->item_count;
+    w->hex_base = old->hex_base;
+    w->hex_columns = old->hex_columns;
+    w->hex_revision = old->hex_revision;
+    w->hex_display = old->hex_display;
+    w->hex_cursor = old->hex_cursor;
+    w->hex_nibble = old->hex_nibble;
+    w->value = old->value;
+    w->hex_anchor = old->hex_anchor;
+    w->hex_anchor_bytes = old->hex_anchor_bytes;
+    w->hex_selection = old->hex_selection;
+    w->hex_selection_length = old->hex_selection_length;
+    w->hex_source_anchor = old->hex_source_anchor;
+    w->hex_source_anchor_bytes = old->hex_source_anchor_bytes;
+    w->hex_source_selection = old->hex_source_selection;
+    w->hex_source_length = old->hex_source_length;
     w->hex_source_size = old->hex_source_size;
     w->hex_vertical_active = old->hex_vertical_active;
-    w->hex_vertical_row = old->hex_vertical_row; w->hex_vertical_column = old->hex_vertical_column;
+    w->hex_vertical_row = old->hex_vertical_row;
+    w->hex_vertical_column = old->hex_vertical_column;
     w->hex_source_vertical_row = old->hex_source_vertical_row;
-    w->hex_pending_dump = old->hex_pending_dump; w->hex_dragging = old->hex_dragging;
+    w->hex_pending_dump = old->hex_pending_dump;
+    w->hex_dragging = old->hex_dragging;
     w->hex_pending_edit = old->hex_pending_edit;
     w->hex_pending_edit_offset = old->hex_pending_edit_offset;
     w->hex_pending_edit_length = old->hex_pending_edit_length;
-    w->hex_sync_full = 1; w->hex_sync_dirty_count = 0;
+    w->hex_sync_full = 1;
+    w->hex_sync_dirty_count = 0;
     sync_hexview(w);
     w->hex_sync_full = 0;
     guard->active = 0;
@@ -1248,15 +1302,13 @@ static void source_guard_restore(xxwidgets_widget *w, source_guard *guard)
 static xxwidgets_status source_seek(xxwidgets_widget *w, uint64_t offset)
 {
     xxwidgets_status status;
-    if (offset >= w->hex_source_size)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (!source_needs_seek(w, offset))
-        return XXWIDGETS_OK;
+    if (offset >= w->hex_source_size) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!source_needs_seek(w, offset)) return XXWIDGETS_OK;
     ++w->hex_source_seeking;
     status = w->hex_source_seek(w, offset, w->hex_source_user);
     --w->hex_source_seeking;
-    if (status == XXWIDGETS_OK && (offset < w->hex_base || offset - w->hex_base >= w->hex_size ||
-                                 w->hex_base > w->hex_source_size || w->hex_size > w->hex_source_size - w->hex_base))
+    if (status == XXWIDGETS_OK &&
+        (offset < w->hex_base || offset - w->hex_base >= w->hex_size || w->hex_base > w->hex_source_size || w->hex_size > w->hex_source_size - w->hex_base))
         return XXWIDGETS_INVALID_ARGUMENT;
     return status;
 }
@@ -1270,8 +1322,8 @@ xxwidgets_status xxwidgets_hexview_set_source_range(xxwidgets_widget *w, uint64_
 {
     xxwidgets_status status;
     source_guard guard;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !w->hex_source_read ||
-        offset > w->hex_source_size || length > w->hex_source_size - offset || (length && cursor >= w->hex_source_size))
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !w->hex_source_read || offset > w->hex_source_size || length > w->hex_source_size - offset ||
+        (length && cursor >= w->hex_source_size))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (!length) return xxwidgets_hexview_set_selection(w, SIZE_MAX, 0);
     status = source_guard_begin(w, cursor, &guard);
@@ -1295,7 +1347,8 @@ static xxwidgets_status source_symbol_at(const xxwidgets_widget *w, uint64_t off
         if (encoding && encoding->max_bytes == 1) {
             xxwidgets_status status = w->hex_source_read(w->hex_source_user, offset, data, 1);
             if (status != XXWIDGETS_OK) return status;
-            *start = offset; *length = 1;
+            *start = offset;
+            *length = 1;
             return XXWIDGETS_OK;
         }
     }
@@ -1304,10 +1357,15 @@ static xxwidgets_status source_symbol_at(const xxwidgets_widget *w, uint64_t off
     size_t bytes = (size_t)(offset - base) + (size_t)(remaining < 4 ? remaining : 4);
     xxwidgets_status status = w->hex_source_read(w->hex_source_user, base, data, bytes);
     if (status != XXWIDGETS_OK) return status;
-    view.kind = XXWIDGETS_HEXVIEW; view.hex_data = data; view.hex_size = bytes;
-    view.hex_columns = 16; view.item_count = 1; view.hex_display = w->hex_display;
+    view.kind = XXWIDGETS_HEXVIEW;
+    view.hex_data = data;
+    view.hex_size = bytes;
+    view.hex_columns = 16;
+    view.item_count = 1;
+    view.hex_display = w->hex_display;
     if (!symbol_at(&view, (size_t)(offset - base), &symbol)) return XXWIDGETS_INVALID_ARGUMENT;
-    *start = base + symbol.offset; *length = symbol.bytes;
+    *start = base + symbol.offset;
+    *length = symbol.bytes;
     return XXWIDGETS_OK;
 }
 
@@ -1315,8 +1373,7 @@ static xxwidgets_status overview_activate(xxwidgets_widget *w, size_t row, size_
 {
     uint64_t target, bytes = 1;
     xxwidgets_status status;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !height || row >= height)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !height || row >= height) return XXWIDGETS_INVALID_ARGUMENT;
     if (!xxwidgets_hexview_overview_size(w)) return XXWIDGETS_OK;
     target = xxwidgets_hexview_overview_offset(w, row, height);
     if (w->hex_source_read) {
@@ -1328,10 +1385,9 @@ static xxwidgets_status overview_activate(xxwidgets_widget *w, size_t row, size_
         status = source_guard_begin(w, target + bytes - 1, &guard);
         if (status != XXWIDGETS_OK) return status;
         status = source_seek(w, target + bytes - 1);
-        if (status == XXWIDGETS_OK && (target < w->hex_base || target - w->hex_base >= w->hex_size ||
-            bytes > w->hex_size - (size_t)(target - w->hex_base))) status = XXWIDGETS_INVALID_ARGUMENT;
-        if (status == XXWIDGETS_OK)
-            status = select_source_range(w, target, bytes, (size_t)(target - w->hex_base), target, bytes);
+        if (status == XXWIDGETS_OK && (target < w->hex_base || target - w->hex_base >= w->hex_size || bytes > w->hex_size - (size_t)(target - w->hex_base)))
+            status = XXWIDGETS_INVALID_ARGUMENT;
+        if (status == XXWIDGETS_OK) status = select_source_range(w, target, bytes, (size_t)(target - w->hex_base), target, bytes);
         if (status != XXWIDGETS_OK) source_guard_restore(w, &guard);
         source_guard_dispose(&guard);
     } else {
@@ -1339,7 +1395,8 @@ static xxwidgets_status overview_activate(xxwidgets_widget *w, size_t row, size_
         if (w->hex_header == 2) {
             xxwidgets_hex_span symbol;
             if (!symbol_at(w, offset, &symbol)) return XXWIDGETS_INVALID_ARGUMENT;
-            offset = symbol.offset; bytes = symbol.bytes;
+            offset = symbol.offset;
+            bytes = symbol.bytes;
         }
         status = select_bytes(w, offset, (size_t)bytes, offset, offset, (size_t)bytes);
     }
@@ -1372,8 +1429,7 @@ static xxwidgets_status move_source(xxwidgets_widget *w, unsigned int key, unsig
     source_guard guard;
     xxwidgets_status status;
     if (!w->hex_source_size) return XXWIDGETS_OK;
-    current = valid_cursor ? w->hex_base + w->hex_cursor :
-        w->hex_io ? (w->hex_base < w->hex_source_size ? w->hex_base : w->hex_source_size - 1) : 0;
+    current = valid_cursor ? w->hex_base + w->hex_cursor : w->hex_io ? (w->hex_base < w->hex_source_size ? w->hex_base : w->hex_source_size - 1) : 0;
     at = current;
     anchor = extend && w->hex_source_anchor_bytes ? w->hex_source_anchor : current;
     anchor_bytes = extend && w->hex_source_anchor_bytes ? w->hex_source_anchor_bytes : 1;
@@ -1391,8 +1447,7 @@ static xxwidgets_status move_source(xxwidgets_widget *w, unsigned int key, unsig
         if (row > last_row) row = last_row;
         column = w->hex_vertical_active && w->hex_vertical_column < w->hex_columns ? w->hex_vertical_column : (size_t)(at % w->hex_columns);
         if (vertical) {
-            if (page) rows = w->app->ops->hexview_page_rows ? w->app->ops->hexview_page_rows(w)
-                : (size_t)(w->rect.height > 2 ? w->rect.height - 1 : 1);
+            if (page) rows = w->app->ops->hexview_page_rows ? w->app->ops->hexview_page_rows(w) : (size_t)(w->rect.height > 2 ? w->rect.height - 1 : 1);
             if (!rows) rows = 1;
             if (valid_cursor) row = up ? row > rows ? row - rows : 0 : rows < last_row - row ? row + rows : last_row;
             at = row * w->hex_columns;
@@ -1412,22 +1467,26 @@ static xxwidgets_status move_source(xxwidgets_widget *w, unsigned int key, unsig
         status = source_symbol_at(w, at, &target, &bytes);
         if (status != XXWIDGETS_OK) return status;
     }
-    if (!extend) { anchor = target; anchor_bytes = bytes; }
+    if (!extend) {
+        anchor = target;
+        anchor_bytes = bytes;
+    }
     if (edge) column = target / w->hex_columns < row ? 0 : (size_t)(target % w->hex_columns);
     start = anchor < target ? anchor : target;
     end = anchor + anchor_bytes > target + bytes ? anchor + anchor_bytes : target + bytes;
     status = source_guard_begin(w, target + bytes - 1, &guard);
     if (status != XXWIDGETS_OK) return status;
     status = source_seek(w, target + bytes - 1);
-    if (status == XXWIDGETS_OK && (target < w->hex_base || target - w->hex_base >= w->hex_size ||
-        bytes > w->hex_size - (size_t)(target - w->hex_base))) status = XXWIDGETS_INVALID_ARGUMENT;
+    if (status == XXWIDGETS_OK && (target < w->hex_base || target - w->hex_base >= w->hex_size || bytes > w->hex_size - (size_t)(target - w->hex_base)))
+        status = XXWIDGETS_INVALID_ARGUMENT;
     if (status == XXWIDGETS_OK) status = select_source_range(w, anchor, anchor_bytes, (size_t)(target - w->hex_base), start, end - start);
     if (status != XXWIDGETS_OK) source_guard_restore(w, &guard);
     source_guard_dispose(&guard);
     if (status == XXWIDGETS_OK) {
         w->hex_vertical_active = vertical || edge;
         if (vertical || edge) {
-            w->hex_source_vertical_row = row; w->hex_vertical_column = column;
+            w->hex_source_vertical_row = row;
+            w->hex_vertical_column = column;
             w->hex_vertical_row = row * w->hex_columns >= w->hex_base ? (size_t)((row * w->hex_columns - w->hex_base) / w->hex_columns) : 0;
         }
         xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
@@ -1447,36 +1506,29 @@ static xxwidgets_status move_symbol(xxwidgets_widget *w, unsigned int key, unsig
     uint64_t absolute_anchor = UINT64_MAX, absolute_anchor_bytes = 0;
     xxwidgets_status status;
     if (w->hex_source_read) {
-        if (!w->hex_source_size)
-            return XXWIDGETS_OK;
+        if (!w->hex_source_size) return XXWIDGETS_OK;
         if (extend && w->hex_source_anchor < w->hex_source_size) {
             absolute_anchor = w->hex_source_anchor;
             absolute_anchor_bytes = w->hex_source_anchor_bytes;
-            if (absolute_anchor >= w->hex_base && absolute_anchor - w->hex_base < w->hex_size &&
-                symbol_at(w, (size_t)(absolute_anchor - w->hex_base), &anchor)) {
+            if (absolute_anchor >= w->hex_base && absolute_anchor - w->hex_base < w->hex_size && symbol_at(w, (size_t)(absolute_anchor - w->hex_base), &anchor)) {
                 absolute_anchor = w->hex_base + anchor.offset;
                 absolute_anchor_bytes = anchor.bytes;
             }
         }
         if (row_edge && (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META))) {
             status = source_seek(w, key == XXWIDGETS_KEY_HOME ? 0 : w->hex_source_size - 1);
-            if (status != XXWIDGETS_OK)
-                return status;
+            if (status != XXWIDGETS_OK) return status;
         }
     }
-    if (!w->hex_size)
-        return XXWIDGETS_OK;
-    if (!symbol_at(w, w->hex_cursor < w->hex_size ? w->hex_cursor : 0, &current))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w->hex_size) return XXWIDGETS_OK;
+    if (!symbol_at(w, w->hex_cursor < w->hex_size ? w->hex_cursor : 0, &current)) return XXWIDGETS_INVALID_ARGUMENT;
     target = current;
     if (vertical) {
         size_t cursor = w->hex_cursor < w->hex_size ? w->hex_cursor : 0;
         size_t at, available, rows = 1;
         if (page) {
-            rows = w->app->ops->hexview_page_rows ? w->app->ops->hexview_page_rows(w)
-                                                  : (size_t)(w->rect.height > 2 ? w->rect.height - 1 : 1);
-            if (!rows)
-                rows = 1;
+            rows = w->app->ops->hexview_page_rows ? w->app->ops->hexview_page_rows(w) : (size_t)(w->rect.height > 2 ? w->rect.height - 1 : 1);
+            if (!rows) rows = 1;
         }
         if (w->hex_vertical_active && w->hex_vertical_row < w->item_count && w->hex_vertical_column < w->hex_columns) {
             row = w->hex_vertical_row;
@@ -1486,41 +1538,33 @@ static xxwidgets_status move_symbol(xxwidgets_widget *w, unsigned int key, unsig
             column = cursor % w->hex_columns;
         }
         if (w->hex_cursor < w->hex_size) {
-            if (key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_PAGEUP)
-                row = row > rows ? row - rows : 0;
-            else
-                row = rows < w->item_count - 1 - row ? row + rows : w->item_count - 1;
+            if (key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_PAGEUP) row = row > rows ? row - rows : 0;
+            else row = rows < w->item_count - 1 - row ? row + rows : w->item_count - 1;
         }
         at = row * w->hex_columns;
         available = w->hex_size - at < w->hex_columns ? w->hex_size - at : w->hex_columns;
         at += column < available ? column : available - 1;
-        if (!symbol_at(w, at, &target))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!symbol_at(w, at, &target)) return XXWIDGETS_INVALID_ARGUMENT;
     } else if (row_edge) {
         size_t cursor = w->hex_cursor < w->hex_size ? w->hex_cursor : 0;
         size_t at, available;
         if (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) {
-            at = w->hex_source_read ? (size_t)((key == XXWIDGETS_KEY_HOME ? 0 : w->hex_source_size - 1) - w->hex_base)
-                                    : key == XXWIDGETS_KEY_HOME ? 0 : w->hex_size - 1;
+            at = w->hex_source_read ? (size_t)((key == XXWIDGETS_KEY_HOME ? 0 : w->hex_source_size - 1) - w->hex_base) : key == XXWIDGETS_KEY_HOME ? 0 : w->hex_size - 1;
             row = at / w->hex_columns;
         } else {
             row = w->hex_vertical_active && w->hex_vertical_row < w->item_count ? w->hex_vertical_row : cursor / w->hex_columns;
             at = row * w->hex_columns;
             available = w->hex_size - at < w->hex_columns ? w->hex_size - at : w->hex_columns;
-            if (key == XXWIDGETS_KEY_END)
-                at += available - 1;
+            if (key == XXWIDGETS_KEY_END) at += available - 1;
         }
-        if (!symbol_at(w, at, &target))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!symbol_at(w, at, &target)) return XXWIDGETS_INVALID_ARGUMENT;
         /* A row-edge move starts a fresh vertical run at the selected
          * glyph's leading visible position, including a continuation prefix. */
         column = target.offset > row * w->hex_columns ? target.offset - row * w->hex_columns : 0;
     } else if (key == XXWIDGETS_KEY_LEFT && current.offset) {
-        if (!symbol_at(w, current.offset - 1, &target))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!symbol_at(w, current.offset - 1, &target)) return XXWIDGETS_INVALID_ARGUMENT;
     } else if (key == XXWIDGETS_KEY_RIGHT && w->hex_cursor < w->hex_size && current.bytes < w->hex_size - current.offset) {
-        if (!symbol_at(w, current.offset + current.bytes, &target))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!symbol_at(w, current.offset + current.bytes, &target)) return XXWIDGETS_INVALID_ARGUMENT;
     }
     if (w->hex_source_read) {
         uint64_t target_offset = w->hex_base + target.offset;
@@ -1530,8 +1574,7 @@ static xxwidgets_status move_symbol(xxwidgets_widget *w, unsigned int key, unsig
             absolute_anchor_bytes = target.bytes;
         }
         absolute_start = absolute_anchor < target_offset ? absolute_anchor : target_offset;
-        absolute_end = absolute_anchor + absolute_anchor_bytes > target_offset + target.bytes
-                           ? absolute_anchor + absolute_anchor_bytes : target_offset + target.bytes;
+        absolute_end = absolute_anchor + absolute_anchor_bytes > target_offset + target.bytes ? absolute_anchor + absolute_anchor_bytes : target_offset + target.bytes;
         status = select_source_range(w, absolute_anchor, absolute_anchor_bytes, target.offset, absolute_start, absolute_end - absolute_start);
         if (status == XXWIDGETS_OK) {
             w->hex_vertical_active = remember_row;
@@ -1544,12 +1587,11 @@ static xxwidgets_status move_symbol(xxwidgets_widget *w, unsigned int key, unsig
         return status;
     }
     anchor = target;
-    if (extend && w->hex_anchor < w->hex_size && !symbol_at(w, w->hex_anchor, &anchor))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (extend && w->hex_anchor < w->hex_size && !symbol_at(w, w->hex_anchor, &anchor)) return XXWIDGETS_INVALID_ARGUMENT;
     start = anchor.offset < target.offset ? anchor.offset : target.offset;
     end = anchor.offset + anchor.bytes > target.offset + target.bytes ? anchor.offset + anchor.bytes : target.offset + target.bytes;
-    if (w->hex_cursor == target.offset && !w->hex_nibble && w->hex_anchor == anchor.offset && w->hex_anchor_bytes == anchor.bytes &&
-        w->hex_selection == start && w->hex_selection_length == end - start) {
+    if (w->hex_cursor == target.offset && !w->hex_nibble && w->hex_anchor == anchor.offset && w->hex_anchor_bytes == anchor.bytes && w->hex_selection == start &&
+        w->hex_selection_length == end - start) {
         w->hex_vertical_active = remember_row;
         if (remember_row) {
             w->hex_vertical_column = column;
@@ -1572,7 +1614,8 @@ static xxwidgets_status move_symbol(xxwidgets_widget *w, unsigned int key, unsig
 xxwidgets_status xxwidgets_hexview_set_input_handler(xxwidgets_widget *widget, xxwidgets_hexview_input_fn handler, void *user)
 {
     if (!widget || widget->kind != XXWIDGETS_HEXVIEW) return XXWIDGETS_INVALID_ARGUMENT;
-    widget->hex_input_handler = handler; widget->hex_input_user = handler ? user : NULL;
+    widget->hex_input_handler = handler;
+    widget->hex_input_user = handler ? user : NULL;
     return XXWIDGETS_OK;
 }
 
@@ -1582,15 +1625,18 @@ static xxwidgets_status application_input(xxwidgets_widget *w, unsigned int key,
     int command = (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) != 0;
     if (!w->hex_input_handler || ((modifiers & XXWIDGETS_MOD_ALT) && (key < 128 || key > 0x10ffff)) || w->hex_header == 0) return XXWIDGETS_OK;
     in.offset = w->hex_base + (w->hex_cursor < w->hex_size ? w->hex_cursor : w->hex_size);
-    in.column = w->hex_header; in.nibble = w->hex_nibble;
+    in.column = w->hex_header;
+    in.nibble = w->hex_nibble;
     (void)xxwidgets_hexview_get_source_selection(w, &in.selection_offset, &in.selection_length);
     if (command && !(modifiers & XXWIDGETS_MOD_SHIFT) && (key == 'v' || key == 'V' || key == 22)) in.kind = XXWIDGETS_HEX_INPUT_PASTE;
     else if (!command && key == XXWIDGETS_KEY_DELETE) in.kind = XXWIDGETS_HEX_INPUT_DELETE;
     else if (!command && key == XXWIDGETS_KEY_BACKSPACE) in.kind = XXWIDGETS_HEX_INPUT_BACKSPACE;
     else if (!command && in.column == 1 && ((key >= '0' && key <= '9') || (key >= 'a' && key <= 'f') || (key >= 'A' && key <= 'F'))) {
-        in.kind = XXWIDGETS_HEX_INPUT_NIBBLE; in.value = key <= '9' ? key - '0' : (key & ~32u) - 'A' + 10;
+        in.kind = XXWIDGETS_HEX_INPUT_NIBBLE;
+        in.value = key <= '9' ? key - '0' : (key & ~32u) - 'A' + 10;
     } else if (!command && in.column == 2 && key >= 32 && key <= 0x10ffff && !(key >= 0xd800 && key <= 0xdfff)) {
-        in.kind = XXWIDGETS_HEX_INPUT_SCALAR; in.value = key;
+        in.kind = XXWIDGETS_HEX_INPUT_SCALAR;
+        in.value = key;
     } else return XXWIDGETS_OK;
     *handled = 1;
     return w->hex_input_handler(w, &in, w->hex_input_user);
@@ -1604,12 +1650,11 @@ static int copied_deferred_key(const xxwidgets_widget *w, unsigned int key, unsi
     int command = (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) != 0;
     if (w->hex_source_read || !w->hex_pending_edit || w->hex_replay_input || (modifiers & XXWIDGETS_MOD_ALT)) return 0;
     if (command && (key == 'a' || key == 'A' || key == 'c' || key == 'C' || key == 'd' || key == 'D')) return 1;
-    if (command && !(modifiers & XXWIDGETS_MOD_SHIFT) &&
-        (key == 'z' || key == 'Z' || key == 'y' || key == 'Y')) return 1;
-    if (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT || key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN ||
-        key == XXWIDGETS_KEY_HOME || key == XXWIDGETS_KEY_END || key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN) return 1;
-    return !command && w->hex_header == 1 && w->hex_editable && ((key >= '0' && key <= '9') ||
-        (key >= 'a' && key <= 'f') || (key >= 'A' && key <= 'F'));
+    if (command && !(modifiers & XXWIDGETS_MOD_SHIFT) && (key == 'z' || key == 'Z' || key == 'y' || key == 'Y')) return 1;
+    if (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT || key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN || key == XXWIDGETS_KEY_HOME ||
+        key == XXWIDGETS_KEY_END || key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN)
+        return 1;
+    return !command && w->hex_header == 1 && w->hex_editable && ((key >= '0' && key <= '9') || (key >= 'a' && key <= 'f') || (key >= 'A' && key <= 'F'));
 }
 
 static xxwidgets_status hexview_key_input(xxwidgets_widget *widget, unsigned int key, unsigned int modifiers, int *handled)
@@ -1624,38 +1669,30 @@ static xxwidgets_status hexview_key_input(xxwidgets_widget *widget, unsigned int
     *handled = 0;
     if (!widget || widget->kind != XXWIDGETS_HEXVIEW) return XXWIDGETS_INVALID_ARGUMENT;
     if ((modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) && !(modifiers & XXWIDGETS_MOD_ALT)) {
-        if (key >= 1 && key <= 26)
-            key += 'A' - 1;
+        if (key >= 1 && key <= 26) key += 'A' - 1;
     }
     status = widget->hex_replay_input ? XXWIDGETS_OK : application_input(widget, key, modifiers, handled);
     if (status != XXWIDGETS_OK || *handled) return status;
-    if (modifiers & XXWIDGETS_MOD_ALT)
-        return XXWIDGETS_OK;
+    if (modifiers & XXWIDGETS_MOD_ALT) return XXWIDGETS_OK;
     if (copied_deferred_key(widget, key, modifiers)) {
         *handled = 1;
         return queue_hex_edit(widget, 9, key, modifiers);
     }
-    if ((modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) &&
-        (key == 'a' || key == 'A' || key == 'c' || key == 'C' || key == 'd' || key == 'D')) {
+    if ((modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) && (key == 'a' || key == 'A' || key == 'c' || key == 'C' || key == 'd' || key == 'D')) {
         *handled = 1;
-        return xxwidgets_hexview_body_action(widget, key == 'a' || key == 'A' ? 5
-            : key == 'c' || key == 'C' ? (widget->hex_header == 2 ? 9 : 8) : 0);
+        return xxwidgets_hexview_body_action(widget, key == 'a' || key == 'A' ? 5 : key == 'c' || key == 'C' ? (widget->hex_header == 2 ? 9 : 8) : 0);
     }
-    if (widget->hex_header && (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) &&
-        (key == 'v' || key == 'V')) {
+    if (widget->hex_header && (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) && (key == 'v' || key == 'V')) {
         int insert = (modifiers & XXWIDGETS_MOD_SHIFT) != 0;
         *handled = 1;
-        return (insert ? xxwidgets_hexview_can_paste_insert(widget) : xxwidgets_hexview_can_overwrite(widget))
-                   ? request_hex_paste(widget, insert) : XXWIDGETS_OK;
+        return (insert ? xxwidgets_hexview_can_paste_insert(widget) : xxwidgets_hexview_can_overwrite(widget)) ? request_hex_paste(widget, insert) : XXWIDGETS_OK;
     }
-    if (widget->hex_header && (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) &&
-        !(modifiers & XXWIDGETS_MOD_SHIFT) && (key == 'x' || key == 'X')) {
+    if (widget->hex_header && (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) && !(modifiers & XXWIDGETS_MOD_SHIFT) && (key == 'x' || key == 'X')) {
         *handled = 1;
         return xxwidgets_hexview_can_cut(widget) ? request_hex_cut(widget) : XXWIDGETS_OK;
     }
     if ((widget->hex_io || xxwidgets_hexview_can_undo(widget) || xxwidgets_hexview_can_redo(widget) || widget->hex_pending_edit) &&
-        (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) &&
-        !(modifiers & XXWIDGETS_MOD_SHIFT) && (key == 'z' || key == 'Z' || key == 'y' || key == 'Y')) {
+        (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) && !(modifiers & XXWIDGETS_MOD_SHIFT) && (key == 'z' || key == 'Z' || key == 'y' || key == 'Y')) {
         *handled = 1;
         return xxwidgets_hexview_body_action(widget, key == 'z' || key == 'Z' ? 14 : 15);
     }
@@ -1664,51 +1701,39 @@ static xxwidgets_status hexview_key_input(xxwidgets_widget *widget, unsigned int
         *handled = 1;
         return xxwidgets_hexview_body_action(widget, 13);
     }
-    if (widget->hex_source_read && (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT ||
-        key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN || key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN ||
-        key == XXWIDGETS_KEY_HOME || key == XXWIDGETS_KEY_END)) {
+    if (widget->hex_source_read && (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT || key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN ||
+                                    key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN || key == XXWIDGETS_KEY_HOME || key == XXWIDGETS_KEY_END)) {
         *handled = 1;
         return move_source(widget, key, modifiers);
     }
-    if (widget->hex_header == 2 && (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT ||
-                                  key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN ||
-                                  key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN ||
-                                  key == XXWIDGETS_KEY_HOME || key == XXWIDGETS_KEY_END)) {
+    if (widget->hex_header == 2 && (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT || key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN ||
+                                    key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN || key == XXWIDGETS_KEY_HOME || key == XXWIDGETS_KEY_END)) {
         *handled = 1;
         return move_symbol(widget, key, modifiers);
     }
-    if (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT || key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN ||
-        key == XXWIDGETS_KEY_HOME || key == XXWIDGETS_KEY_END || key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN) {
+    if (key == XXWIDGETS_KEY_LEFT || key == XXWIDGETS_KEY_RIGHT || key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_DOWN || key == XXWIDGETS_KEY_HOME ||
+        key == XXWIDGETS_KEY_END || key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN) {
         if (!widget->hex_editable || (modifiers & (XXWIDGETS_MOD_SHIFT | XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)) || key == XXWIDGETS_KEY_PAGEUP ||
             key == XXWIDGETS_KEY_PAGEDOWN) {
             size_t at = widget->hex_cursor < widget->hex_size ? widget->hex_cursor : 0;
             size_t step = widget->hex_columns;
             *handled = 1;
-            if (!widget->hex_size)
-                return XXWIDGETS_OK;
-            if (key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN)
-                step *= (size_t)(widget->rect.height > 2 ? widget->rect.height - 1 : 1);
-            if (key == XXWIDGETS_KEY_LEFT)
-                at = at ? at - 1 : 0;
-            if (key == XXWIDGETS_KEY_RIGHT && widget->hex_cursor < widget->hex_size && at + 1 < widget->hex_size)
-                ++at;
-            if (key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_PAGEUP)
-                at = at >= step ? at - step : 0;
+            if (!widget->hex_size) return XXWIDGETS_OK;
+            if (key == XXWIDGETS_KEY_PAGEUP || key == XXWIDGETS_KEY_PAGEDOWN) step *= (size_t)(widget->rect.height > 2 ? widget->rect.height - 1 : 1);
+            if (key == XXWIDGETS_KEY_LEFT) at = at ? at - 1 : 0;
+            if (key == XXWIDGETS_KEY_RIGHT && widget->hex_cursor < widget->hex_size && at + 1 < widget->hex_size) ++at;
+            if (key == XXWIDGETS_KEY_UP || key == XXWIDGETS_KEY_PAGEUP) at = at >= step ? at - step : 0;
             if ((key == XXWIDGETS_KEY_DOWN || key == XXWIDGETS_KEY_PAGEDOWN) && widget->hex_cursor < widget->hex_size)
                 at = step < widget->hex_size - at ? at + step : widget->hex_size - 1;
-            if (key == XXWIDGETS_KEY_HOME)
-                at = modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META) ? 0 : at / widget->hex_columns * widget->hex_columns;
+            if (key == XXWIDGETS_KEY_HOME) at = modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META) ? 0 : at / widget->hex_columns * widget->hex_columns;
             if (key == XXWIDGETS_KEY_END) {
-                at = modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META) ? widget->hex_size - 1
-                                                                           : (at / widget->hex_columns + 1) * widget->hex_columns - 1;
-                if (at >= widget->hex_size)
-                    at = widget->hex_size - 1;
+                at = modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META) ? widget->hex_size - 1 : (at / widget->hex_columns + 1) * widget->hex_columns - 1;
+                if (at >= widget->hex_size) at = widget->hex_size - 1;
             }
             return xxwidgets_hexview_pointer(widget, at, (modifiers & XXWIDGETS_MOD_SHIFT) != 0);
         }
     }
-    if (!widget->hex_editable || (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META)))
-        return XXWIDGETS_OK;
+    if (!widget->hex_editable || (modifiers & (XXWIDGETS_MOD_CTRL | XXWIDGETS_MOD_META))) return XXWIDGETS_OK;
     if (key >= '0' && key <= '9') {
         digit = key - '0';
         digit_key = 1;
@@ -1718,8 +1743,8 @@ static xxwidgets_status hexview_key_input(xxwidgets_widget *widget, unsigned int
     } else if (key >= 'a' && key <= 'f') {
         digit = key - 'a' + 10;
         digit_key = 1;
-    } else if (key != XXWIDGETS_KEY_LEFT && key != XXWIDGETS_KEY_RIGHT && key != XXWIDGETS_KEY_UP && key != XXWIDGETS_KEY_DOWN &&
-               key != XXWIDGETS_KEY_HOME && key != XXWIDGETS_KEY_END)
+    } else if (key != XXWIDGETS_KEY_LEFT && key != XXWIDGETS_KEY_RIGHT && key != XXWIDGETS_KEY_UP && key != XXWIDGETS_KEY_DOWN && key != XXWIDGETS_KEY_HOME &&
+               key != XXWIDGETS_KEY_END)
         return XXWIDGETS_OK;
     *handled = 1;
     old_cursor = cursor = widget->hex_cursor;
@@ -1775,7 +1800,7 @@ static xxwidgets_status hexview_key_input(xxwidgets_widget *widget, unsigned int
     value = (int)(cursor / widget->hex_columns);
     if (!digit_key && cursor == widget->hex_cursor && nibble == widget->hex_nibble && value == widget->value) return XXWIDGETS_OK;
     status = digit_key ? xxwidgets_hexview_overwrite_input(widget, changed_offset, changed_byte, cursor, nibble)
-                      : refresh_hex(widget, widget->hex_editable, cursor, nibble, value, changed_offset, changed_byte, cursor, 1, cursor, 1);
+                       : refresh_hex(widget, widget->hex_editable, cursor, nibble, value, changed_offset, changed_byte, cursor, 1, cursor, 1);
     if (status != XXWIDGETS_OK) return status;
     source_local_selection(widget);
     revision = widget->hex_revision;
@@ -1795,8 +1820,7 @@ xxwidgets_status xxwidgets_hexview_key_input(xxwidgets_widget *w, unsigned int k
 
 xxwidgets_status xxwidgets_hexview_get_selection(xxwidgets_widget *w, size_t *offset, size_t *length)
 {
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !offset || !length)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !offset || !length) return XXWIDGETS_INVALID_ARGUMENT;
     *offset = w->hex_selection_length ? w->hex_selection : SIZE_MAX;
     *length = w->hex_selection_length;
     return XXWIDGETS_OK;
@@ -1809,11 +1833,9 @@ static xxwidgets_status select_bytes(xxwidgets_widget *w, size_t anchor, size_t 
 xxwidgets_status xxwidgets_hexview_set_selection(xxwidgets_widget *w, size_t offset, size_t length)
 {
     xxwidgets_status status;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || (length && (offset >= w->hex_size || length > w->hex_size - offset)))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || (length && (offset >= w->hex_size || length > w->hex_size - offset))) return XXWIDGETS_INVALID_ARGUMENT;
     status = select_bytes(w, length ? offset : SIZE_MAX, length ? 1 : 0, length ? offset : SIZE_MAX, length ? offset : SIZE_MAX, length);
-    if (status == XXWIDGETS_OK)
-        source_local_selection(w);
+    if (status == XXWIDGETS_OK) source_local_selection(w);
     return status;
 }
 int xxwidgets_hexview_contains(const xxwidgets_widget *w, size_t offset, size_t length)
@@ -1829,8 +1851,7 @@ xxwidgets_status xxwidgets_hexview_pointer_span(xxwidgets_widget *w, size_t offs
 {
     size_t anchor = offset, anchor_bytes = bytes, start, end;
     xxwidgets_status status;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !bytes || offset >= w->hex_size || bytes > w->hex_size - offset)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !bytes || offset >= w->hex_size || bytes > w->hex_size - offset) return XXWIDGETS_INVALID_ARGUMENT;
     if (w->hex_source_read) {
         uint64_t absolute = w->hex_base + offset;
         uint64_t absolute_anchor = extend && w->hex_source_anchor_bytes ? w->hex_source_anchor : absolute;
@@ -1838,8 +1859,7 @@ xxwidgets_status xxwidgets_hexview_pointer_span(xxwidgets_widget *w, size_t offs
         uint64_t absolute_start = absolute_anchor < absolute ? absolute_anchor : absolute;
         uint64_t absolute_end = absolute_anchor + absolute_bytes > absolute + bytes ? absolute_anchor + absolute_bytes : absolute + bytes;
         status = select_source_range(w, absolute_anchor, absolute_bytes, offset, absolute_start, absolute_end - absolute_start);
-        if (status == XXWIDGETS_OK)
-            xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
+        if (status == XXWIDGETS_OK) xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
         return status;
     }
     if (extend && w->hex_anchor < w->hex_size) {
@@ -1848,14 +1868,13 @@ xxwidgets_status xxwidgets_hexview_pointer_span(xxwidgets_widget *w, size_t offs
     }
     start = anchor < offset ? anchor : offset;
     end = anchor + anchor_bytes > offset + bytes ? anchor + anchor_bytes : offset + bytes;
-    if (w->hex_cursor == offset && w->hex_anchor == anchor && w->hex_anchor_bytes == anchor_bytes &&
-        w->hex_selection == start && w->hex_selection_length == end - start) {
+    if (w->hex_cursor == offset && w->hex_anchor == anchor && w->hex_anchor_bytes == anchor_bytes && w->hex_selection == start &&
+        w->hex_selection_length == end - start) {
         w->hex_vertical_active = 0;
         return XXWIDGETS_OK;
     }
     status = select_bytes(w, anchor, anchor_bytes, offset, start, end - start);
-    if (status == XXWIDGETS_OK)
-        xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
+    if (status == XXWIDGETS_OK) xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
     return status;
 }
 
@@ -1879,9 +1898,8 @@ xxwidgets_status xxwidgets_hexview_set_dump_handler(xxwidgets_widget *w, xxwidge
 /* Formatting is shared by ordinary copy and cut. Cut retains the exact bytes
  * until the clipboard backend confirms success, so callback-driven mutations
  * can be detected before deleting anything. */
-xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *w, uint64_t absolute_start,
-                                                  uint64_t absolute_length, xxwidgets_hex_copy_format format,
-                                                  const char *encoding, char **out, unsigned char **snapshot)
+xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *w, uint64_t absolute_start, uint64_t absolute_length, xxwidgets_hex_copy_format format,
+                                                   const char *encoding, char **out, unsigned char **snapshot)
 {
     char *text, *p;
     size_t length, i;
@@ -1893,38 +1911,37 @@ xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *w, uint64_t
     xxwidgets_status status;
     if (out) *out = NULL;
     if (snapshot) *snapshot = NULL;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || !out || !absolute_length ||
-        (unsigned)format >= XXWIDGETS_HEX_COPY_OFFSET)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || !out || !absolute_length || (unsigned)format >= XXWIDGETS_HEX_COPY_OFFSET) return XXWIDGETS_INVALID_ARGUMENT;
     if (format == XXWIDGETS_HEX_COPY_TEXT) {
         cp = xx_codepage_find(encoding);
         utf8 = xx_codepage_find("UTF-8");
         if (!cp || !utf8) return XXWIDGETS_INVALID_ARGUMENT;
     }
     if (absolute_length > (SIZE_MAX - 64) / 6) return XXWIDGETS_OUT_OF_MEMORY;
-    read = w->hex_source_read; user = w->hex_source_user;
-    base = w->hex_base; revision = w->hex_revision;
+    read = w->hex_source_read;
+    user = w->hex_source_user;
+    base = w->hex_base;
+    revision = w->hex_revision;
     if (read ? absolute_start > w->hex_source_size || absolute_length > w->hex_source_size - absolute_start
-             : absolute_start < base || absolute_start - base > w->hex_size ||
-               absolute_length > w->hex_size - (absolute_start - base))
+             : absolute_start < base || absolute_start - base > w->hex_size || absolute_length > w->hex_size - (absolute_start - base))
         return XXWIDGETS_INVALID_ARGUMENT;
     length = (size_t)absolute_length;
     text = malloc(length * 6 + 64);
     source_data = malloc(length);
     if (!text || !source_data) {
-        free(source_data); free(text);
+        free(source_data);
+        free(text);
         return XXWIDGETS_OUT_OF_MEMORY;
     }
     if (read) {
         for (i = 0; i < length;) {
             size_t count = length - i < 65536 ? length - i : 65536;
             status = read(user, absolute_start + i, source_data + i, count);
-            if (status == XXWIDGETS_OK &&
-                (read != w->hex_source_read || user != w->hex_source_user ||
-                 revision != w->hex_revision || base != w->hex_base))
+            if (status == XXWIDGETS_OK && (read != w->hex_source_read || user != w->hex_source_user || revision != w->hex_revision || base != w->hex_base))
                 status = XXWIDGETS_BUSY;
             if (status != XXWIDGETS_OK) {
-                free(source_data); free(text);
+                free(source_data);
+                free(text);
                 return status;
             }
             i += count;
@@ -1932,22 +1949,24 @@ xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *w, uint64_t
     } else memcpy(source_data, w->hex_data + (size_t)(absolute_start - base), length);
     p = text;
     if (format == XXWIDGETS_HEX_COPY_TEXT) {
-        size_t unit = !strcmp(cp->name, "UTF-16LE") || !strcmp(cp->name, "UTF-16BE") ? 2
-                    : !strcmp(cp->name, "UTF-32LE") || !strcmp(cp->name, "UTF-32BE") ? 4 : 1;
+        size_t unit = !strcmp(cp->name, "UTF-16LE") || !strcmp(cp->name, "UTF-16BE") ? 2 : !strcmp(cp->name, "UTF-32LE") || !strcmp(cp->name, "UTF-32BE") ? 4 : 1;
         alignment = (read ? absolute_start : absolute_start - base) % unit;
         for (i = 0; i < length;) {
             size_t used = 0, written = 0;
             uint32_t scalar;
-            if ((alignment + i % unit) % unit ||
-                xx_codepage_decode(cp, source_data + i, length - i, &used, &scalar) != XX_CODEPAGE_OK) {
-                used = 1; scalar = '.';
+            if ((alignment + i % unit) % unit || xx_codepage_decode(cp, source_data + i, length - i, &used, &scalar) != XX_CODEPAGE_OK) {
+                used = 1;
+                scalar = '.';
             }
             if (scalar < 32 || (scalar >= 127 && scalar < 160)) scalar = '.';
             if (xx_codepage_encode(utf8, scalar, (unsigned char *)p, 4, &written) == XX_CODEPAGE_OK) p += written;
             i += used;
         }
     } else {
-        if (format == XXWIDGETS_HEX_COPY_C_ARRAY) { *p++ = '{'; *p++ = ' '; }
+        if (format == XXWIDGETS_HEX_COPY_C_ARRAY) {
+            *p++ = '{';
+            *p++ = ' ';
+        }
         for (i = 0; i < length; ++i) {
             if (i) {
                 if (format == XXWIDGETS_HEX_COPY_C_ARRAY) *p++ = ',';
@@ -1955,7 +1974,10 @@ xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *w, uint64_t
             }
             p += sprintf(p, format == XXWIDGETS_HEX_COPY_C_ARRAY ? "0x%02X" : "%02X", source_data[i]);
         }
-        if (format == XXWIDGETS_HEX_COPY_C_ARRAY) { *p++ = ' '; *p++ = '}'; }
+        if (format == XXWIDGETS_HEX_COPY_C_ARRAY) {
+            *p++ = ' ';
+            *p++ = '}';
+        }
     }
     *p = 0;
     if (snapshot) *snapshot = source_data;
@@ -1969,8 +1991,7 @@ xxwidgets_status xxwidgets_hexview_copy_selection(xxwidgets_widget *w, xxwidgets
     char *text;
     uint64_t absolute_start, absolute_length;
     xxwidgets_status status;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || (unsigned)format > XXWIDGETS_HEX_COPY_OFFSET)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || (unsigned)format > XXWIDGETS_HEX_COPY_OFFSET) return XXWIDGETS_INVALID_ARGUMENT;
     (void)xxwidgets_hexview_get_source_selection(w, &absolute_start, &absolute_length);
     if (!absolute_length) return XXWIDGETS_UNAVAILABLE;
     if (w->hex_copy_handler) return w->hex_copy_handler(w, format, w->hex_copy_user);
@@ -1981,8 +2002,7 @@ xxwidgets_status xxwidgets_hexview_copy_selection(xxwidgets_widget *w, xxwidgets
         sprintf(offset_text, "0x%" PRIx64, value);
         return w->app->ops->copy_text(w->parent, offset_text);
     }
-    status = xxwidgets_hexview_copy_range_text(w, absolute_start, absolute_length, format,
-                                               w->hex_display.encoding, &text, NULL);
+    status = xxwidgets_hexview_copy_range_text(w, absolute_start, absolute_length, format, w->hex_display.encoding, &text, NULL);
     if (status != XXWIDGETS_OK) return status;
     status = w->app->ops->copy_text(w->parent, text);
     free(text);
@@ -2020,14 +2040,12 @@ static xxwidgets_status hex_save_worker(void *user, xx_pd_struct *progress, xxwi
     int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
     wchar_t *wide = count ? malloc((size_t)count * sizeof(*wide)) : NULL;
     wchar_t *temporary = NULL;
-    if (!wide)
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (!wide) return XXWIDGETS_OUT_OF_MEMORY;
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, count);
     if (atomic_save) {
         wchar_t *slash = wcsrchr(wide, L'\\'), *forward = wcsrchr(wide, L'/');
         size_t directory, capacity;
-        if (forward && (!slash || forward > slash))
-            slash = forward;
+        if (forward && (!slash || forward > slash)) slash = forward;
         directory = slash ? (size_t)(slash - wide) + 1 : count > 2 && wide[1] == L':' ? 2 : 0;
         capacity = directory + 64;
         if (capacity > SIZE_MAX / sizeof(*temporary)) {
@@ -2041,12 +2059,11 @@ static xxwidgets_status hex_save_worker(void *user, xx_pd_struct *progress, xxwi
         }
         memcpy(temporary, wide, directory * sizeof(*temporary));
         for (unsigned int attempt = 0; attempt < 128 && !file; ++attempt) {
-            swprintf(temporary + directory, capacity - directory, L".xxwidgets-%lu-%lu-%u.tmp",
-                     (unsigned long)GetCurrentProcessId(), (unsigned long)GetTickCount(), attempt);
+            swprintf(temporary + directory, capacity - directory, L".xxwidgets-%lu-%lu-%u.tmp", (unsigned long)GetCurrentProcessId(), (unsigned long)GetTickCount(),
+                     attempt);
             file = _wfopen(temporary, L"wbx");
         }
-    } else
-        file = _wfopen(wide, overwrite ? L"wb" : L"wbx");
+    } else file = _wfopen(wide, overwrite ? L"wb" : L"wbx");
 #else
     char *temporary = NULL;
     if (atomic_save) {
@@ -2054,11 +2071,9 @@ static xxwidgets_status hex_save_worker(void *user, xx_pd_struct *progress, xxwi
         static const char suffix[] = ".xxwidgets-XXXXXX";
         size_t directory = slash ? (size_t)(slash - path) + 1 : 0;
         int descriptor;
-        if (directory > SIZE_MAX - sizeof(suffix))
-            return XXWIDGETS_OUT_OF_MEMORY;
+        if (directory > SIZE_MAX - sizeof(suffix)) return XXWIDGETS_OUT_OF_MEMORY;
         temporary = malloc(directory + sizeof(suffix));
-        if (!temporary)
-            return XXWIDGETS_OUT_OF_MEMORY;
+        if (!temporary) return XXWIDGETS_OUT_OF_MEMORY;
         memcpy(temporary, path, directory);
         memcpy(temporary + directory, suffix, sizeof(suffix));
         descriptor = mkstemp(temporary);
@@ -2069,8 +2084,7 @@ static xxwidgets_status hex_save_worker(void *user, xx_pd_struct *progress, xxwi
                 (void)remove(temporary);
             }
         }
-    } else
-        file = fopen(path, overwrite ? "wb" : "wbx");
+    } else file = fopen(path, overwrite ? "wb" : "wbx");
 #endif
     if (!file) {
 #ifdef _WIN32
@@ -2085,32 +2099,42 @@ static xxwidgets_status hex_save_worker(void *user, xx_pd_struct *progress, xxwi
         while (length) {
             const unsigned char *bytes = job->data ? job->data + (size_t)done : buffer;
             size_t amount = length < sizeof(buffer) ? (size_t)length : sizeof(buffer);
-            if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; ok = 0; break; }
+            if (xx_pd_is_stopped(progress)) {
+                status = XXWIDGETS_UNAVAILABLE;
+                ok = 0;
+                break;
+            }
             if (job->read) status = job->read(job->user, start, buffer, amount);
-            if (status != XXWIDGETS_OK || fwrite(bytes, 1, amount, file) != amount) { ok = 0; break; }
-            start += amount; length -= amount; done += amount;
+            if (status != XXWIDGETS_OK || fwrite(bytes, 1, amount, file) != amount) {
+                ok = 0;
+                break;
+            }
+            start += amount;
+            length -= amount;
+            done += amount;
             (void)xxwidgets_disk_write_set_bytes(reporter, done, job->length, 1);
         }
     }
-    if (fclose(file))
+    if (fclose(file)) ok = 0;
+    if (xx_pd_is_stopped(progress)) {
+        status = XXWIDGETS_UNAVAILABLE;
         ok = 0;
-    if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; ok = 0; }
+    }
     if (atomic_save) {
         if (ok) {
             status = xxwidgets_backup_destination(&backup_policy, path);
             if (status != XXWIDGETS_OK) ok = 0;
         }
-        if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; ok = 0; }
+        if (xx_pd_is_stopped(progress)) {
+            status = XXWIDGETS_UNAVAILABLE;
+            ok = 0;
+        }
 #ifdef _WIN32
-        if (ok && !MoveFileExW(temporary, wide, MOVEFILE_REPLACE_EXISTING))
-            ok = 0;
-        if (!ok)
-            (void)DeleteFileW(temporary);
+        if (ok && !MoveFileExW(temporary, wide, MOVEFILE_REPLACE_EXISTING)) ok = 0;
+        if (!ok) (void)DeleteFileW(temporary);
 #else
-        if (ok && rename(temporary, path))
-            ok = 0;
-        if (!ok)
-            (void)remove(temporary);
+        if (ok && rename(temporary, path)) ok = 0;
+        if (!ok) (void)remove(temporary);
 #endif
     } else if (!ok && !overwrite) {
 #ifdef _WIN32
@@ -2135,15 +2159,21 @@ static xxwidgets_status save_hex_selection(xxwidgets_widget *w, const char *path
     if (w->hex_edit_busy || w->hex_cut_busy) return XXWIDGETS_BUSY;
     status = xxwidgets_hexview_get_source_selection(w, &job.start, &job.length);
     if (status != XXWIDGETS_OK || !job.length) return status != XXWIDGETS_OK ? status : XXWIDGETS_INVALID_ARGUMENT;
-    job.read = w->hex_source_read; job.user = w->hex_source_user;
+    job.read = w->hex_source_read;
+    job.user = w->hex_source_user;
     job.data = job.read ? NULL : w->hex_data + w->hex_selection;
-    job.path = path; job.overwrite = overwrite; job.backup = w->app->save_backup;
+    job.path = path;
+    job.overwrite = overwrite;
+    job.backup = w->app->save_backup;
     w->hex_edit_busy = 1;
     status = xxwidgets_disk_write_run(w->parent, "Saving selected bytes", path, hex_save_worker, &job, NULL);
     w->hex_edit_busy = 0;
     return status;
 }
-xxwidgets_status xxwidgets_hexview_save_selection(xxwidgets_widget *w, const char *path) { return save_hex_selection(w, path, 1); }
+xxwidgets_status xxwidgets_hexview_save_selection(xxwidgets_widget *w, const char *path)
+{
+    return save_hex_selection(w, path, 1);
+}
 
 static void emit_hex_edit_events(xxwidgets_widget *w)
 {
@@ -2153,10 +2183,8 @@ static void emit_hex_edit_events(xxwidgets_widget *w)
     int value = w->value;
     xx_io_device *device = xxwidgets_hexview_get_device(w);
     xxwidgets_emit(w, XXWIDGETS_EVENT_CHANGE, value);
-    if (w->hex_revision == revision && xxwidgets_hexview_get_device(w) == device &&
-        w->hex_cursor == cursor && w->value == value && w->hex_source_selection == selection &&
-        w->hex_source_length == selected_length && w->hex_selection == local_selection &&
-        w->hex_selection_length == local_length)
+    if (w->hex_revision == revision && xxwidgets_hexview_get_device(w) == device && w->hex_cursor == cursor && w->value == value &&
+        w->hex_source_selection == selection && w->hex_source_length == selected_length && w->hex_selection == local_selection && w->hex_selection_length == local_length)
         xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, value);
 }
 
@@ -2180,9 +2208,14 @@ static xxwidgets_status hex_clipboard_text(xxwidgets_widget *w, char **out)
         text[0] = 0;
         status = xxwidgets_clipboard_get_text(w->parent, text, capacity, &required);
         if (status == XXWIDGETS_OK) {
-            if (!required) { text[0] = 0; *out = text; return XXWIDGETS_OK; }
+            if (!required) {
+                text[0] = 0;
+                *out = text;
+                return XXWIDGETS_OK;
+            }
             if (required > capacity || memchr(text, 0, required) != text + required - 1) {
-                free(text); return XXWIDGETS_PLATFORM_ERROR;
+                free(text);
+                return XXWIDGETS_PLATFORM_ERROR;
             }
             *out = text;
             return XXWIDGETS_OK;
@@ -2218,20 +2251,17 @@ static xxwidgets_status request_hex_paste(xxwidgets_widget *w, int insert)
     uint64_t offset = UINT64_MAX;
     xxwidgets_status status;
     int error_action = insert ? 15 : 8;
-    if (!(insert ? xxwidgets_hexview_can_paste_insert(w) : xxwidgets_hexview_can_overwrite(w)) || !w->hex_header)
-        return XXWIDGETS_OK;
+    if (!(insert ? xxwidgets_hexview_can_paste_insert(w) : xxwidgets_hexview_can_overwrite(w)) || !w->hex_header) return XXWIDGETS_OK;
     status = hex_paste_offset(w, &offset);
     if (status != XXWIDGETS_OK) return queue_hex_edit(w, error_action, 0, (uint64_t)status);
     before = *w;
     status = hex_clipboard_text(w, &text);
     /* A clipboard provider may pump events. A replacement or navigation
      * during that read cancels this key instead of editing a different view. */
-    if (w->hex_io != before.hex_io || w->hex_source_read != before.hex_source_read ||
-        w->hex_source_user != before.hex_source_user || w->hex_revision != before.hex_revision ||
-        w->hex_source_size != before.hex_source_size || w->hex_base != before.hex_base || w->hex_size != before.hex_size ||
-        w->hex_header != before.hex_header || w->hex_display.encoding != before.hex_display.encoding ||
-        w->hex_cursor != before.hex_cursor || w->hex_nibble != before.hex_nibble ||
-        w->hex_selection != before.hex_selection || w->hex_selection_length != before.hex_selection_length ||
+    if (w->hex_io != before.hex_io || w->hex_source_read != before.hex_source_read || w->hex_source_user != before.hex_source_user ||
+        w->hex_revision != before.hex_revision || w->hex_source_size != before.hex_source_size || w->hex_base != before.hex_base || w->hex_size != before.hex_size ||
+        w->hex_header != before.hex_header || w->hex_display.encoding != before.hex_display.encoding || w->hex_cursor != before.hex_cursor ||
+        w->hex_nibble != before.hex_nibble || w->hex_selection != before.hex_selection || w->hex_selection_length != before.hex_selection_length ||
         w->hex_source_selection != before.hex_source_selection || w->hex_source_length != before.hex_source_length) {
         free(text);
         return XXWIDGETS_OK;
@@ -2242,15 +2272,17 @@ static xxwidgets_status request_hex_paste(xxwidgets_widget *w, int insert)
          * and encoding from this key press even if navigation follows it. */
         bytes = (unsigned char *)xxwidgets_strdup(w->hex_display.encoding);
         if (!bytes) return XXWIDGETS_OUT_OF_MEMORY;
-        status = queue_hex_payload(w, insert ? 14 : !w->hex_source_read && w->hex_pending_edit ? 11 : 7,
-                                   offset, w->hex_header, bytes);
+        status = queue_hex_payload(w, insert ? 14 : !w->hex_source_read && w->hex_pending_edit ? 11 : 7, offset, w->hex_header, bytes);
         if (status != XXWIDGETS_OK) free(bytes);
         return status;
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_hexview_decode_paste(w, text, &bytes, &length);
     free(text);
     if (status != XXWIDGETS_OK) return queue_hex_edit(w, error_action, 0, (uint64_t)status);
-    if (!length) { free(bytes); return XXWIDGETS_OK; }
+    if (!length) {
+        free(bytes);
+        return XXWIDGETS_OK;
+    }
     if (!insert && !w->hex_source_read && (!w->hex_pending_edit || w->hex_replay_input)) {
         uint64_t revision = w->hex_revision;
         status = xxwidgets_hexview_overwrite_interactive(w, offset, bytes, length);
@@ -2291,12 +2323,10 @@ static xxwidgets_status hexview_body_action(xxwidgets_widget *w, size_t index)
 {
     xxwidgets_status status;
     size_t start, length;
-    if (!w || w->kind != XXWIDGETS_HEXVIEW || index >= 20)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!w || w->kind != XXWIDGETS_HEXVIEW || index >= 20) return XXWIDGETS_INVALID_ARGUMENT;
     /* An earlier queued edit may enable history before this action runs. */
     if (xxwidgets_hexview_menu_item(w, 3, index).disabled &&
-        !((index == 14 || index == 15) && w->hex_pending_edit &&
-          (xxwidgets_hexview_can_resize(w) || xxwidgets_hexview_can_overwrite(w))))
+        !((index == 14 || index == 15) && w->hex_pending_edit && (xxwidgets_hexview_can_resize(w) || xxwidgets_hexview_can_overwrite(w))))
         return XXWIDGETS_OK;
     if (index == 17) return request_hex_paste(w, 0);
     if (index == 18) return request_hex_cut(w);
@@ -2314,9 +2344,7 @@ static xxwidgets_status hexview_body_action(xxwidgets_widget *w, size_t index)
     if (index >= 12) {
         uint64_t offset = UINT64_MAX, selected_length = 0;
         (void)xxwidgets_hexview_get_source_selection(w, &offset, &selected_length);
-        if (!selected_length)
-            offset = w->hex_cursor < w->hex_size ? w->hex_base + w->hex_cursor
-                     : w->hex_source_read ? w->hex_source_size : w->hex_base + w->hex_size;
+        if (!selected_length) offset = w->hex_cursor < w->hex_size ? w->hex_base + w->hex_cursor : w->hex_source_read ? w->hex_source_size : w->hex_base + w->hex_size;
         return queue_hex_edit(w, index == 12 ? 1 : index == 13 ? 2 : 5, offset, index == 13 ? selected_length : 0);
     }
     if (!index) {
@@ -2324,11 +2352,12 @@ static xxwidgets_status hexview_body_action(xxwidgets_widget *w, size_t index)
         w->hex_pending_dump = 1;
         return XXWIDGETS_OK;
     }
-    if (index >= 8)
-        return xxwidgets_hexview_copy_selection(w, (xxwidgets_hex_copy_format)(index - 8));
+    if (index >= 8) return xxwidgets_hexview_copy_selection(w, (xxwidgets_hex_copy_format)(index - 8));
     if (w->hex_source_read && index >= 1 && index <= 5) {
-        uint64_t absolute = index == 1 || index == 5 ? 0 : index == 2 ? w->hex_source_size - 1
-                            : index == 3 ? w->hex_source_selection : w->hex_source_selection + w->hex_source_length - 1;
+        uint64_t absolute = index == 1 || index == 5 ? 0
+                            : index == 2             ? w->hex_source_size - 1
+                            : index == 3             ? w->hex_source_selection
+                                                     : w->hex_source_selection + w->hex_source_length - 1;
         uint64_t selection = w->hex_source_selection, selected_length = w->hex_source_length;
         uint64_t anchor = w->hex_source_anchor, anchor_bytes = w->hex_source_anchor_bytes;
         xxwidgets_hex_span target;
@@ -2355,35 +2384,28 @@ static xxwidgets_status hexview_body_action(xxwidgets_widget *w, size_t index)
             selected_length = w->hex_source_size;
         }
         status = select_source_range(w, anchor, anchor_bytes, target.offset, selection, selected_length);
-        if (status == XXWIDGETS_OK)
-            xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
-source_finish:
+        if (status == XXWIDGETS_OK) xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
+    source_finish:
         if (status != XXWIDGETS_OK) source_guard_restore(w, &guard);
         source_guard_dispose(&guard);
         return status;
     }
     if (index <= 4) {
         start = index == 1 ? 0 : index == 2 ? w->hex_size - 1 : index == 3 ? w->hex_selection : w->hex_selection + w->hex_selection_length - 1;
-        if (index < 3)
-            return xxwidgets_hexview_pointer(w, start, 0);
+        if (index < 3) return xxwidgets_hexview_pointer(w, start, 0);
         status = select_bytes(w, w->hex_anchor, w->hex_anchor_bytes, start, w->hex_selection, w->hex_selection_length);
-        if (status == XXWIDGETS_OK)
-            xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
+        if (status == XXWIDGETS_OK) xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
         return status;
     }
     start = index == 5 ? 0 : w->hex_cursor / w->hex_columns * w->hex_columns;
     length = index == 5 ? w->hex_size : index == 7 ? 0 : w->hex_size - start;
-    if (index == 6 && length > w->hex_columns)
-        length = w->hex_columns;
+    if (index == 6 && length > w->hex_columns) length = w->hex_columns;
     if (index == 5 && w->hex_header == 2) {
         xxwidgets_hex_span first;
-        if (!symbol_at(w, 0, &first))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!symbol_at(w, 0, &first)) return XXWIDGETS_INVALID_ARGUMENT;
         status = select_bytes(w, first.offset, first.bytes, first.offset, start, length);
-    } else
-        status = xxwidgets_hexview_set_selection(w, start, length);
-    if (status == XXWIDGETS_OK)
-        xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
+    } else status = xxwidgets_hexview_set_selection(w, start, length);
+    if (status == XXWIDGETS_OK) xxwidgets_emit(w, XXWIDGETS_EVENT_SELECT, w->value);
     return status;
 }
 xxwidgets_status xxwidgets_hexview_body_action(xxwidgets_widget *w, size_t index)
@@ -2402,8 +2424,7 @@ static void hex_dump_event(xxwidgets_app *app, const xxwidgets_event *event, voi
 {
     hex_dump_form *form = user;
     (void)app;
-    if (event->widget == form->window && event->type == XXWIDGETS_EVENT_CLOSE)
-        form->done = 1;
+    if (event->widget == form->window && event->type == XXWIDGETS_EVENT_CLOSE) form->done = 1;
     if (event->type == XXWIDGETS_EVENT_CLICK && (event->widget == form->save || event->widget == form->cancel)) {
         form->accepted = event->widget == form->save;
         form->done = 1;
@@ -2427,59 +2448,48 @@ static xxwidgets_status hex_dump_path(xxwidgets_widget *w, char **path, int *acc
     app->on_event = hex_dump_event;
     app->user_data = &form;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, XXW_TR(app, "Dump selected bytes"), (xxwidgets_rect){2, 2, 64, 8}, &form.window);
-    if (status != XXWIDGETS_OK)
-        goto finish;
+    if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = form.window;
     status = xxwidgets_widget_create(app, form.window, XXWIDGETS_LABEL, XXW_TR(app, "Output file:"), (xxwidgets_rect){2, 1, 60, 1}, &label);
-    if (status != XXWIDGETS_OK)
-        goto finish;
+    if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(app, form.window, XXWIDGETS_EDIT, "", (xxwidgets_rect){2, 2, 60, 1}, &edit);
-    if (status != XXWIDGETS_OK)
-        goto finish;
+    if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(app, form.window, XXWIDGETS_CHECKBOX, XXW_TR(app, "Replace existing file"), (xxwidgets_rect){2, 4, 60, 1}, &replace);
-    if (status != XXWIDGETS_OK)
-        goto finish;
+    if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(app, form.window, XXWIDGETS_BUTTON, XXW_TR(app, "Save"), (xxwidgets_rect){38, 6, 10, 1}, &form.save);
-    if (status != XXWIDGETS_OK)
-        goto finish;
+    if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_create(app, form.window, XXWIDGETS_BUTTON, XXW_TR(app, "Cancel"), (xxwidgets_rect){50, 6, 10, 1}, &form.cancel);
-    if (status != XXWIDGETS_OK)
-        goto finish;
+    if (status != XXWIDGETS_OK) goto finish;
     app->modal_default = form.save;
     status = xxwidgets_widget_set_enabled(owner, 0);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_focus(edit);
-    while (status == XXWIDGETS_OK && !form.done && !app->quit)
-        status = xxwidgets_app_poll(app, 30);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_focus(edit);
+    while (status == XXWIDGETS_OK && !form.done && !app->quit) status = xxwidgets_app_poll(app, 30);
     if (status == XXWIDGETS_OK && form.accepted && !app->quit) {
         size_t required = 0;
         status = xxwidgets_widget_get_text(edit, NULL, 0, &required);
         if (status == XXWIDGETS_OK) {
             *path = malloc(required);
-            if (!*path)
-                status = XXWIDGETS_OUT_OF_MEMORY;
-            else
-                status = xxwidgets_widget_get_text(edit, *path, required, &required);
+            if (!*path) status = XXWIDGETS_OUT_OF_MEMORY;
+            else status = xxwidgets_widget_get_text(edit, *path, required, &required);
         }
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_widget_get_value(replace, overwrite);
-        if (status == XXWIDGETS_OK)
-            *accepted = 1;
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_get_value(replace, overwrite);
+        if (status == XXWIDGETS_OK) *accepted = 1;
     }
 finish:
     cleanup = xxwidgets_widget_set_enabled(owner, enabled);
     if (cleanup != XXWIDGETS_OK) {
         owner->enabled = enabled;
-        ++app->syncing; (void)app->ops->sync(owner); --app->syncing;
+        ++app->syncing;
+        (void)app->ops->sync(owner);
+        --app->syncing;
     }
-    if (status == XXWIDGETS_OK)
-        status = cleanup;
+    if (status == XXWIDGETS_OK) status = cleanup;
     if (form.window) {
         cleanup = xxwidgets_widget_destroy(form.window);
-        if (status == XXWIDGETS_OK)
-            status = cleanup;
+        if (status == XXWIDGETS_OK) status = cleanup;
     }
-    app->modal_window = previous_modal; app->modal_default = previous_default;
+    app->modal_window = previous_modal;
+    app->modal_default = previous_default;
     app->on_event = callback;
     app->user_data = user;
     (void)xxwidgets_widget_focus(w);
@@ -2494,8 +2504,7 @@ xxwidgets_status xxwidgets_hexview_dump_dialog(xxwidgets_widget *w)
     uint64_t offset, length;
     if (!w || w->kind != XXWIDGETS_HEXVIEW) return XXWIDGETS_INVALID_ARGUMENT;
     app = w->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->quit ||
-        (app->modal_window && app->modal_window != w->parent)) return XXWIDGETS_BUSY;
+    if (app->dispatch_depth || app->polling || app->syncing || app->quit || (app->modal_window && app->modal_window != w->parent)) return XXWIDGETS_BUSY;
     status = xxwidgets_hexview_get_source_selection(w, &offset, &length);
     if (status != XXWIDGETS_OK) return status;
     if (!length) return XXWIDGETS_UNAVAILABLE;
@@ -2528,7 +2537,10 @@ static int hex_edit_offset(const char *text, uint64_t *offset)
     unsigned int base = 10;
     int digits = 0;
     while (hex_edit_space(*at)) ++at;
-    if (at[0] == '0' && (at[1] == 'x' || at[1] == 'X')) { base = 16; at += 2; }
+    if (at[0] == '0' && (at[1] == 'x' || at[1] == 'X')) {
+        base = 16;
+        at += 2;
+    }
     for (; *at && !hex_edit_space(*at); ++at) {
         int digit = hex_edit_digit(*at);
         if (digit < 0 || (unsigned int)digit >= base || value > (UINT64_MAX - (unsigned int)digit) / base) return 0;
@@ -2563,7 +2575,9 @@ static int hex_edit_bytes(const char *text, unsigned char *bytes, size_t *length
 
 static xxwidgets_status hex_bytes_dialog(xxwidgets_widget *w, uint64_t offset, int overwrite, int *committed)
 {
-    enum { text_capacity = 65536 };
+    enum {
+        text_capacity = 65536
+    };
     char address[32];
     char *text = (char *)calloc(text_capacity, 1);
     unsigned char *bytes = (unsigned char *)malloc(text_capacity / 2);
@@ -2571,14 +2585,14 @@ static xxwidgets_status hex_bytes_dialog(xxwidgets_widget *w, uint64_t offset, i
     size_t length = 0;
     const char *title = overwrite ? "Overwrite bytes" : "Insert bytes";
     *committed = 0;
-    if (!text || !bytes) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
+    if (!text || !bytes) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto finish;
+    }
     snprintf(address, sizeof(address), "0x%" PRIX64, offset);
     while (!w->app->quit) {
         int accepted = 0;
-        xxwidgets_form_field fields[] = {
-            {"File offset", address, sizeof(address), 0, 0},
-            {"Hex bytes (AA BB)", text, text_capacity, 0, 0}
-        };
+        xxwidgets_form_field fields[] = {{"File offset", address, sizeof(address), 0, 0}, {"Hex bytes (AA BB)", text, text_capacity, 0, 0}};
         status = xxwidgets_form_dialog(w->parent, title, fields, 2, &accepted);
         if (status != XXWIDGETS_OK || !accepted || w->app->quit) break;
         if (!hex_edit_bytes(text, bytes, &length)) {
@@ -2589,17 +2603,17 @@ static xxwidgets_status hex_bytes_dialog(xxwidgets_widget *w, uint64_t offset, i
         if (!length) break;
         uint64_t base = w->hex_source_read ? 0 : w->hex_base;
         uint64_t size = w->hex_source_read ? w->hex_source_size : w->hex_size;
-        if (!hex_edit_offset(address, &offset) || offset < base || offset - base > size ||
-            (overwrite && length > size - (offset - base))) {
-            status = xxwidgets_text_dialog(w->parent, title, overwrite
-                ? "Enter a file offset and byte range within the file. Overwriting does not grow the file. Use decimal or a hexadecimal value beginning with 0x."
-                : "Enter a file offset from zero to the file size. Use decimal or a hexadecimal value beginning with 0x.");
+        if (!hex_edit_offset(address, &offset) || offset < base || offset - base > size || (overwrite && length > size - (offset - base))) {
+            status = xxwidgets_text_dialog(
+                w->parent, title,
+                overwrite
+                    ? "Enter a file offset and byte range within the file. Overwriting does not grow the file. Use decimal or a hexadecimal value beginning with 0x."
+                    : "Enter a file offset from zero to the file size. Use decimal or a hexadecimal value beginning with 0x.");
             if (status != XXWIDGETS_OK) break;
             continue;
         }
         uint64_t revision = w->hex_revision;
-        status = overwrite ? xxwidgets_hexview_overwrite_interactive(w, offset, bytes, length)
-                           : xxwidgets_hexview_edit_interactive(w, offset, bytes, length, 0);
+        status = overwrite ? xxwidgets_hexview_overwrite_interactive(w, offset, bytes, length) : xxwidgets_hexview_edit_interactive(w, offset, bytes, length, 0);
         if (status == XXWIDGETS_OK) *committed = w->hex_revision != revision;
         else if (status == XXWIDGETS_UNAVAILABLE) status = XXWIDGETS_OK; /* Canceled and rolled back. */
         break;
@@ -2610,10 +2624,11 @@ finish:
     return status;
 }
 
-static xxwidgets_status hex_paste_dialog(xxwidgets_widget *w, uint64_t offset, unsigned int column,
-                                        const char *encoding, int insert, int *committed)
+static xxwidgets_status hex_paste_dialog(xxwidgets_widget *w, uint64_t offset, unsigned int column, const char *encoding, int insert, int *committed)
 {
-    enum { capacity = 65536 };
+    enum {
+        capacity = 65536
+    };
     char *text = (char *)calloc(capacity, 1);
     xxwidgets_status status = XXWIDGETS_OK;
     const char *title = insert ? "Insert pasted bytes" : "Paste bytes";
@@ -2630,16 +2645,15 @@ static xxwidgets_status hex_paste_dialog(xxwidgets_widget *w, uint64_t offset, u
         decoder.hex_display.encoding = encoding;
         status = xxwidgets_hexview_decode_paste(&decoder, text, &bytes, &length);
         if (status == XXWIDGETS_INVALID_ARGUMENT) {
-            status = xxwidgets_text_dialog(w->parent, title, column == 2
-                ? "The text cannot be represented in the selected encoding."
-                : "Enter complete hex byte pairs, such as AA BB 00. Spaces between bytes are optional.");
+            status = xxwidgets_text_dialog(w->parent, title,
+                                           column == 2 ? "The text cannot be represented in the selected encoding."
+                                                       : "Enter complete hex byte pairs, such as AA BB 00. Spaces between bytes are optional.");
             if (status != XXWIDGETS_OK) break;
             continue;
         }
         if (status == XXWIDGETS_OK && length) {
             uint64_t revision = w->hex_revision;
-            status = insert ? xxwidgets_hexview_edit_interactive(w, offset, bytes, length, 0)
-                            : xxwidgets_hexview_overwrite_interactive(w, offset, bytes, length);
+            status = insert ? xxwidgets_hexview_edit_interactive(w, offset, bytes, length, 0) : xxwidgets_hexview_overwrite_interactive(w, offset, bytes, length);
             if (status == XXWIDGETS_OK) *committed = revision != w->hex_revision;
             else if (status == XXWIDGETS_UNAVAILABLE) status = XXWIDGETS_OK;
         }
@@ -2650,8 +2664,7 @@ static xxwidgets_status hex_paste_dialog(xxwidgets_widget *w, uint64_t offset, u
     return status;
 }
 
-static xxwidgets_status hex_deferred_edit(xxwidgets_widget *w, int action, uint64_t offset, uint64_t length,
-                                         const unsigned char *data, int *committed)
+static xxwidgets_status hex_deferred_edit(xxwidgets_widget *w, int action, uint64_t offset, uint64_t length, const unsigned char *data, int *committed)
 {
     xxwidgets_status status;
     *committed = 0;
@@ -2741,14 +2754,26 @@ void xxwidgets_hexview_deferred(xxwidgets_app *app)
             if (status != XXWIDGETS_OK && !app->quit) {
                 int paste = action == 6 || action == 7 || action == 8 || action == 10 || action == 11;
                 int insert_paste = action == 13 || action == 14 || action == 15;
-                (void)xxwidgets_text_dialog(w->parent, insert_paste ? "Insert pasted bytes" : action == 12 ? "Cut bytes" : paste ? "Paste bytes" : action == 9 ? "Hex input" : action == 1 ? "Insert bytes" : action == 2 ? "Delete selected bytes" : action == 3 ? "Undo" : action == 4 ? "Redo" : "Overwrite bytes",
+                (void)xxwidgets_text_dialog(
+                    w->parent,
+                    insert_paste   ? "Insert pasted bytes"
+                    : action == 12 ? "Cut bytes"
+                    : paste        ? "Paste bytes"
+                    : action == 9  ? "Hex input"
+                    : action == 1  ? "Insert bytes"
+                    : action == 2  ? "Delete selected bytes"
+                    : action == 3  ? "Undo"
+                    : action == 4  ? "Redo"
+                                   : "Overwrite bytes",
                     action == 12 ? "Could not cut the selected bytes. Check clipboard access, that the file supports resizing, and that temporary storage is available."
-                        : insert_paste && status == XXWIDGETS_INVALID_ARGUMENT
-                        ? "Paste complete hex byte pairs in Hex, or text representable in the selected Symbols encoding. The insertion offset must be within the file or at its end. Clipboard text is limited to 16 MiB."
-                        : paste && status == XXWIDGETS_INVALID_ARGUMENT
-                        ? "Paste complete hex byte pairs in Hex, or text representable in the selected Symbols encoding. The pasted bytes must fit within the existing file; pasting does not grow it. Clipboard text is limited to 16 MiB."
-                        : action == 9 ? "Could not complete the HexView input. Check clipboard access and that the data is writable."
-                        : "Could not edit the bytes. Check that the data is writable and temporary storage is available.");
+                    : insert_paste && status == XXWIDGETS_INVALID_ARGUMENT
+                        ? "Paste complete hex byte pairs in Hex, or text representable in the selected Symbols encoding. The insertion offset must be within the file or "
+                          "at its end. Clipboard text is limited to 16 MiB."
+                    : paste && status == XXWIDGETS_INVALID_ARGUMENT
+                        ? "Paste complete hex byte pairs in Hex, or text representable in the selected Symbols encoding. The pasted bytes must fit within the existing "
+                          "file; pasting does not grow it. Clipboard text is limited to 16 MiB."
+                    : action == 9 ? "Could not complete the HexView input. Check clipboard access and that the data is writable."
+                                  : "Could not edit the bytes. Check that the data is writable and temporary storage is available.");
             }
             if (committed) {
                 emit_hex_edit_events(w);
@@ -2759,8 +2784,7 @@ void xxwidgets_hexview_deferred(xxwidgets_app *app)
         w->hex_pending_dump = 0;
         status = xxwidgets_hexview_dump_dialog(w);
         if (status != XXWIDGETS_OK)
-            (void)xxwidgets_text_dialog(
-                w->parent, XXW_TR((w->parent)->app, "Dump selected bytes"),
-                "Could not save selected bytes. Check the path and write permissions; enable replacement to overwrite an existing file.");
+            (void)xxwidgets_text_dialog(w->parent, XXW_TR((w->parent)->app, "Dump selected bytes"),
+                                        "Could not save selected bytes. Check the path and write permissions; enable replacement to overwrite an existing file.");
     }
 }

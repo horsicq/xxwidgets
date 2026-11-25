@@ -29,8 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DIE_MAIN_PANEL_FLAGS \
-    (XXWIDGETS_DIE_MAIN_PANEL_SHOW_UPDATE | XXWIDGETS_DIE_MAIN_PANEL_SHOW_DEMANGLE | XXWIDGETS_DIE_MAIN_PANEL_TAG_FILTERS)
+#define DIE_MAIN_PANEL_FLAGS (XXWIDGETS_DIE_MAIN_PANEL_SHOW_UPDATE | XXWIDGETS_DIE_MAIN_PANEL_SHOW_DEMANGLE | XXWIDGETS_DIE_MAIN_PANEL_TAG_FILTERS)
 
 /* The right column: Advanced and Demangle at the top; Update database (Q2:
  * above Shortcuts), Shortcuts, Options, About and Exit at the bottom. */
@@ -43,50 +42,58 @@ static const xxwidgets_side_panel_item side_items[XXWIDGETS_DIE_SIDE_COUNT] = {
     {XXWIDGETS_DIE_SIDE_ABOUT, XXWIDGETS_BUTTON, XXW_N_("About"), XXWIDGETS_ICON_INFO, 1},
     {XXWIDGETS_DIE_SIDE_EXIT, XXWIDGETS_BUTTON, XXW_N_("Exit"), XXWIDGETS_ICON_EXIT, 1}};
 
-static const xxwidgets_button_grid_item tool_items[XXWIDGETS_DIE_TOOL_COUNT] = {
-    {XXWIDGETS_DIE_TOOL_FILE_INFO, XXW_N_("File info"), XXWIDGETS_ICON_INFO, NULL},
-    {XXWIDGETS_DIE_TOOL_MEMORY_MAP, XXW_N_("Memory map"), XXWIDGETS_ICON_MEMORY_MAP, NULL},
-    {XXWIDGETS_DIE_TOOL_DISASM, XXW_N_("Disasm"), XXWIDGETS_ICON_DISASM, NULL},
-    {XXWIDGETS_DIE_TOOL_HEX, XXW_N_("Hex"), XXWIDGETS_ICON_BINARY, NULL},
-    {XXWIDGETS_DIE_TOOL_STRINGS, XXW_N_("Strings"), XXWIDGETS_ICON_STRING, NULL},
-    {XXWIDGETS_DIE_TOOL_SIGNATURES, XXW_N_("Signatures"), XXWIDGETS_ICON_SIGNATURE, NULL},
-    {XXWIDGETS_DIE_TOOL_VIRUSTOTAL, XXW_N_("VirusTotal"), XXWIDGETS_ICON_VIRUSTOTAL, NULL},
-    {XXWIDGETS_DIE_TOOL_MIME, XXW_N_("MIME"), XXWIDGETS_ICON_MIME, NULL},
-    {XXWIDGETS_DIE_TOOL_VISUALIZATION, XXW_N_("Visualization"), XXWIDGETS_ICON_IMAGE, NULL},
-    {XXWIDGETS_DIE_TOOL_SEARCH, XXW_N_("Search"), XXWIDGETS_ICON_SEARCH, NULL},
-    {XXWIDGETS_DIE_TOOL_HASH, XXW_N_("Hash"), XXWIDGETS_ICON_HASH, NULL},
-    {XXWIDGETS_DIE_TOOL_ENTROPY, XXW_N_("Entropy"), XXWIDGETS_ICON_ENTROPY, NULL},
-    {XXWIDGETS_DIE_TOOL_EXTRACTOR, XXW_N_("Extractor"), XXWIDGETS_ICON_EXTRACT, NULL},
-    {XXWIDGETS_DIE_TOOL_YARA, XXW_N_("YARA"), XXWIDGETS_ICON_YARA, NULL}};
+static const xxwidgets_button_grid_item tool_items[XXWIDGETS_DIE_TOOL_COUNT] = {{XXWIDGETS_DIE_TOOL_FILE_INFO, XXW_N_("File info"), XXWIDGETS_ICON_INFO, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_MEMORY_MAP, XXW_N_("Memory map"), XXWIDGETS_ICON_MEMORY_MAP, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_DISASM, XXW_N_("Disasm"), XXWIDGETS_ICON_DISASM, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_HEX, XXW_N_("Hex"), XXWIDGETS_ICON_BINARY, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_STRINGS, XXW_N_("Strings"), XXWIDGETS_ICON_STRING, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_SIGNATURES, XXW_N_("Signatures"), XXWIDGETS_ICON_SIGNATURE, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_VIRUSTOTAL, XXW_N_("VirusTotal"), XXWIDGETS_ICON_VIRUSTOTAL, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_MIME, XXW_N_("MIME"), XXWIDGETS_ICON_MIME, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_VISUALIZATION, XXW_N_("Visualization"), XXWIDGETS_ICON_IMAGE, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_SEARCH, XXW_N_("Search"), XXWIDGETS_ICON_SEARCH, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_HASH, XXW_N_("Hash"), XXWIDGETS_ICON_HASH, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_ENTROPY, XXW_N_("Entropy"), XXWIDGETS_ICON_ENTROPY, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_EXTRACTOR, XXW_N_("Extractor"), XXWIDGETS_ICON_EXTRACT, NULL},
+                                                                                {XXWIDGETS_DIE_TOOL_YARA, XXW_N_("YARA"), XXWIDGETS_ICON_YARA, NULL}};
 
 /* Scan panel controls of the engine row and the scan bar: disabled while no
  * file is loaded. The result tree (row F) stays as it is. */
-static const xxwidgets_scan_panel_control_id file_controls[] = {
-    XXWIDGETS_SCAN_PANEL_ENGINE_LABEL, XXWIDGETS_SCAN_PANEL_ENGINE,
-    XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXWIDGETS_SCAN_PANEL_ENDIANNESS,
-    XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXWIDGETS_SCAN_PANEL_MODE,
-    XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXWIDGETS_SCAN_PANEL_ARCHITECTURE,
-    XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXWIDGETS_SCAN_PANEL_TYPE,
-    XXWIDGETS_SCAN_PANEL_SIGNATURES, XXWIDGETS_SCAN_PANEL_FLAGS, XXWIDGETS_SCAN_PANEL_DATABASES,
-    XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS, XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
-    XXWIDGETS_SCAN_PANEL_SCAN, XXWIDGETS_SCAN_PANEL_DIRECTORY, XXWIDGETS_SCAN_PANEL_LOG,
-    XXWIDGETS_SCAN_PANEL_REPORT, XXWIDGETS_SCAN_PANEL_ELAPSED};
+static const xxwidgets_scan_panel_control_id file_controls[] = {XXWIDGETS_SCAN_PANEL_ENGINE_LABEL,
+                                                                XXWIDGETS_SCAN_PANEL_ENGINE,
+                                                                XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL,
+                                                                XXWIDGETS_SCAN_PANEL_ENDIANNESS,
+                                                                XXWIDGETS_SCAN_PANEL_MODE_LABEL,
+                                                                XXWIDGETS_SCAN_PANEL_MODE,
+                                                                XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL,
+                                                                XXWIDGETS_SCAN_PANEL_ARCHITECTURE,
+                                                                XXWIDGETS_SCAN_PANEL_TYPE_LABEL,
+                                                                XXWIDGETS_SCAN_PANEL_TYPE,
+                                                                XXWIDGETS_SCAN_PANEL_SIGNATURES,
+                                                                XXWIDGETS_SCAN_PANEL_FLAGS,
+                                                                XXWIDGETS_SCAN_PANEL_DATABASES,
+                                                                XXWIDGETS_SCAN_PANEL_INCLUDE_TAGS,
+                                                                XXWIDGETS_SCAN_PANEL_EXCLUDE_TAGS,
+                                                                XXWIDGETS_SCAN_PANEL_SCAN,
+                                                                XXWIDGETS_SCAN_PANEL_DIRECTORY,
+                                                                XXWIDGETS_SCAN_PANEL_LOG,
+                                                                XXWIDGETS_SCAN_PANEL_REPORT,
+                                                                XXWIDGETS_SCAN_PANEL_ELAPSED};
 
 /* Scan panel texts re-applied on retranslate (the scan panel fixes its texts
  * at creation; these are its own msgids). */
 static const struct {
     xxwidgets_scan_panel_control_id id;
     const char *text;
-} scan_texts[] = {
-    {XXWIDGETS_SCAN_PANEL_ENGINE_LABEL, XXW_N_("Scan")},
-    {XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXW_N_("Endianness")},
-    {XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXW_N_("Mode")},
-    {XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXW_N_("Architecture")},
-    {XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXW_N_("Type")},
-    {XXWIDGETS_SCAN_PANEL_SIGNATURES, XXW_N_("Signatures")},
-    {XXWIDGETS_SCAN_PANEL_SCAN, XXW_N_("Scan")},
-    {XXWIDGETS_SCAN_PANEL_DIRECTORY, XXW_N_("Directory")},
-    {XXWIDGETS_SCAN_PANEL_LOG, XXW_N_("Log")}};
+} scan_texts[] = {{XXWIDGETS_SCAN_PANEL_ENGINE_LABEL, XXW_N_("Scan")},
+                  {XXWIDGETS_SCAN_PANEL_ENDIANNESS_LABEL, XXW_N_("Endianness")},
+                  {XXWIDGETS_SCAN_PANEL_MODE_LABEL, XXW_N_("Mode")},
+                  {XXWIDGETS_SCAN_PANEL_ARCHITECTURE_LABEL, XXW_N_("Architecture")},
+                  {XXWIDGETS_SCAN_PANEL_TYPE_LABEL, XXW_N_("Type")},
+                  {XXWIDGETS_SCAN_PANEL_SIGNATURES, XXW_N_("Signatures")},
+                  {XXWIDGETS_SCAN_PANEL_SCAN, XXW_N_("Scan")},
+                  {XXWIDGETS_SCAN_PANEL_DIRECTORY, XXW_N_("Directory")},
+                  {XXWIDGETS_SCAN_PANEL_LOG, XXW_N_("Log")}};
 
 struct xxwidgets_die_main_panel {
     xxwidgets_widget *window;
@@ -149,10 +156,8 @@ static xxwidgets_status compute_parts(const xxwidgets_die_main_panel *panel, int
     if (status == XXWIDGETS_OK) status = xxwidgets_file_name_bar_get_minimum_width(panel->bar, &parts->bar_minimum);
     if (status == XXWIDGETS_OK) status = xxwidgets_file_header_view_size(panel->header, advanced, 1, &parts->header_width, &unused);
     if (status == XXWIDGETS_OK) status = xxwidgets_file_header_view_size(panel->header, advanced, 0, &unused, &parts->header_height);
-    if (status == XXWIDGETS_OK && advanced)
-        status = xxwidgets_button_grid_get_minimum_size(panel->tools, &parts->tools_width, &parts->tools_height);
-    if (status == XXWIDGETS_OK && advanced)
-        status = xxwidgets_format_panel_get_minimum_size(panel->format_panel, &parts->format_width, &parts->format_height);
+    if (status == XXWIDGETS_OK && advanced) status = xxwidgets_button_grid_get_minimum_size(panel->tools, &parts->tools_width, &parts->tools_height);
+    if (status == XXWIDGETS_OK && advanced) status = xxwidgets_format_panel_get_minimum_size(panel->format_panel, &parts->format_width, &parts->format_height);
     if (status == XXWIDGETS_OK) status = xxwidgets_scan_panel_get_minimum_size(panel->scan, &parts->scan_width, &parts->scan_height);
     if (status == XXWIDGETS_OK) status = side_size(panel, &parts->metrics, advanced, &parts->side_width, &parts->side_height);
     if (status != XXWIDGETS_OK) return status;
@@ -161,10 +166,8 @@ static xxwidgets_status compute_parts(const xxwidgets_die_main_panel *panel, int
     left_height = parts->header_height + parts->metrics.spacing + parts->scan_height;
     if (parts->tools_height) left_height += parts->tools_height + parts->metrics.spacing;
     if (parts->format_height) left_height += parts->format_height + parts->metrics.spacing;
-    parts->minimum_width = 2 * parts->metrics.margin +
-                           xxwidgets_component_max(parts->bar_minimum, left_width + parts->metrics.spacing + parts->side_width);
-    parts->minimum_height = 2 * parts->metrics.margin + parts->bar_height + parts->metrics.spacing +
-                            xxwidgets_component_max(left_height, parts->side_height);
+    parts->minimum_width = 2 * parts->metrics.margin + xxwidgets_component_max(parts->bar_minimum, left_width + parts->metrics.spacing + parts->side_width);
+    parts->minimum_height = 2 * parts->metrics.margin + parts->bar_height + parts->metrics.spacing + xxwidgets_component_max(left_height, parts->side_height);
     return XXWIDGETS_OK;
 }
 
@@ -257,8 +260,7 @@ static xxwidgets_status apply_view(xxwidgets_die_main_panel *panel, int advanced
      * handles stay stable); the core hands the focus on from a hidden one. */
     status = xxwidgets_file_header_set_advanced(panel->header, advanced);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_side_panel_set_item_visible(panel->side, XXWIDGETS_DIE_SIDE_DEMANGLE,
-                                                        side_item_shown(panel, advanced, XXWIDGETS_DIE_SIDE_DEMANGLE));
+        status = xxwidgets_side_panel_set_item_visible(panel->side, XXWIDGETS_DIE_SIDE_DEMANGLE, side_item_shown(panel, advanced, XXWIDGETS_DIE_SIDE_DEMANGLE));
     if (status == XXWIDGETS_OK) status = xxwidgets_button_grid_set_visible(panel->tools, advanced);
     if (status == XXWIDGETS_OK) status = xxwidgets_format_panel_set_visible(panel->format_panel, advanced);
     if (status == XXWIDGETS_OK) status = xxwidgets_side_panel_set_checked(panel->side, XXWIDGETS_DIE_SIDE_ADVANCED, advanced);
@@ -338,24 +340,17 @@ xxwidgets_status xxwidgets_die_main_panel_create(xxwidgets_widget *window, unsig
     /* Creation order is the Tab order: A, B, C, D, E-F-G, right column. */
     status = xxwidgets_file_name_bar_create(window, 0, &panel->bar);
     if (status == XXWIDGETS_OK) status = xxwidgets_file_header_create(window, 0, &panel->header);
+    if (status == XXWIDGETS_OK) status = xxwidgets_button_grid_create(window, tool_items, XXWIDGETS_DIE_TOOL_COUNT, 7, XXWIDGETS_BUTTON_GRID_FRAMED, &panel->tools);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_grid_create(window, tool_items, XXWIDGETS_DIE_TOOL_COUNT, 7,
-                                              XXWIDGETS_BUTTON_GRID_FRAMED, &panel->tools);
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_SIGNATURES, XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_SIGNATURES,
-            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_MIME, XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_MIME,
-            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
+        status =
+            xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_VISUALIZATION, XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_VISUALIZATION,
-            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_SEARCH,
-            XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_YARA,
-            XXWIDGETS_GRID_ITEM_HIDDEN, NULL);
+        status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_SEARCH, XXWIDGETS_GRID_ITEM_DISABLED, XXW_N_("Not available in this version"));
+    if (status == XXWIDGETS_OK) status = xxwidgets_button_grid_set_item_state(panel->tools, XXWIDGETS_DIE_TOOL_YARA, XXWIDGETS_GRID_ITEM_HIDDEN, NULL);
     if (status == XXWIDGETS_OK) status = xxwidgets_format_panel_create(window, 0, &panel->format_panel);
     if (status == XXWIDGETS_OK) {
         /* The scan panel's cell bounds only matter until the first layout. */
@@ -364,12 +359,10 @@ xxwidgets_status xxwidgets_die_main_panel_create(xxwidgets_widget *window, unsig
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_scan_panel_set_options(panel->scan, scan_options(panel));
     /* B7: DIE's result tree shows expander arrows without connecting lines. */
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_treeview_set_style(xxwidgets_scan_panel_control(panel->scan, XXWIDGETS_SCAN_PANEL_RESULTS), XXWIDGETS_TREE_ARROWS);
+    if (status == XXWIDGETS_OK) status = xxwidgets_treeview_set_style(xxwidgets_scan_panel_control(panel->scan, XXWIDGETS_SCAN_PANEL_RESULTS), XXWIDGETS_TREE_ARROWS);
     if (status == XXWIDGETS_OK) status = xxwidgets_side_panel_create(window, side_items, XXWIDGETS_DIE_SIDE_COUNT, &panel->side);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_side_panel_set_item_visible(panel->side, XXWIDGETS_DIE_SIDE_UPDATE,
-                                                        side_item_shown(panel, 0, XXWIDGETS_DIE_SIDE_UPDATE));
+        status = xxwidgets_side_panel_set_item_visible(panel->side, XXWIDGETS_DIE_SIDE_UPDATE, side_item_shown(panel, 0, XXWIDGETS_DIE_SIDE_UPDATE));
     /* Update database waits for the application to report an updater (Q2). */
     if (status == XXWIDGETS_OK) status = xxwidgets_side_panel_set_item_enabled(panel->side, XXWIDGETS_DIE_SIDE_UPDATE, 0);
     if (status == XXWIDGETS_OK) status = xxwidgets_side_panel_set_item_visible(panel->side, XXWIDGETS_DIE_SIDE_DEMANGLE, 0);
@@ -513,8 +506,7 @@ int xxwidgets_die_main_panel_handle_event(xxwidgets_die_main_panel *panel, const
             action.id = XXWIDGETS_DIE_ACTION_FILE_TYPE;
             action.value = (int)header_action.index;
             action.type_id = header_action.type_id;
-        } else if (header_action.id == XXWIDGETS_FILE_HEADER_ACTION_ENTRY_POINT_ARROW)
-            action.id = XXWIDGETS_DIE_ACTION_ENTRY_POINT;
+        } else if (header_action.id == XXWIDGETS_FILE_HEADER_ACTION_ENTRY_POINT_ARROW) action.id = XXWIDGETS_DIE_ACTION_ENTRY_POINT;
         if (out) *out = action;
         return 1;
     }
@@ -543,12 +535,10 @@ int xxwidgets_die_main_panel_handle_event(xxwidgets_die_main_panel *panel, const
             /* The view first, then the application stores the setting. */
             /* A failed switch keeps the old view: the checkbox goes back to
              * it, so it and panel->advanced never disagree. */
-            if (apply_view(panel, value ? 1 : 0) != XXWIDGETS_OK)
-                (void)xxwidgets_side_panel_set_checked(panel->side, XXWIDGETS_DIE_SIDE_ADVANCED, panel->advanced);
+            if (apply_view(panel, value ? 1 : 0) != XXWIDGETS_OK) (void)xxwidgets_side_panel_set_checked(panel->side, XXWIDGETS_DIE_SIDE_ADVANCED, panel->advanced);
             action.id = XXWIDGETS_DIE_ACTION_ADVANCED_CHANGED;
             action.value = panel->advanced;
-        } else
-            (void)side_action(id, &action.id);
+        } else (void)side_action(id, &action.id);
         if (out) *out = action;
         return 1;
     }
@@ -567,8 +557,7 @@ int xxwidgets_die_main_panel_handle_event(xxwidgets_die_main_panel *panel, const
     }
     for (i = 0; i < XXWIDGETS_SCAN_PANEL_CONTROL_COUNT; ++i) {
         xxwidgets_die_action_id click;
-        if (!scan_click_action((xxwidgets_scan_panel_control_id)i, &click) ||
-            widget != xxwidgets_scan_panel_control(panel->scan, (xxwidgets_scan_panel_control_id)i))
+        if (!scan_click_action((xxwidgets_scan_panel_control_id)i, &click) || widget != xxwidgets_scan_panel_control(panel->scan, (xxwidgets_scan_panel_control_id)i))
             continue;
         if (event->type == XXWIDGETS_EVENT_CLICK && xxwidgets_component_live(widget)) action.id = click;
         if (out) *out = action;

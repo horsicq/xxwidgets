@@ -148,7 +148,7 @@ typedef struct property_name {
 static xxwidgets_status property_cell(xx_data_struct_record_property_t property, char **out, size_t *columns)
 {
     static const property_name names[] = {{XX_DATA_STRUCT_RECORD_PROPERTY_SIGNATURE, "signature"},
-    {XX_DATA_STRUCT_RECORD_PROPERTY_CHECKSUM, "checksum"},
+                                          {XX_DATA_STRUCT_RECORD_PROPERTY_CHECKSUM, "checksum"},
                                           {XX_DATA_STRUCT_RECORD_PROPERTY_ID, "id"},
                                           {XX_DATA_STRUCT_RECORD_PROPERTY_VIRTUAL_ADDRESS, "address"},
                                           {XX_DATA_STRUCT_RECORD_PROPERTY_OFFSET, "offset"},
@@ -268,14 +268,12 @@ xxwidgets_status xxwidgets_data_struct_table_set_fields(xxwidgets_widget *widget
     uint64_t previous_revision;
     int previous_value;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!table_widget(widget) || (!fields && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*copies) ||
-        count > SIZE_MAX / (DATA_STRUCT_COLUMNS * sizeof(*cells)))
+    if (!table_widget(widget) || (!fields && count) || count > INT_MAX || count > SIZE_MAX / sizeof(*copies) || count > SIZE_MAX / (DATA_STRUCT_COLUMNS * sizeof(*cells)))
         return XXWIDGETS_INVALID_ARGUMENT;
     for (row = 0; row < count; ++row) {
         if (fields[row].relative_offset < -1 || fields[row].file_offset < -1 || fields[row].size < -1) return XXWIDGETS_INVALID_ARGUMENT;
         for (column = 0; column < DATA_STRUCT_COLUMNS; ++column)
-            if ((column == 0 || column == 1 || column >= 6) && !xxwidgets_valid_utf8(field_string(fields + row, column)))
-                return XXWIDGETS_INVALID_ARGUMENT;
+            if ((column == 0 || column == 1 || column >= 6) && !xxwidgets_valid_utf8(field_string(fields + row, column))) return XXWIDGETS_INVALID_ARGUMENT;
     }
     memcpy(widths, minimum_widths, sizeof(widths));
     if (count) {
@@ -303,10 +301,11 @@ xxwidgets_status xxwidgets_data_struct_table_set_fields(xxwidgets_widget *widget
             }
         for (column = 0; column < DATA_STRUCT_COLUMNS; ++column) {
             size_t width = 0;
-            if (column == 0 || column == 1 || column >= 6)
-                status = escape_cell(field_string(copies + row, column), &cells[row * DATA_STRUCT_COLUMNS + column], &width);
+            if (column == 0 || column == 1 || column >= 6) status = escape_cell(field_string(copies + row, column), &cells[row * DATA_STRUCT_COLUMNS + column], &width);
             else if (column >= 2 && column <= 4)
-                status = number_cell(column == 2 ? copies[row].relative_offset : column == 3 ? copies[row].file_offset : copies[row].size,
+                status = number_cell(column == 2   ? copies[row].relative_offset
+                                     : column == 3 ? copies[row].file_offset
+                                                   : copies[row].size,
                                      &cells[row * DATA_STRUCT_COLUMNS + column], &width);
             else status = property_cell(copies[row].property, &cells[row * DATA_STRUCT_COLUMNS + column], &width);
             if (status != XXWIDGETS_OK) goto failed;
@@ -412,7 +411,10 @@ size_t xxwidgets_tabular_column_count(const xxwidgets_widget *widget)
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_count(widget);
     if (widget && widget->kind == XXWIDGETS_HEXVIEW) return 3;
     if (widget && widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) return 2;
-    return xxwidgets_entropy_table(widget) ? (widget->kind == XXWIDGETS_ENTROPY_BYTES ? 3 : 5) : widget && widget->kind == XXWIDGETS_SCANRESULTS ? 4 : table_widget(widget) ? DATA_STRUCT_COLUMNS : 0;
+    return xxwidgets_entropy_table(widget)                   ? (widget->kind == XXWIDGETS_ENTROPY_BYTES ? 3 : 5)
+           : widget && widget->kind == XXWIDGETS_SCANRESULTS ? 4
+           : table_widget(widget)                            ? DATA_STRUCT_COLUMNS
+                                                             : 0;
 }
 
 const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_t column)
@@ -425,7 +427,8 @@ const char *xxwidgets_tabular_column_title(const xxwidgets_widget *widget, size_
     if (xxwidgets_debugger_table_kind(widget)) return xxwidgets_debugger_table_column_title(widget, column);
     if (xxwidgets_binaryviewer_kind(widget)) return xxwidgets_binaryviewer_column_title(widget, column);
     static const char *scan_titles[4] = {XXW_N_("Type"), XXW_N_("Name"), XXW_N_("Version"), XXW_N_("Info")};
-    static const char *data_titles[DATA_STRUCT_COLUMNS] = {XXW_N_("Name"), XXW_N_("Type"), XXW_N_("Relative offset"), XXW_N_("File offset"), XXW_N_("Size"), XXW_N_("Role"), XXW_N_("Raw"), XXW_N_("Value"), XXW_N_("Comment")};
+    static const char *data_titles[DATA_STRUCT_COLUMNS] = {XXW_N_("Name"), XXW_N_("Type"), XXW_N_("Relative offset"), XXW_N_("File offset"), XXW_N_("Size"),
+                                                           XXW_N_("Role"), XXW_N_("Raw"),  XXW_N_("Value"),           XXW_N_("Comment")};
     size_t count = xxwidgets_tabular_column_count(widget);
     static const char *regions[] = {XXW_N_("Offset"), XXW_N_("Size"), XXW_N_("Entropy"), XXW_N_("Status"), XXW_N_("Name")};
     static const char *bytes[] = {XXW_N_("Byte"), XXW_N_("Count"), "%"};
@@ -453,7 +456,7 @@ const char *xxwidgets_tabular_model_cell(const xxwidgets_widget *widget, size_t 
     if (widget && widget->kind == XXWIDGETS_HEXVIEW) return xxwidgets_hexview_cell(widget, row, column);
     if (xxwidgets_entropy_table(widget)) return xxwidgets_entropy_cell(widget, row, column);
     return widget && (widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) ? xxwidgets_scanresults_cell(widget, row, column)
-                                                            : xxwidgets_data_struct_table_cell(widget, row, column);
+                                                                                                               : xxwidgets_data_struct_table_cell(widget, row, column);
 }
 
 size_t xxwidgets_tabular_column_width(const xxwidgets_widget *widget, size_t column)
@@ -475,5 +478,5 @@ size_t xxwidgets_tabular_column_width(const xxwidgets_widget *widget, size_t col
         return column < xxwidgets_tabular_column_count(widget) ? widths[column] : 0;
     }
     return widget && (widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) ? xxwidgets_scanresults_column_width(widget, column)
-                                                            : xxwidgets_data_struct_table_column_width(widget, column);
+                                                                                                               : xxwidgets_data_struct_table_column_width(widget, column);
 }

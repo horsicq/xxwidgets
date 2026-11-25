@@ -136,20 +136,19 @@ typedef struct xxwidgets_debugger_session_ops {
     xxwidgets_status (*set_breakpoint_typed)(void *, xxwidgets_debugger_breakpoint_type, uint64_t address, uint64_t *id);
     xxwidgets_status (*get_breakpoint_type)(void *, uint64_t id, xxwidgets_debugger_breakpoint_type *);
     /* ABI 3 extensions. Full information includes data watchpoints. */
-    xxwidgets_status (*get_breakpoint_support)(void *, uint64_t tid, xxwidgets_debugger_breakpoint_type,
-        xxwidgets_debugger_breakpoint_access, xxwidgets_debugger_breakpoint_support *);
+    xxwidgets_status (*get_breakpoint_support)(void *, uint64_t tid, xxwidgets_debugger_breakpoint_type, xxwidgets_debugger_breakpoint_access,
+                                               xxwidgets_debugger_breakpoint_support *);
     xxwidgets_status (*list_breakpoint_info)(void *, xxwidgets_debugger_breakpoint_info *, size_t capacity, size_t *count);
     xxwidgets_status (*set_breakpoint_spec)(void *, const xxwidgets_debugger_breakpoint_spec *, uint64_t *id);
     /* ABI 4 extensions. A finite policy stops on every hit and expires on
      * its final hit. The ABI 3 spec/info record layouts remain unchanged. */
     xxwidgets_status (*get_breakpoint_policy)(void *, uint64_t id, xxwidgets_debugger_breakpoint_policy *, uint64_t *hit_count);
-    xxwidgets_status (*set_breakpoint_with_policy)(void *, const xxwidgets_debugger_breakpoint_spec *,
-        const xxwidgets_debugger_breakpoint_policy *, uint64_t *id);
+    xxwidgets_status (*set_breakpoint_with_policy)(void *, const xxwidgets_debugger_breakpoint_spec *, const xxwidgets_debugger_breakpoint_policy *, uint64_t *id);
     /* ABI 5 extensions. Encoding does not change the canonical Execute size. */
     xxwidgets_status (*get_software_breakpoint_encodings)(void *, uint64_t tid, uint32_t *mask);
     xxwidgets_status (*get_breakpoint_encoding)(void *, uint64_t id, xxwidgets_debugger_software_encoding *);
-    xxwidgets_status (*set_breakpoint_ex)(void *, const xxwidgets_debugger_breakpoint_spec *,
-        const xxwidgets_debugger_breakpoint_policy *, xxwidgets_debugger_software_encoding, uint64_t *id);
+    xxwidgets_status (*set_breakpoint_ex)(void *, const xxwidgets_debugger_breakpoint_spec *, const xxwidgets_debugger_breakpoint_policy *,
+                                          xxwidgets_debugger_software_encoding, uint64_t *id);
 } xxwidgets_debugger_session_ops;
 
 /* Borrowed interface: neither this struct nor the widget owns context or ops.
@@ -183,30 +182,31 @@ XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_state(const xxwidg
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_target(const xxwidgets_debugger_session *, uint64_t tid, xxwidgets_debugger_target *);
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_read_memory(const xxwidgets_debugger_session *, uint64_t address, void *, size_t, size_t *done);
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_write_memory(const xxwidgets_debugger_session *, uint64_t address, const void *, size_t, size_t *done);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_disassemble(const xxwidgets_debugger_session *, uint64_t tid, uint64_t address, char *, size_t, uint32_t *length);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_list_breakpoints(const xxwidgets_debugger_session *, xxwidgets_debugger_session_breakpoint *, size_t capacity, size_t *count);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_disassemble(const xxwidgets_debugger_session *, uint64_t tid, uint64_t address, char *, size_t,
+                                                                      uint32_t *length);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_list_breakpoints(const xxwidgets_debugger_session *, xxwidgets_debugger_session_breakpoint *, size_t capacity,
+                                                                           size_t *count);
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint(const xxwidgets_debugger_session *, uint64_t address, uint64_t *id);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_typed(const xxwidgets_debugger_session *,
-    xxwidgets_debugger_breakpoint_type, uint64_t address, uint64_t *id);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_type(const xxwidgets_debugger_session *,
-    uint64_t id, xxwidgets_debugger_breakpoint_type *);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_support(const xxwidgets_debugger_session *,
-    uint64_t tid, xxwidgets_debugger_breakpoint_type, xxwidgets_debugger_breakpoint_access, xxwidgets_debugger_breakpoint_support *);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_list_breakpoint_info(const xxwidgets_debugger_session *,
-    xxwidgets_debugger_breakpoint_info *, size_t capacity, size_t *count);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_spec(const xxwidgets_debugger_session *,
-    const xxwidgets_debugger_breakpoint_spec *, uint64_t *id);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_policy(const xxwidgets_debugger_session *,
-    uint64_t id, xxwidgets_debugger_breakpoint_policy *, uint64_t *hit_count);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_with_policy(const xxwidgets_debugger_session *,
-    const xxwidgets_debugger_breakpoint_spec *, const xxwidgets_debugger_breakpoint_policy *, uint64_t *id);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_typed(const xxwidgets_debugger_session *, xxwidgets_debugger_breakpoint_type, uint64_t address,
+                                                                               uint64_t *id);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_type(const xxwidgets_debugger_session *, uint64_t id, xxwidgets_debugger_breakpoint_type *);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_support(const xxwidgets_debugger_session *, uint64_t tid, xxwidgets_debugger_breakpoint_type,
+                                                                                 xxwidgets_debugger_breakpoint_access, xxwidgets_debugger_breakpoint_support *);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_list_breakpoint_info(const xxwidgets_debugger_session *, xxwidgets_debugger_breakpoint_info *, size_t capacity,
+                                                                               size_t *count);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_spec(const xxwidgets_debugger_session *, const xxwidgets_debugger_breakpoint_spec *,
+                                                                              uint64_t *id);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_policy(const xxwidgets_debugger_session *, uint64_t id, xxwidgets_debugger_breakpoint_policy *,
+                                                                                uint64_t *hit_count);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_with_policy(const xxwidgets_debugger_session *, const xxwidgets_debugger_breakpoint_spec *,
+                                                                                     const xxwidgets_debugger_breakpoint_policy *, uint64_t *id);
 /* The encoding mask uses one bit per encoding: 1u << XXWIDGETS_DEBUGGER_SW_*. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_software_breakpoint_encodings(const xxwidgets_debugger_session *,
-    uint64_t tid, uint32_t *mask);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_encoding(const xxwidgets_debugger_session *,
-    uint64_t id, xxwidgets_debugger_software_encoding *);
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_ex(const xxwidgets_debugger_session *,
-    const xxwidgets_debugger_breakpoint_spec *, const xxwidgets_debugger_breakpoint_policy *, xxwidgets_debugger_software_encoding, uint64_t *id);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_software_breakpoint_encodings(const xxwidgets_debugger_session *, uint64_t tid, uint32_t *mask);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_get_breakpoint_encoding(const xxwidgets_debugger_session *, uint64_t id,
+                                                                                  xxwidgets_debugger_software_encoding *);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_set_breakpoint_ex(const xxwidgets_debugger_session *, const xxwidgets_debugger_breakpoint_spec *,
+                                                                            const xxwidgets_debugger_breakpoint_policy *, xxwidgets_debugger_software_encoding,
+                                                                            uint64_t *id);
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_remove_breakpoint(const xxwidgets_debugger_session *, uint64_t id);
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_resume(const xxwidgets_debugger_session *, int pass_exception);
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_step(const xxwidgets_debugger_session *, uint64_t tid);
@@ -222,7 +222,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_debugger_session_poll(const xxwidgets_d
  * value gives display errors precedence. All widget calls use the UI thread.
  */
 XXWIDGETS_API xxwidgets_status xxwidgets_debugger_refresh_session(xxwidgets_debugger *, const xxwidgets_debugger_session *, uint64_t tid,
-    const xxwidgets_debugger_refresh_options *, xxwidgets_debugger_session_error *error);
+                                                                  const xxwidgets_debugger_refresh_options *, xxwidgets_debugger_session_error *error);
 
 #ifdef __cplusplus
 }

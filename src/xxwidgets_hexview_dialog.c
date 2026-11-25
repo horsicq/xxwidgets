@@ -18,17 +18,20 @@ static void hex_event(xxwidgets_app *app, const xxwidgets_event *event, void *us
     (void)app;
     if (event->type == XXWIDGETS_EVENT_SHORTCUT && event->widget == modal->window && modal->view) {
         if (event->value == 2) {
-            xxwidgets_event refresh = {0}; refresh.type = XXWIDGETS_EVENT_CLICK;
+            xxwidgets_event refresh = {0};
+            refresh.type = XXWIDGETS_EVENT_CLICK;
             refresh.widget = xxwidgets_hexview_browser_control(modal->view, XXWIDGETS_HEX_BROWSER_REFRESH);
             status = xxwidgets_hexview_browser_handle_event(modal->view, &refresh);
-        } else if (event->value == 3)
-            status = xxwidgets_widget_focus(xxwidgets_hexview_browser_control(modal->view, XXWIDGETS_HEX_BROWSER_OFFSET));
-        if (status != XXWIDGETS_OK) { modal->failure = status; modal->done = 1; }
+        } else if (event->value == 3) status = xxwidgets_widget_focus(xxwidgets_hexview_browser_control(modal->view, XXWIDGETS_HEX_BROWSER_OFFSET));
+        if (status != XXWIDGETS_OK) {
+            modal->failure = status;
+            modal->done = 1;
+        }
         if (event->value != 1) return;
     }
-    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == modal->window) ||
-        (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->close) ||
-        (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) modal->done = 1;
+    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == modal->window) || (event->type == XXWIDGETS_EVENT_CLICK && event->widget == modal->close) ||
+        (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1))
+        modal->done = 1;
     else if (event->type == XXWIDGETS_EVENT_RESIZE && event->widget == modal->window && modal->view) {
         xxwidgets_rect bounds = {0};
         status = xxwidgets_widget_get_rect(modal->window, &bounds);
@@ -36,31 +39,31 @@ static void hex_event(xxwidgets_app *app, const xxwidgets_event *event, void *us
          * minimum and let the window clip, rather than fail the dialog. */
         if (bounds.width < modal->window->min_columns) bounds.width = modal->window->min_columns;
         if (bounds.height < modal->window->min_rows) bounds.height = modal->window->min_rows;
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_hexview_browser_set_rect(modal->view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 6});
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_widget_set_rect(modal->close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
+        if (status == XXWIDGETS_OK) status = xxwidgets_hexview_browser_set_rect(modal->view, (xxwidgets_rect){1, 1, bounds.width - 2, bounds.height - 6});
+        if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_rect(modal->close, (xxwidgets_rect){bounds.width - 13, bounds.height - 3, 12, 2});
     } else if (modal->view) status = xxwidgets_hexview_browser_handle_event(modal->view, event);
-    if (status != XXWIDGETS_OK) { modal->failure = status; modal->done = 1; }
+    if (status != XXWIDGETS_OK) {
+        modal->failure = status;
+        modal->done = 1;
+    }
 }
 
-xxwidgets_status xxwidgets_hexview_dialog(xxwidgets_widget *owner, const char *title,
-    const char *path, xx_io_device *device)
+xxwidgets_status xxwidgets_hexview_dialog(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device)
 {
     return xxwidgets_hexview_dialog_with_options(owner, title, path, device, NULL);
 }
 
-static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device,
-    const xxwidgets_hex_options *options, int at, uint64_t offset, uint64_t length);
+static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device, const xxwidgets_hex_options *options, int at,
+                                   uint64_t offset, uint64_t length);
 
-xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, const char *title,
-    const char *path, xx_io_device *device, const xxwidgets_hex_options *options)
+xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device,
+                                                       const xxwidgets_hex_options *options)
 {
     return hex_dialog(owner, title, path, device, options, 0, 0, 0);
 }
 
-xxwidgets_status xxwidgets_hexview_dialog_at(xxwidgets_widget *owner, const char *title, const char *path,
-    xx_io_device *device, const xxwidgets_hex_options *options, uint64_t offset, uint64_t length)
+xxwidgets_status xxwidgets_hexview_dialog_at(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device, const xxwidgets_hex_options *options,
+                                             uint64_t offset, uint64_t length)
 {
     int64_t size = device ? xx_io_total_size(device) : -1;
     /* Refuse a range past EOF before any window opens. */
@@ -68,8 +71,8 @@ xxwidgets_status xxwidgets_hexview_dialog_at(xxwidgets_widget *owner, const char
     return hex_dialog(owner, title, path, device, options, 1, offset, length);
 }
 
-static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device,
-    const xxwidgets_hex_options *options, int at, uint64_t offset, uint64_t length)
+static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device, const xxwidgets_hex_options *options, int at,
+                                   uint64_t offset, uint64_t length)
 {
     hex_modal modal = {0};
     xxwidgets_app *app;
@@ -79,28 +82,32 @@ static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, c
     xxwidgets_status status, cleanup;
     int enabled, disabled = 0, attached = 0;
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}, {"F5", 2}, {"Ctrl+G", 3}, {"Meta+G", 3}};
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) ||
-        owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || owner->rect.x > INT_MAX - 2 || owner->rect.y > INT_MAX - 2)
+        return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
-    previous_default = app->modal_default; app->modal_default = NULL;
-    previous_event = app->on_event; previous_user = app->user_data; enabled = owner->enabled;
+    previous_default = app->modal_default;
+    app->modal_default = NULL;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    enabled = owner->enabled;
     /* Return focus to the owner's focused control, else its first one. */
     for (widget = app->widgets; widget; widget = widget->next)
         if (widget->parent == owner && xxwidgets_focusable(widget)) {
             if (!focus) focus = widget;
-            if (xxwidgets_widget_has_focus(widget) == 1) { focus = widget; break; }
+            if (xxwidgets_widget_has_focus(widget) == 1) {
+                focus = widget;
+                break;
+            }
         }
-    app->on_event = hex_event; app->user_data = &modal;
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 128, 34}, &modal.window);
+    app->on_event = hex_event;
+    app->user_data = &modal;
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 128, 34}, &modal.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = modal.window;
     status = xxwidgets_window_set_minimum_size(modal.window, 110, 26);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_hexview_browser_create(modal.window, (xxwidgets_rect){1, 1, 126, 28}, &modal.view);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_hexview_browser_set_device(modal.view, path, device);
+    if (status == XXWIDGETS_OK) status = xxwidgets_hexview_browser_create(modal.window, (xxwidgets_rect){1, 1, 126, 28}, &modal.view);
+    if (status == XXWIDGETS_OK) status = xxwidgets_hexview_browser_set_device(modal.view, path, device);
     if (status == XXWIDGETS_OK && options) status = xxwidgets_hexview_browser_set_options(modal.view, options);
     if (status == XXWIDGETS_OK && at) status = xxwidgets_hexview_browser_select(modal.view, offset, length);
     if (status == XXWIDGETS_OK)
@@ -120,11 +127,26 @@ static xxwidgets_status hex_dialog(xxwidgets_widget *owner, const char *title, c
     }
     if (status == XXWIDGETS_OK) status = modal.failure;
 finish:
-    if (attached) { cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
-    if (modal.view) { cleanup = xxwidgets_hexview_browser_destroy(modal.view); if (status == XXWIDGETS_OK) status = cleanup; }
-    if (modal.window) { cleanup = xxwidgets_widget_destroy(modal.window); if (status == XXWIDGETS_OK) status = cleanup; }
-    app->modal_window = NULL; app->modal_default = previous_default; app->on_event = previous_event; app->user_data = previous_user;
-    if (disabled) { cleanup = xxwidgets_widget_set_enabled(owner, enabled); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (attached) {
+        cleanup = xxwidgets_window_set_modality(modal.window, NULL, XXWIDGETS_MODELESS);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (modal.view) {
+        cleanup = xxwidgets_hexview_browser_destroy(modal.view);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (modal.window) {
+        cleanup = xxwidgets_widget_destroy(modal.window);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    app->modal_window = NULL;
+    app->modal_default = previous_default;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
+    if (disabled) {
+        cleanup = xxwidgets_widget_set_enabled(owner, enabled);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
     if (focus) (void)xxwidgets_widget_focus(focus);
     return status;
 }

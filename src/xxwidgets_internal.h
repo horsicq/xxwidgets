@@ -209,7 +209,7 @@ struct xxwidgets_widget {
     void *hex_input_user;
     xxwidgets_hexview_tooltip_fn hex_tooltip_handler;
     void *hex_tooltip_user;
-    uint64_t hex_tooltip_offset;      /* Absolute byte of the current tip, UINT64_MAX for none. */
+    uint64_t hex_tooltip_offset; /* Absolute byte of the current tip, UINT64_MAX for none. */
     unsigned int hex_tooltip_column;
     xxwidgets_hexview_highlight *hex_highlights;
     size_t hex_highlight_count;
@@ -218,7 +218,7 @@ struct xxwidgets_widget {
     int hex_source_seeking;
     int hex_dragging, hex_pending_dump;
     int hex_pending_edit, hex_edit_busy;
-    int hex_cut_busy; /* Confirming clipboard publication and deleting a cut. */
+    int hex_cut_busy;     /* Confirming clipboard publication and deleting a cut. */
     int hex_replay_input; /* Applying a queued copied-data key in input order. */
     uint64_t hex_pending_edit_offset, hex_pending_edit_length;
     unsigned char *hex_pending_edit_data;
@@ -250,11 +250,11 @@ struct xxwidgets_widget {
     struct xxwidgets_die_signature_edit_state *die_signature_edit;
     struct xxwidgets_debugger_table_state *debugger_table;
     int disasm_arm;
-    int memory_map_compact; /* Four-column Memory Map presentation; raw cells retain six columns. */
+    int memory_map_compact;                        /* Four-column Memory Map presentation; raw cells retain six columns. */
     struct xxwidgets_text_table_state *text_table; /* XXWIDGETS_TABLE; rows use debugger_revision. */
     uint64_t debugger_revision;
     int process_selection; /* Transactional replacement selection hint. */
-    char **scan_cells; /* Escaped cells, row * 4 + column. */
+    char **scan_cells;     /* Escaped cells, row * 4 + column. */
     size_t scan_column_width[4];
     uint64_t scan_revision;
     struct xxwidgets_data_struct_field *data_struct_fields;
@@ -277,24 +277,28 @@ struct xxwidgets_widget {
     uint64_t tree_content_revision;
     struct xxwidgets_shortcut_binding *shortcuts;
     size_t shortcut_count;
-    xxwidgets_shortcut_filter_fn shortcut_filter; void *shortcut_filter_user;
+    xxwidgets_shortcut_filter_fn shortcut_filter;
+    void *shortcut_filter_user;
     /* WINDOW: xxwidgets_window_set_minimum_size; backends without a resize
      * limit ignore it. */
     int min_columns, min_rows, has_minimum;
     int accept_file_drops;
-    struct xxwidgets_entropy *entropy; /* Borrowed composite owner. */
+    struct xxwidgets_entropy *entropy;                     /* Borrowed composite owner. */
     struct xxwidgets_entropy_sample *entropy_plot_samples; /* Owned standalone plot data. */
     size_t entropy_plot_count;
     uint64_t entropy_plot_base, entropy_plot_size;
     char **entropy_cells;
     uint64_t entropy_revision;
-    uint32_t *canvas_pixels; unsigned int canvas_width,canvas_height; uint64_t canvas_revision;
-    xxwidgets_canvas_label *canvas_labels;size_t canvas_label_count;
+    uint32_t *canvas_pixels;
+    unsigned int canvas_width, canvas_height;
+    uint64_t canvas_revision;
+    xxwidgets_canvas_label *canvas_labels;
+    size_t canvas_label_count;
     int value;
     int visible;
     int enabled;
     int checkbox_radio; /* CHECKBOX native presentation; the host manages its group. */
-    int keep_end; /* LABEL: a text too long for it loses its middle, not its end (a path). */
+    int keep_end;       /* LABEL: a text too long for it loses its middle, not its end (a path). */
     void *user_data;
     void *native;
     void *platform; /* Optional backend-specific auxiliary state. */
@@ -327,12 +331,12 @@ void xxwidgets_frames_dispose(xxwidgets_widget *widget);
 void xxwidgets_focus_after_hide(xxwidgets_widget *widget);
 
 void xxwidgets_canvas_dispose(xxwidgets_widget *);
-void xxwidgets_canvas_fit(const xxwidgets_widget *,double,double,double *,double *,double *,double *);
-void xxwidgets_canvas_input(xxwidgets_widget *,double,double,double,double);
-int xxwidgets_canvas_key(xxwidgets_widget *,int);
-void xxwidgets_splitter_input(xxwidgets_widget *,double,double,double,double);
-int xxwidgets_splitter_key(xxwidgets_widget *,int);
-void xxwidgets_emit_point(xxwidgets_widget *,xxwidgets_event_type,int,int,int);
+void xxwidgets_canvas_fit(const xxwidgets_widget *, double, double, double *, double *, double *, double *);
+void xxwidgets_canvas_input(xxwidgets_widget *, double, double, double, double);
+int xxwidgets_canvas_key(xxwidgets_widget *, int);
+void xxwidgets_splitter_input(xxwidgets_widget *, double, double, double, double);
+int xxwidgets_splitter_key(xxwidgets_widget *, int);
+void xxwidgets_emit_point(xxwidgets_widget *, xxwidgets_event_type, int, int, int);
 char *xxwidgets_strdup(const char *text);
 int xxwidgets_valid_utf8(const char *text);
 /* Backend input helpers update cached state before dispatch. */
@@ -396,18 +400,28 @@ xxwidgets_status xxwidgets_checkcombobox_set_mask(xxwidgets_widget *widget, unsi
 /* Replace two check-combo models and their enabled state as one logical
  * transaction. This is used by composite widgets whose paired selectors must
  * never expose catalogs from different generations. */
-xxwidgets_status xxwidgets_checkcombobox_set_shared_records(xxwidgets_widget *first, xxwidgets_widget *second,
-    const xx_meta_string *records, size_t count, int enabled);
+xxwidgets_status xxwidgets_checkcombobox_set_shared_records(xxwidgets_widget *first, xxwidgets_widget *second, const xx_meta_string *records, size_t count, int enabled);
 
 static inline int xxwidgets_entropy_table(const xxwidgets_widget *widget)
-{ return widget && (widget->kind == XXWIDGETS_ENTROPY_REGIONS || widget->kind == XXWIDGETS_ENTROPY_BYTES); }
+{
+    return widget && (widget->kind == XXWIDGETS_ENTROPY_REGIONS || widget->kind == XXWIDGETS_ENTROPY_BYTES);
+}
 static inline int xxwidgets_binaryviewer_kind(const xxwidgets_widget *widget)
-{ return widget && widget->kind >= XXWIDGET_RESOURCESVIEWER && widget->kind <= XXWIDGET_SYMBOLSVIEWER; }
+{
+    return widget && widget->kind >= XXWIDGET_RESOURCESVIEWER && widget->kind <= XXWIDGET_SYMBOLSVIEWER;
+}
 /* XXWIDGETS_TABLE is drawn like the debugger tables. */
 static inline int xxwidgets_debugger_table_kind(const xxwidgets_widget *widget)
-{ return widget && ((widget->kind >= XXWIDGETS_DEBUGGER_DISASM && widget->kind <= XXWIDGETS_DEBUGGER_STACK) || widget->kind == XXWIDGETS_MEMORY_MAP || widget->kind == XXWIDGETS_TABLE); }
+{
+    return widget && ((widget->kind >= XXWIDGETS_DEBUGGER_DISASM && widget->kind <= XXWIDGETS_DEBUGGER_STACK) || widget->kind == XXWIDGETS_MEMORY_MAP ||
+                      widget->kind == XXWIDGETS_TABLE);
+}
 static inline int xxwidgets_tabular_kind(const xxwidgets_widget *widget)
-{ return widget && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)); }
+{
+    return widget && (widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ||
+                      widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) ||
+                      xxwidgets_debugger_table_kind(widget));
+}
 /* Plot primitives use top-left coordinates, RGB colors, and borrowed text.
  * kind: 0=line, 1=filled rectangle, 2=text. */
 typedef void (*xxwidgets_plot_draw_fn)(void *user, int kind, double x, double y, double x2, double y2, uint32_t rgb, const char *text);
@@ -418,7 +432,8 @@ const char *xxwidgets_entropy_cell(const xxwidgets_widget *widget, size_t row, s
 static inline int xxwidgets_formatted_rows(const xxwidgets_widget *widget)
 {
     return widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_ARCHIVEVIEW || widget->kind == XXWIDGETS_ARCHIVEBROWSER ||
-           widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_TREEVIEW || widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget);
+           widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || widget->kind == XXWIDGETS_TREEVIEW ||
+           widget->kind == XXWIDGETS_DATA_STRUCT_TABLE || xxwidgets_entropy_table(widget) || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget);
 }
 static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 {
@@ -427,15 +442,15 @@ static inline int xxwidgets_list_kind(const xxwidgets_widget *widget)
 static inline uint64_t xxwidgets_row_revision(const xxwidgets_widget *widget)
 {
     /* A filter change rebuilds the rows too. */
-    return widget->table_filter_revision + (xxwidgets_debugger_table_kind(widget) ? widget->debugger_revision
-           : xxwidgets_binaryviewer_kind(widget) ? widget->binary_revision
-           : xxwidgets_entropy_table(widget) ? widget->entropy_revision
-           : widget->kind == XXWIDGETS_TREEVIEW         ? widget->tree_revision
-           : (widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) ? widget->scan_revision
-           : widget->kind == XXWIDGETS_DATA_STRUCT_TABLE ? widget->data_struct_revision
-           : widget->kind == XXWIDGETS_ARCHIVEBROWSER ? widget->browser_revision
-           : widget->kind == XXWIDGETS_ARCHIVEVIEW    ? widget->archive_revision
-                                                      : widget->hex_revision);
+    return widget->table_filter_revision + (xxwidgets_debugger_table_kind(widget)                                                       ? widget->debugger_revision
+                                            : xxwidgets_binaryviewer_kind(widget)                                                       ? widget->binary_revision
+                                            : xxwidgets_entropy_table(widget)                                                           ? widget->entropy_revision
+                                            : widget->kind == XXWIDGETS_TREEVIEW                                                        ? widget->tree_revision
+                                            : (widget->kind == XXWIDGETS_SCANRESULTS || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) ? widget->scan_revision
+                                            : widget->kind == XXWIDGETS_DATA_STRUCT_TABLE                                               ? widget->data_struct_revision
+                                            : widget->kind == XXWIDGETS_ARCHIVEBROWSER                                                  ? widget->browser_revision
+                                            : widget->kind == XXWIDGETS_ARCHIVEVIEW                                                     ? widget->archive_revision
+                                                                                                                                        : widget->hex_revision);
 }
 
 /* Backend input helpers. selection_input refreshes the cursor marker but does
@@ -485,20 +500,15 @@ xxwidgets_status xxwidgets_hexview_pointer(xxwidgets_widget *, size_t offset, in
 xxwidgets_status xxwidgets_hexview_pointer_span(xxwidgets_widget *, size_t offset, size_t bytes, int extend);
 xxwidgets_status xxwidgets_hexview_body_action(xxwidgets_widget *, size_t index);
 void xxwidgets_hexview_deferred(xxwidgets_app *);
-xxwidgets_status xxwidgets_hexview_edit_interactive(xxwidgets_widget *, uint64_t offset,
-                                                   const void *data, size_t insert_length, uint64_t delete_length);
+xxwidgets_status xxwidgets_hexview_edit_interactive(xxwidgets_widget *, uint64_t offset, const void *data, size_t insert_length, uint64_t delete_length);
 xxwidgets_status xxwidgets_hexview_history_interactive(xxwidgets_widget *, int redo);
-xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *, size_t offset, const void *, size_t length,
-                                                        const xxwidgets_hex_position *);
-xxwidgets_status xxwidgets_hexview_overwrite_input(xxwidgets_widget *, size_t offset, unsigned char byte,
-                                                 size_t next_cursor, unsigned int next_nibble);
+xxwidgets_status xxwidgets_hexview_apply_memory_overwrite(xxwidgets_widget *, size_t offset, const void *, size_t length, const xxwidgets_hex_position *);
+xxwidgets_status xxwidgets_hexview_overwrite_input(xxwidgets_widget *, size_t offset, unsigned char byte, size_t next_cursor, unsigned int next_nibble);
 xxwidgets_status xxwidgets_hexview_overwrite_interactive(xxwidgets_widget *, uint64_t offset, const void *, size_t length);
 xxwidgets_status xxwidgets_hexview_decode_paste(const xxwidgets_widget *, const char *, unsigned char **, size_t *);
-xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *, uint64_t offset, uint64_t length,
-                                                  xxwidgets_hex_copy_format, const char *encoding,
-                                                  char **text, unsigned char **snapshot);
-xxwidgets_status xxwidgets_hexview_cut_range(xxwidgets_widget *, uint64_t offset, uint64_t length,
-                                            unsigned int column, const char *encoding, int interactive);
+xxwidgets_status xxwidgets_hexview_copy_range_text(xxwidgets_widget *, uint64_t offset, uint64_t length, xxwidgets_hex_copy_format, const char *encoding, char **text,
+                                                   unsigned char **snapshot);
+xxwidgets_status xxwidgets_hexview_cut_range(xxwidgets_widget *, uint64_t offset, uint64_t length, unsigned int column, const char *encoding, int interactive);
 void xxwidgets_hexview_history_dispose(xxwidgets_widget *);
 /* Called after polling; also works for a HexView inside the active modal window. */
 xxwidgets_status xxwidgets_hexview_dump_dialog(xxwidgets_widget *);
@@ -548,8 +558,7 @@ xxwidgets_status xxwidgets_treeview_source_fetch(xxwidgets_widget *widget, size_
  * borrowed until the next fetch) were rewritten in place (text, colors, id,
  * pending state), so a backend can patch its view instead of rebuilding it.
  * Appended nodes follow their earlier siblings in index order. */
-int xxwidgets_treeview_source_delta(const xxwidgets_widget *widget, uint64_t applied, size_t *first, const size_t **changed,
-                                    size_t *changed_count);
+int xxwidgets_treeview_source_delta(const xxwidgets_widget *widget, uint64_t applied, size_t *first, const size_t **changed, size_t *changed_count);
 /* User activation (Enter, double click): a "more" item loads its next page
  * (user_expand); any other node emits ACTIVATE. */
 void xxwidgets_treeview_user_activate(xxwidgets_widget *widget, size_t index);
@@ -625,8 +634,7 @@ xxwidgets_status xxwidgets_archivebrowser_user_sort(xxwidgets_widget *widget, xx
 
 extern const xxwidgets_backend_ops xxwidgets_tui_ops;
 struct xxwidgets_strings;
-xxwidgets_status xxwidgets_strings_create_internal(xxwidgets_widget *owner, xxwidgets_rect bounds,
-    int info_header, struct xxwidgets_strings **out);
+xxwidgets_status xxwidgets_strings_create_internal(xxwidgets_widget *owner, xxwidgets_rect bounds, int info_header, struct xxwidgets_strings **out);
 #if defined(XXWIDGETS_HAS_NATIVE)
 extern const xxwidgets_backend_ops xxwidgets_native_ops;
 #endif

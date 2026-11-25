@@ -71,15 +71,15 @@ static xxwidgets_status dump_errno(int error)
 {
     if (error == ENOMEM) return XXWIDGETS_OUT_OF_MEMORY;
     if (error == EEXIST) return XXWIDGETS_BUSY;
-    if (error == EACCES || error == EPERM || error == ESRCH || error == ENOENT || error == ENOTSUP || error == ENOSYS)
-        return XXWIDGETS_UNAVAILABLE;
+    if (error == EACCES || error == EPERM || error == ESRCH || error == ENOENT || error == ENOTSUP || error == ENOSYS) return XXWIDGETS_UNAVAILABLE;
     return XXWIDGETS_PLATFORM_ERROR;
 }
 
 static size_t dump_length(const char *text)
 {
     size_t i;
-    for (i = 0; i <= PROCESS_DUMP_PATH_LIMIT; ++i) if (!text[i]) return i;
+    for (i = 0; i <= PROCESS_DUMP_PATH_LIMIT; ++i)
+        if (!text[i]) return i;
     return SIZE_MAX;
 }
 
@@ -94,11 +94,17 @@ static uint64_t dump_integer(const unsigned char *bytes, size_t width, int big_e
 static int dump_read_at(int fd, uint64_t offset, void *buffer, size_t length)
 {
     size_t done = 0;
-    if (offset > INT64_MAX || length > (uint64_t)INT64_MAX - offset) { errno = EOVERFLOW; return 0; }
+    if (offset > INT64_MAX || length > (uint64_t)INT64_MAX - offset) {
+        errno = EOVERFLOW;
+        return 0;
+    }
     while (done < length) {
         ssize_t got = pread(fd, (char *)buffer + done, length - done, (off_t)(offset + done));
         if (got < 0 && errno == EINTR) continue;
-        if (got <= 0) { if (!got) errno = EIO; return 0; }
+        if (got <= 0) {
+            if (!got) errno = EIO;
+            return 0;
+        }
         done += (size_t)got;
     }
     return 1;
@@ -107,11 +113,17 @@ static int dump_read_at(int fd, uint64_t offset, void *buffer, size_t length)
 static int dump_write_at(int fd, uint64_t offset, const void *buffer, size_t length)
 {
     size_t done = 0;
-    if (offset > INT64_MAX || length > (uint64_t)INT64_MAX - offset) { errno = EOVERFLOW; return 0; }
+    if (offset > INT64_MAX || length > (uint64_t)INT64_MAX - offset) {
+        errno = EOVERFLOW;
+        return 0;
+    }
     while (done < length) {
         ssize_t put = pwrite(fd, (const char *)buffer + done, length - done, (off_t)(offset + done));
         if (put < 0 && errno == EINTR) continue;
-        if (put <= 0) { if (!put) errno = EIO; return 0; }
+        if (put <= 0) {
+            if (!put) errno = EIO;
+            return 0;
+        }
         done += (size_t)put;
     }
     return 1;
@@ -166,7 +178,8 @@ static int dump_identity(const xxwidgets_process_info *process)
     struct proc_bsdinfo info;
     uint64_t start;
     if (proc_pidinfo((pid_t)process->pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) != (int)sizeof(info) ||
-        info.pbi_start_tvsec > (UINT64_MAX - info.pbi_start_tvusec) / 1000000) return 0;
+        info.pbi_start_tvsec > (UINT64_MAX - info.pbi_start_tvusec) / 1000000)
+        return 0;
     start = (uint64_t)info.pbi_start_tvsec * 1000000 + info.pbi_start_tvusec;
     return start && start == process->start_time;
 #else
@@ -183,7 +196,10 @@ static int dump_random(unsigned char bytes[16])
     while (done < 16) {
         ssize_t got = read(fd, bytes + done, 16 - done);
         if (got < 0 && errno == EINTR) continue;
-        if (got <= 0) { close(fd); return 0; }
+        if (got <= 0) {
+            close(fd);
+            return 0;
+        }
         done += (size_t)got;
     }
     close(fd);
@@ -202,8 +218,8 @@ static void dump_stage_cleanup(dump_stage *stage, const char *output)
     /* Remove only the private directory we created, even if a parent entry
      * was renamed by another actor while the dump was running. */
     if (stage->parent >= 0) {
-        if (stage->name[0] && fstatat(stage->parent, stage->name, &current, AT_SYMLINK_NOFOLLOW) == 0 &&
-            current.st_dev == stage->device && current.st_ino == stage->inode)
+        if (stage->name[0] && fstatat(stage->parent, stage->name, &current, AT_SYMLINK_NOFOLLOW) == 0 && current.st_dev == stage->device &&
+            current.st_ino == stage->inode)
             (void)unlinkat(stage->parent, stage->name, AT_REMOVEDIR);
         close(stage->parent);
         stage->parent = -1;
@@ -224,15 +240,26 @@ static xxwidgets_status dump_stage_create(dump_stage *stage, const char *destina
     if (!path) return XXWIDGETS_OUT_OF_MEMORY;
     memcpy(path, destination, length + 1);
     slash = strrchr(path, '/');
-    if (!slash) { directory = "."; name = path; }
-    else {
+    if (!slash) {
+        directory = ".";
+        name = path;
+    } else {
         name = slash + 1;
         if (slash == path) directory = "/";
-        else { *slash = '\0'; directory = path; }
+        else {
+            *slash = '\0';
+            directory = path;
+        }
     }
-    if (!*name || !strcmp(name, ".") || !strcmp(name, "..")) { free(path); return XXWIDGETS_INVALID_ARGUMENT; }
+    if (!*name || !strcmp(name, ".") || !strcmp(name, "..")) {
+        free(path);
+        return XXWIDGETS_INVALID_ARGUMENT;
+    }
     stage->destination = (char *)malloc(strlen(name) + 1);
-    if (!stage->destination) { free(path); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!stage->destination) {
+        free(path);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     strcpy(stage->destination, name);
     stage->parent = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     free(path);
@@ -243,18 +270,20 @@ static xxwidgets_status dump_stage_create(dump_stage *stage, const char *destina
         memcpy(stage->name, ".xxwidgets-dump-", 16);
         for (i = 0; i < 16; ++i) snprintf(stage->name + 16 + i * 2, 3, "%02x", random[i]);
         if (mkdirat(stage->parent, stage->name, 0700) == 0) break;
-        if (errno != EEXIST) { stage->name[0] = '\0'; return dump_errno(errno); }
+        if (errno != EEXIST) {
+            stage->name[0] = '\0';
+            return dump_errno(errno);
+        }
         stage->name[0] = '\0';
     }
     if (attempt == 32) return XXWIDGETS_BUSY;
-    if (fstatat(stage->parent, stage->name, &info, AT_SYMLINK_NOFOLLOW) || !S_ISDIR(info.st_mode) || info.st_uid != geteuid())
-        return XXWIDGETS_PLATFORM_ERROR;
+    if (fstatat(stage->parent, stage->name, &info, AT_SYMLINK_NOFOLLOW) || !S_ISDIR(info.st_mode) || info.st_uid != geteuid()) return XXWIDGETS_PLATFORM_ERROR;
     stage->device = info.st_dev;
     stage->inode = info.st_ino;
     stage->directory = openat(stage->parent, stage->name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (stage->directory < 0) return dump_errno(errno);
-    if (fstat(stage->directory, &info) || !S_ISDIR(info.st_mode) || info.st_uid != geteuid() ||
-        stage->device != info.st_dev || stage->inode != info.st_ino) return XXWIDGETS_PLATFORM_ERROR;
+    if (fstat(stage->directory, &info) || !S_ISDIR(info.st_mode) || info.st_uid != geteuid() || stage->device != info.st_dev || stage->inode != info.st_ino)
+        return XXWIDGETS_PLATFORM_ERROR;
     if (fchmod(stage->directory, 0700)) return dump_errno(errno);
     return XXWIDGETS_OK;
 }
@@ -300,8 +329,7 @@ static int dump_validate_core(int fd)
 #if defined(__linux__)
     if (tag != UINT64_C(0x7f454c46) || (header[4] != 1 && header[4] != 2) || (header[5] != 1 && header[5] != 2) || header[6] != 1) return 0;
     big_endian = header[5] == 2;
-    if (dump_integer(header + 16, 2, big_endian) != 4 ||
-        !dump_read_at(fd, 0, header, header[4] == 2 ? 64 : 52)) return 0;
+    if (dump_integer(header + 16, 2, big_endian) != 4 || !dump_read_at(fd, 0, header, header[4] == 2 ? 64 : 52)) return 0;
     if (header[4] == 2) {
         offset = dump_integer(header + 32, 8, big_endian);
         stride = dump_integer(header + 54, 2, big_endian);
@@ -317,8 +345,7 @@ static int dump_validate_core(int fd)
         if (!dump_range(total, section, size) || !dump_read_at(fd, section, command, size)) return 0;
         count = dump_integer(command + (header[4] == 2 ? 44 : 28), 4, big_endian);
     }
-    if (!count || count > PROCESS_DUMP_MAP_LIMIT || stride < (header[4] == 2 ? 56U : 32U) ||
-        offset > total || count > (total - offset) / stride) return 0;
+    if (!count || count > PROCESS_DUMP_MAP_LIMIT || stride < (header[4] == 2 ? 56U : 32U) || offset > total || count > (total - offset) / stride) return 0;
     for (i = 0; i < count; ++i) {
         uint64_t data_offset, data_size;
         if (!dump_read_at(fd, offset + i * stride, command, header[4] == 2 ? 56 : 32)) return 0;
@@ -336,32 +363,38 @@ static int dump_validate_core(int fd)
     offset = tag == UINT64_C(0xfeedfacf) || tag == UINT64_C(0xcffaedfe) ? 32 : 28;
     if (!count || count > PROCESS_DUMP_MAP_LIMIT || !dump_range(total, offset, stride)) return 0;
     {
-    uint64_t command_end = offset + stride;
-    for (i = 0; i < count; ++i) {
-        uint64_t size, kind;
-        if (!dump_range(command_end, offset, 8) || !dump_read_at(fd, offset, command, 8)) return 0;
-        kind = dump_integer(command, 4, big_endian);
-        size = dump_integer(command + 4, 4, big_endian);
-        if (size < 8 || size % 4 || !dump_range(command_end, offset, size)) return 0;
-        if (kind == 1 || kind == 0x19 || kind == 0x31) {
-            size_t minimum = kind == 1 ? 56 : (kind == 0x19 ? 72 : 40);
-            uint64_t data_offset, data_size;
-            if (size < minimum || !dump_read_at(fd, offset, command, minimum)) return 0;
-            if (kind == 0x31) {
-                data_offset = dump_integer(command + 24, 8, big_endian);
-                data_size = dump_integer(command + 32, 8, big_endian);
-            } else {
-                data_offset = dump_integer(command + (kind == 0x19 ? 40 : 32), kind == 0x19 ? 8 : 4, big_endian);
-                data_size = dump_integer(command + (kind == 0x19 ? 48 : 36), kind == 0x19 ? 8 : 4, big_endian);
+        uint64_t command_end = offset + stride;
+        for (i = 0; i < count; ++i) {
+            uint64_t size, kind;
+            if (!dump_range(command_end, offset, 8) || !dump_read_at(fd, offset, command, 8)) return 0;
+            kind = dump_integer(command, 4, big_endian);
+            size = dump_integer(command + 4, 4, big_endian);
+            if (size < 8 || size % 4 || !dump_range(command_end, offset, size)) return 0;
+            if (kind == 1 || kind == 0x19 || kind == 0x31) {
+                size_t minimum = kind == 1 ? 56 : (kind == 0x19 ? 72 : 40);
+                uint64_t data_offset, data_size;
+                if (size < minimum || !dump_read_at(fd, offset, command, minimum)) return 0;
+                if (kind == 0x31) {
+                    data_offset = dump_integer(command + 24, 8, big_endian);
+                    data_size = dump_integer(command + 32, 8, big_endian);
+                } else {
+                    data_offset = dump_integer(command + (kind == 0x19 ? 40 : 32), kind == 0x19 ? 8 : 4, big_endian);
+                    data_size = dump_integer(command + (kind == 0x19 ? 48 : 36), kind == 0x19 ? 8 : 4, big_endian);
+                }
+                if (!dump_range(total, data_offset, data_size)) return 0;
             }
-            if (!dump_range(total, data_offset, data_size)) return 0;
+            offset += size;
         }
-        offset += size;
-    }
-    return offset == command_end;
+        return offset == command_end;
     }
 #else
-    (void)tag; (void)count; (void)offset; (void)stride; (void)i; (void)big_endian; (void)command;
+    (void)tag;
+    (void)count;
+    (void)offset;
+    (void)stride;
+    (void)i;
+    (void)big_endian;
+    (void)command;
     return 0;
 #endif
 }
@@ -385,16 +418,29 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
     log = openat(stage->directory, "debugger.log", O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
     if (log < 0) return dump_errno(errno);
     null_input = open("/dev/null", O_RDONLY | O_CLOEXEC);
-    if (null_input < 0) { close(log); return dump_errno(errno); }
-    if (pipe(errors)) { close(log); close(null_input); return XXWIDGETS_PLATFORM_ERROR; }
+    if (null_input < 0) {
+        close(log);
+        return dump_errno(errno);
+    }
+    if (pipe(errors)) {
+        close(log);
+        close(null_input);
+        return XXWIDGETS_PLATFORM_ERROR;
+    }
     if (fcntl(errors[0], F_SETFD, FD_CLOEXEC) || fcntl(errors[1], F_SETFD, FD_CLOEXEC)) {
-        close(errors[0]); close(errors[1]); close(log); close(null_input);
+        close(errors[0]);
+        close(errors[1]);
+        close(log);
+        close(null_input);
         return XXWIDGETS_PLATFORM_ERROR;
     }
     child = fork();
     if (child < 0) {
         status = dump_errno(errno);
-        close(errors[0]); close(errors[1]); close(log); close(null_input);
+        close(errors[0]);
+        close(errors[1]);
+        close(log);
+        close(null_input);
         return status;
     }
     if (!child) {
@@ -402,8 +448,8 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
         close(errors[0]);
         /* A private process group lets cancellation stop the debugger and its
          * helper children, without signalling the inspected process. */
-        if (setpgid(0, 0) || fchdir(stage->directory) || dup2(null_input, STDIN_FILENO) < 0 ||
-            dup2(log, STDOUT_FILENO) < 0 || dup2(log, STDERR_FILENO) < 0) exec_error = errno;
+        if (setpgid(0, 0) || fchdir(stage->directory) || dup2(null_input, STDIN_FILENO) < 0 || dup2(log, STDOUT_FILENO) < 0 || dup2(log, STDERR_FILENO) < 0)
+            exec_error = errno;
         else {
 #if defined(__APPLE__)
             char *const arguments[] = {"/usr/bin/gcore", "-s", "-x", "full", "-o", "core", pid, NULL};
@@ -414,10 +460,14 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
 #endif
             exec_error = errno;
         }
-        do { put = (int)write(errors[1], &exec_error, sizeof(exec_error)); } while (put < 0 && errno == EINTR);
+        do {
+            put = (int)write(errors[1], &exec_error, sizeof(exec_error));
+        } while (put < 0 && errno == EINTR);
         _exit(127);
     }
-    close(errors[1]); close(log); close(null_input);
+    close(errors[1]);
+    close(log);
+    close(null_input);
     (void)setpgid(child, child);
     {
         int level = xx_pd_enter_level(pd, 0, "Capturing process memory");
@@ -427,7 +477,10 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
             waited = waitpid(child, &child_status, WNOHANG);
             if (waited == child || (waited < 0 && errno != EINTR)) break;
             if (xx_pd_is_stopped(pd)) {
-                if (!cancelling) { (void)kill(-child, SIGTERM); cancelling = 1; }
+                if (!cancelling) {
+                    (void)kill(-child, SIGTERM);
+                    cancelling = 1;
+                }
                 /* A debugger normally detaches during termination. Reap even
                  * an unresponsive helper before cleaning its staging folder. */
                 if (++elapsed == 100) (void)kill(-child, SIGKILL);
@@ -436,7 +489,9 @@ static xxwidgets_status dump_core(const xxwidgets_process_info *process, dump_st
         }
         xx_pd_leave_level(pd, level);
     }
-    do { received = read(errors[0], &exec_error, sizeof(exec_error)); } while (received < 0 && errno == EINTR);
+    do {
+        received = read(errors[0], &exec_error, sizeof(exec_error));
+    } while (received < 0 && errno == EINTR);
     close(errors[0]);
     if (xx_pd_is_stopped(pd)) return XXWIDGETS_UNAVAILABLE;
     if (received > 0) return dump_errno(exec_error);
@@ -472,14 +527,22 @@ static xxwidgets_status dump_linux_maps(int proc, const struct stat *executable,
     maps->base = UINT64_MAX;
     if (fd < 0) return dump_errno(errno);
     stream = fdopen(fd, "r");
-    if (!stream) { close(fd); return dump_errno(errno); }
+    if (!stream) {
+        close(fd);
+        return dump_errno(errno);
+    }
     while (fgets(line, sizeof(line), stream)) {
         unsigned long long start, end, file_offset, inode;
         unsigned device_major, device_minor;
         size_t length = strlen(line);
-        if ((!length || line[length - 1] != '\n') && !feof(stream)) { status = XXWIDGETS_UNAVAILABLE; break; }
-        if (sscanf(line, "%llx-%llx %4s %llx %x:%x %llu", &start, &end, permissions, &file_offset,
-                   &device_major, &device_minor, &inode) != 7) { status = XXWIDGETS_PLATFORM_ERROR; break; }
+        if ((!length || line[length - 1] != '\n') && !feof(stream)) {
+            status = XXWIDGETS_UNAVAILABLE;
+            break;
+        }
+        if (sscanf(line, "%llx-%llx %4s %llx %x:%x %llu", &start, &end, permissions, &file_offset, &device_major, &device_minor, &inode) != 7) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            break;
+        }
         if ((uint64_t)inode != (uint64_t)executable->st_ino || device_major != major(executable->st_dev) || device_minor != minor(executable->st_dev)) continue;
         status = dump_add_mapping(maps, (uint64_t)start, (uint64_t)end, permissions[0] == 'r');
         if (status != XXWIDGETS_OK) break;
@@ -538,11 +601,14 @@ static xxwidgets_status dump_linux_add_bss(int proc, xx_io_device *memory, dump_
     table = dump_integer(header + (wide ? 32 : 28), wide ? 8 : 4, big_endian);
     stride = dump_integer(header + (wide ? 54 : 42), 2, big_endian);
     count = dump_integer(header + (wide ? 56 : 44), 2, big_endian);
-    if (!count || count == 65535 || stride < (wide ? 56U : 32U) || count > UINT64_C(16777216) / stride ||
-        !dump_linux_file_address(maps, table, count * stride, &address)) return XXWIDGETS_UNAVAILABLE;
+    if (!count || count == 65535 || stride < (wide ? 56U : 32U) || count > UINT64_C(16777216) / stride || !dump_linux_file_address(maps, table, count * stride, &address))
+        return XXWIDGETS_UNAVAILABLE;
     programs = (unsigned char *)malloc((size_t)(count * stride));
     if (!programs) return XXWIDGETS_OUT_OF_MEMORY;
-    if (!xx_io_process_read_exact_at(memory, address, programs, (size_t)(count * stride))) { status = dump_errno(errno); goto done; }
+    if (!xx_io_process_read_exact_at(memory, address, programs, (size_t)(count * stride))) {
+        status = dump_errno(errno);
+        goto done;
+    }
     for (i = 0; i < count; ++i) {
         const unsigned char *program = programs + i * stride;
         uint64_t offset, virtual_address, file_size;
@@ -561,16 +627,23 @@ static xxwidgets_status dump_linux_add_bss(int proc, xx_io_device *memory, dump_
         file_size = dump_integer(program + (wide ? 32 : 16), wide ? 8 : 4, big_endian);
         memory_size = dump_integer(program + (wide ? 40 : 20), wide ? 8 : 4, big_endian);
         if (file_size > memory_size || virtual_address < preferred || virtual_address - preferred > UINT64_MAX - image) {
-            status = XXWIDGETS_UNAVAILABLE; goto done;
+            status = XXWIDGETS_UNAVAILABLE;
+            goto done;
         }
         runtime = image + (virtual_address - preferred);
-        if (memory_size > UINT64_MAX - runtime) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+        if (memory_size > UINT64_MAX - runtime) {
+            status = XXWIDGETS_UNAVAILABLE;
+            goto done;
+        }
         if (memory_size > file_size) {
             status = dump_add_mapping(&bss, runtime + file_size, runtime + memory_size, 1);
             if (status != XXWIDGETS_OK) goto done;
         }
     }
-    if (!bss.count) { status = XXWIDGETS_OK; goto done; }
+    if (!bss.count) {
+        status = XXWIDGETS_OK;
+        goto done;
+    }
     qsort(bss.items, bss.count, sizeof(*bss.items), dump_mapping_order);
     used = 0;
     for (i = 0; i < bss.count; ++i) {
@@ -580,9 +653,15 @@ static xxwidgets_status dump_linux_add_bss(int proc, xx_io_device *memory, dump_
     }
     bss.count = used;
     fd = openat(proc, "maps", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) { status = dump_errno(errno); goto done; }
+    if (fd < 0) {
+        status = dump_errno(errno);
+        goto done;
+    }
     stream = fdopen(fd, "r");
-    if (!stream) { status = dump_errno(errno); goto done; }
+    if (!stream) {
+        status = dump_errno(errno);
+        goto done;
+    }
     fd = -1; /* Owned by stream. */
     status = XXWIDGETS_OK;
     {
@@ -591,10 +670,17 @@ static xxwidgets_status dump_linux_add_bss(int proc, xx_io_device *memory, dump_
             unsigned long long start, end, offset, inode;
             unsigned device_major, device_minor;
             size_t length = strlen(line);
-            if ((!length || line[length - 1] != '\n') && !feof(stream)) { status = XXWIDGETS_UNAVAILABLE; break; }
-            if (sscanf(line, "%llx-%llx %4s %llx %x:%x %llu", &start, &end, permissions, &offset,
-                       &device_major, &device_minor, &inode) != 7) { status = XXWIDGETS_PLATFORM_ERROR; break; }
-            (void)offset; (void)device_major; (void)device_minor;
+            if ((!length || line[length - 1] != '\n') && !feof(stream)) {
+                status = XXWIDGETS_UNAVAILABLE;
+                break;
+            }
+            if (sscanf(line, "%llx-%llx %4s %llx %x:%x %llu", &start, &end, permissions, &offset, &device_major, &device_minor, &inode) != 7) {
+                status = XXWIDGETS_PLATFORM_ERROR;
+                break;
+            }
+            (void)offset;
+            (void)device_major;
+            (void)device_minor;
             if (inode || start >= end) continue;
             for (i = 0; i < bss.count; ++i) {
                 uint64_t first = (uint64_t)start > bss.items[i].start ? (uint64_t)start : bss.items[i].start;
@@ -610,12 +696,17 @@ static xxwidgets_status dump_linux_add_bss(int proc, xx_io_device *memory, dump_
     }
     if (status == XXWIDGETS_OK) {
         qsort(maps->items, maps->count, sizeof(*maps->items), dump_mapping_order);
-        for (i = 1; i < maps->count; ++i) if (maps->items[i - 1].end > maps->items[i].start) { status = XXWIDGETS_BUSY; break; }
+        for (i = 1; i < maps->count; ++i)
+            if (maps->items[i - 1].end > maps->items[i].start) {
+                status = XXWIDGETS_BUSY;
+                break;
+            }
     }
 done:
     if (stream) fclose(stream);
     if (fd >= 0) close(fd);
-    free(programs); free(bss.items);
+    free(programs);
+    free(bss.items);
     return status;
 }
 
@@ -634,48 +725,80 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
     proc = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (proc < 0) return dump_errno(errno);
     if (dump_linux_start_at(proc) != process->start_time) goto done;
-    if (fstatat(proc, "exe", &executable, 0)) { status = dump_errno(errno); goto done; }
+    if (fstatat(proc, "exe", &executable, 0)) {
+        status = dump_errno(errno);
+        goto done;
+    }
     memory = openat(proc, "mem", O_RDONLY | O_CLOEXEC);
-    if (memory < 0) { status = dump_errno(errno); goto done; }
+    if (memory < 0) {
+        status = dump_errno(errno);
+        goto done;
+    }
     memory_io = xx_io_process_open_handle_ex((void *)(intptr_t)memory, XX_IO_PROCESS_READ);
-    if (!memory_io) { status = dump_errno(errno); goto done; }
+    if (!memory_io) {
+        status = dump_errno(errno);
+        goto done;
+    }
     if (dump_linux_start_at(proc) != process->start_time) goto done;
     status = dump_linux_maps(proc, &executable, &maps);
     if (status != XXWIDGETS_OK) goto done;
     status = dump_linux_add_bss(proc, memory_io, &maps);
     if (status != XXWIDGETS_OK) goto done;
-    if (ftruncate(output, (off_t)(maps.end - maps.base))) { status = dump_errno(errno); goto done; }
+    if (ftruncate(output, (off_t)(maps.end - maps.base))) {
+        status = dump_errno(errno);
+        goto done;
+    }
     level = xx_pd_enter_level(pd, maps.end - maps.base, "Dumping executable image");
     buffer = (unsigned char *)malloc(PROCESS_DUMP_CHUNK);
-    if (!buffer) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
-    for (i = 0; i < maps.count; ++i) if (maps.items[i].readable) {
-        uint64_t address = maps.items[i].start;
-        while (address < maps.items[i].end) {
-            size_t amount = maps.items[i].end - address < PROCESS_DUMP_CHUNK ? (size_t)(maps.items[i].end - address) : PROCESS_DUMP_CHUNK;
-            if (xx_pd_is_stopped(pd)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
-            if (!xx_io_process_read_exact_at(memory_io, address, buffer, amount)) { status = dump_errno(errno); goto done; }
-            if (!dump_write_at(output, address - maps.base, buffer, amount)) { status = dump_errno(errno); goto done; }
-            address += amount;
-            xx_pd_set_current(pd, level, address - maps.base);
-        }
+    if (!buffer) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto done;
     }
-    if (fstatat(proc, "exe", &after, 0) || after.st_dev != executable.st_dev || after.st_ino != executable.st_ino ||
-        dump_linux_start_at(proc) != process->start_time) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+    for (i = 0; i < maps.count; ++i)
+        if (maps.items[i].readable) {
+            uint64_t address = maps.items[i].start;
+            while (address < maps.items[i].end) {
+                size_t amount = maps.items[i].end - address < PROCESS_DUMP_CHUNK ? (size_t)(maps.items[i].end - address) : PROCESS_DUMP_CHUNK;
+                if (xx_pd_is_stopped(pd)) {
+                    status = XXWIDGETS_UNAVAILABLE;
+                    goto done;
+                }
+                if (!xx_io_process_read_exact_at(memory_io, address, buffer, amount)) {
+                    status = dump_errno(errno);
+                    goto done;
+                }
+                if (!dump_write_at(output, address - maps.base, buffer, amount)) {
+                    status = dump_errno(errno);
+                    goto done;
+                }
+                address += amount;
+                xx_pd_set_current(pd, level, address - maps.base);
+            }
+        }
+    if (fstatat(proc, "exe", &after, 0) || after.st_dev != executable.st_dev || after.st_ino != executable.st_ino || dump_linux_start_at(proc) != process->start_time) {
+        status = XXWIDGETS_UNAVAILABLE;
+        goto done;
+    }
     status = dump_linux_maps(proc, &after, &verified);
     if (status != XXWIDGETS_OK) goto done;
     status = dump_linux_add_bss(proc, memory_io, &verified);
     if (status != XXWIDGETS_OK) goto done;
-    if (verified.count != maps.count) { status = XXWIDGETS_BUSY; goto done; }
+    if (verified.count != maps.count) {
+        status = XXWIDGETS_BUSY;
+        goto done;
+    }
     for (i = 0; i < maps.count; ++i) {
-        if (maps.items[i].start != verified.items[i].start || maps.items[i].end != verified.items[i].end ||
-            maps.items[i].readable != verified.items[i].readable || maps.items[i].file_offset != verified.items[i].file_offset) {
+        if (maps.items[i].start != verified.items[i].start || maps.items[i].end != verified.items[i].end || maps.items[i].readable != verified.items[i].readable ||
+            maps.items[i].file_offset != verified.items[i].file_offset) {
             status = XXWIDGETS_BUSY;
             break;
         }
     }
 done:
     xx_pd_leave_level(pd, level);
-    free(buffer); free(maps.items); free(verified.items);
+    free(buffer);
+    free(maps.items);
+    free(verified.items);
     if (memory_io) (void)xx_io_process_close(memory_io);
     if (memory >= 0) close(memory);
     close(proc);
@@ -735,30 +858,54 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
     if (task_suspend2(task, &token) != KERN_SUCCESS) goto done;
     if (!dump_identity(process)) goto done;
     memory = xx_io_process_open_handle_ex((void *)(uintptr_t)task, XX_IO_PROCESS_READ);
-    if (!memory) { status = dump_errno(errno); goto done; }
+    if (!memory) {
+        status = dump_errno(errno);
+        goto done;
+    }
     status = dump_mach_main(task, memory, &image);
     if (status != XXWIDGETS_OK) goto done;
-    if (!dump_mach_read(memory, image, header, sizeof(header))) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+    if (!dump_mach_read(memory, image, header, sizeof(header))) {
+        status = XXWIDGETS_UNAVAILABLE;
+        goto done;
+    }
     header_size = dump_integer(header, 4, 0) == UINT64_C(0xfeedfacf) ? 32 : 28;
     count = dump_integer(header + 16, 4, 0);
     command_bytes = dump_integer(header + 20, 4, 0);
-    if (!count || count > 65536 || command_bytes > UINT64_C(16777216) || count > command_bytes / 8 ||
-        image > UINT64_MAX - header_size || command_bytes > UINT64_MAX - image - header_size) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+    if (!count || count > 65536 || command_bytes > UINT64_C(16777216) || count > command_bytes / 8 || image > UINT64_MAX - header_size ||
+        command_bytes > UINT64_MAX - image - header_size) {
+        status = XXWIDGETS_UNAVAILABLE;
+        goto done;
+    }
     commands = (unsigned char *)malloc((size_t)command_bytes);
-    if (!commands) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
-    if (!dump_mach_read(memory, image + header_size, commands, (size_t)command_bytes)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+    if (!commands) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto done;
+    }
+    if (!dump_mach_read(memory, image + header_size, commands, (size_t)command_bytes)) {
+        status = XXWIDGETS_UNAVAILABLE;
+        goto done;
+    }
     maps.base = UINT64_MAX;
     cursor = 0;
     for (i = 0; i < count; ++i) {
         uint64_t command, size;
-        if (cursor > command_bytes || command_bytes - cursor < 8) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+        if (cursor > command_bytes || command_bytes - cursor < 8) {
+            status = XXWIDGETS_UNAVAILABLE;
+            goto done;
+        }
         command = dump_integer(commands + cursor, 4, 0);
         size = dump_integer(commands + cursor + 4, 4, 0);
-        if (size < 8 || size > command_bytes - cursor) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+        if (size < 8 || size > command_bytes - cursor) {
+            status = XXWIDGETS_UNAVAILABLE;
+            goto done;
+        }
         if (command == 1 || command == 0x19) {
             int wide = command == 0x19;
             uint64_t address, length, file_offset, file_size, protection;
-            if (size < (wide ? 72U : 56U)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+            if (size < (wide ? 72U : 56U)) {
+                status = XXWIDGETS_UNAVAILABLE;
+                goto done;
+            }
             address = dump_integer(commands + cursor + 24, wide ? 8 : 4, 0);
             length = dump_integer(commands + cursor + (wide ? 32 : 28), wide ? 8 : 4, 0);
             file_offset = dump_integer(commands + cursor + (wide ? 40 : 32), wide ? 8 : 4, 0);
@@ -766,36 +913,61 @@ static xxwidgets_status dump_image(const xxwidgets_process_info *process, int ou
             protection = dump_integer(commands + cursor + (wide ? 60 : 44), 4, 0);
             if (!file_offset && file_size >= header_size && address < preferred) preferred = address;
             if (length && memcmp(commands + cursor + 8, "__PAGEZERO", 10)) {
-                if (address > UINT64_MAX - length) { status = XXWIDGETS_UNAVAILABLE; goto done; }
+                if (address > UINT64_MAX - length) {
+                    status = XXWIDGETS_UNAVAILABLE;
+                    goto done;
+                }
                 status = dump_add_mapping(&maps, address, address + length, (protection & VM_PROT_READ) != 0);
                 if (status != XXWIDGETS_OK) goto done;
             }
         }
         cursor += size;
     }
-    if (cursor != command_bytes || !maps.count || preferred == UINT64_MAX || maps.base < preferred) { status = XXWIDGETS_UNAVAILABLE; goto done; }
-    if (ftruncate(output, (off_t)(maps.end - maps.base))) { status = dump_errno(errno); goto done; }
+    if (cursor != command_bytes || !maps.count || preferred == UINT64_MAX || maps.base < preferred) {
+        status = XXWIDGETS_UNAVAILABLE;
+        goto done;
+    }
+    if (ftruncate(output, (off_t)(maps.end - maps.base))) {
+        status = dump_errno(errno);
+        goto done;
+    }
     level = xx_pd_enter_level(pd, maps.end - maps.base, "Dumping executable image");
     buffer = (unsigned char *)malloc(PROCESS_DUMP_CHUNK);
-    if (!buffer) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
-    for (i = 0; i < maps.count; ++i) if (maps.items[i].readable) {
-        uint64_t address = maps.items[i].start;
-        if (address - preferred > UINT64_MAX - image || maps.items[i].end - preferred > UINT64_MAX - image) {
-            status = XXWIDGETS_UNAVAILABLE; goto done;
-        }
-        while (address < maps.items[i].end) {
-            size_t amount = maps.items[i].end - address < PROCESS_DUMP_CHUNK ? (size_t)(maps.items[i].end - address) : PROCESS_DUMP_CHUNK;
-            if (xx_pd_is_stopped(pd)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
-            if (!dump_mach_read(memory, image + (address - preferred), buffer, amount)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
-            if (!dump_write_at(output, address - maps.base, buffer, amount)) { status = dump_errno(errno); goto done; }
-            address += amount;
-            xx_pd_set_current(pd, level, address - maps.base);
-        }
+    if (!buffer) {
+        status = XXWIDGETS_OUT_OF_MEMORY;
+        goto done;
     }
+    for (i = 0; i < maps.count; ++i)
+        if (maps.items[i].readable) {
+            uint64_t address = maps.items[i].start;
+            if (address - preferred > UINT64_MAX - image || maps.items[i].end - preferred > UINT64_MAX - image) {
+                status = XXWIDGETS_UNAVAILABLE;
+                goto done;
+            }
+            while (address < maps.items[i].end) {
+                size_t amount = maps.items[i].end - address < PROCESS_DUMP_CHUNK ? (size_t)(maps.items[i].end - address) : PROCESS_DUMP_CHUNK;
+                if (xx_pd_is_stopped(pd)) {
+                    status = XXWIDGETS_UNAVAILABLE;
+                    goto done;
+                }
+                if (!dump_mach_read(memory, image + (address - preferred), buffer, amount)) {
+                    status = XXWIDGETS_UNAVAILABLE;
+                    goto done;
+                }
+                if (!dump_write_at(output, address - maps.base, buffer, amount)) {
+                    status = dump_errno(errno);
+                    goto done;
+                }
+                address += amount;
+                xx_pd_set_current(pd, level, address - maps.base);
+            }
+        }
     status = XXWIDGETS_OK;
 done:
     xx_pd_leave_level(pd, level);
-    free(commands); free(buffer); free(maps.items);
+    free(commands);
+    free(buffer);
+    free(maps.items);
     if (memory) (void)xx_io_process_close(memory);
     if (token != MACH_PORT_NULL) {
         /* task_resume2 moves/consumes this send-once token. Do not deallocate
@@ -809,13 +981,15 @@ done:
 #else
 static xxwidgets_status dump_image(const xxwidgets_process_info *process, int output, xx_pd_struct *pd)
 {
-    (void)process; (void)output; (void)pd;
+    (void)process;
+    (void)output;
+    (void)pd;
     return XXWIDGETS_UNAVAILABLE;
 }
 #endif
 
-xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_process_info *process, const char *destination,
-                                                           xxwidgets_process_dump_type type, int overwrite, xx_pd_struct *pd)
+xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_process_info *process, const char *destination, xxwidgets_process_dump_type type,
+                                                                int overwrite, xx_pd_struct *pd)
 {
     dump_stage stage = {-1, -1, {0}, NULL, 0, 0};
     char output[64] = "image.bin";
@@ -823,29 +997,55 @@ xxwidgets_status xxwidget_systemprocessesviewer_dump_process_ex(const xxwidgets_
     xxwidgets_status status;
     struct stat existing;
     if (!process || !destination || process->pid <= 1 || process->pid > INT_MAX || process->pid == (uint64_t)getpid() ||
-        (type != XXWIDGETS_PROCESS_DUMP_MEMORY && type != XXWIDGETS_PROCESS_DUMP_IMAGE)) return XXWIDGETS_INVALID_ARGUMENT;
+        (type != XXWIDGETS_PROCESS_DUMP_MEMORY && type != XXWIDGETS_PROCESS_DUMP_IMAGE))
+        return XXWIDGETS_INVALID_ARGUMENT;
     if (xx_pd_is_stopped(pd) || !process->start_time || !dump_identity(process)) return XXWIDGETS_UNAVAILABLE;
     status = dump_stage_create(&stage, destination);
     if (status != XXWIDGETS_OK) goto done;
     if (!overwrite) {
-        if (!fstatat(stage.parent, stage.destination, &existing, AT_SYMLINK_NOFOLLOW)) { status = XXWIDGETS_BUSY; goto done; }
-        if (errno != ENOENT) { status = dump_errno(errno); goto done; }
+        if (!fstatat(stage.parent, stage.destination, &existing, AT_SYMLINK_NOFOLLOW)) {
+            status = XXWIDGETS_BUSY;
+            goto done;
+        }
+        if (errno != ENOENT) {
+            status = dump_errno(errno);
+            goto done;
+        }
     }
     if (type == XXWIDGETS_PROCESS_DUMP_MEMORY) {
         status = dump_core(process, &stage, output, pd);
         if (status != XXWIDGETS_OK) goto done;
         fd = openat(stage.directory, output, O_RDWR | O_CLOEXEC | O_NOFOLLOW);
-        if (fd < 0) { status = dump_errno(errno); goto done; }
-        if (!dump_validate_core(fd)) { status = XXWIDGETS_PLATFORM_ERROR; goto done; }
+        if (fd < 0) {
+            status = dump_errno(errno);
+            goto done;
+        }
+        if (!dump_validate_core(fd)) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto done;
+        }
     } else {
         fd = openat(stage.directory, output, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-        if (fd < 0) { status = dump_errno(errno); goto done; }
+        if (fd < 0) {
+            status = dump_errno(errno);
+            goto done;
+        }
         status = dump_image(process, fd, pd);
         if (status != XXWIDGETS_OK) goto done;
     }
-    if (xx_pd_is_stopped(pd) || !dump_identity(process)) { status = XXWIDGETS_UNAVAILABLE; goto done; }
-    if (fchmod(fd, 0600) || fsync(fd)) { status = dump_errno(errno); goto done; }
-    if (close(fd)) { fd = -1; status = dump_errno(errno); goto done; }
+    if (xx_pd_is_stopped(pd) || !dump_identity(process)) {
+        status = XXWIDGETS_UNAVAILABLE;
+        goto done;
+    }
+    if (fchmod(fd, 0600) || fsync(fd)) {
+        status = dump_errno(errno);
+        goto done;
+    }
+    if (close(fd)) {
+        fd = -1;
+        status = dump_errno(errno);
+        goto done;
+    }
     fd = -1;
     status = dump_publish(&stage, output, overwrite != 0);
 done:
@@ -853,8 +1053,8 @@ done:
     dump_stage_cleanup(&stage, output);
     return status;
 }
-xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *process, const char *destination,
-                                                           xxwidgets_process_dump_type type, int overwrite)
+xxwidgets_status xxwidget_systemprocessesviewer_dump_process(const xxwidgets_process_info *process, const char *destination, xxwidgets_process_dump_type type,
+                                                             int overwrite)
 {
     return xxwidget_systemprocessesviewer_dump_process_ex(process, destination, type, overwrite, NULL);
 }

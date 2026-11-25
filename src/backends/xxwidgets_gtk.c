@@ -71,7 +71,8 @@ static const char GRID_CSS[] = "." GRID_CLASS " > button." CELL_CLASS
                                /* An icon-only button (gtk_set_icon) fits Qt's 24 px
                                 * Recent files button: themes give image buttons a
                                 * min-width that would override its frame. */
-                               "." GRID_CLASS " > button." CELL_CLASS ".image-button"
+                               "." GRID_CLASS " > button." CELL_CLASS
+                               ".image-button"
                                " { min-width: 0; padding-left: 3px; padding-right: 3px; }\n"
                                "." GRID_CLASS " > combobox." CELL_CLASS " > box > button.combo { padding-top: 0; padding-bottom: 0; }\n";
 
@@ -87,7 +88,7 @@ typedef struct gtk_app_state {
      * pixels (0 until it ran); a later font keeps that proportion. */
     int theme_cell_width, theme_cell_height, theme_line_height, theme_sample_width;
     int fit_from, fit_to;
-    int cap_cell_width; /* With a Controls font: the widest cell grid_fit may make; 0 otherwise. */
+    int cap_cell_width;  /* With a Controls font: the widest cell grid_fit may make; 0 otherwise. */
     guint resize_source; /* Reports RESIZE after the cells changed (cells_resized). */
     PangoFontDescription *fonts[XXWIDGETS_FONT_ROLE_COUNT];
     /* One stylesheet per role, attached to every control of that role. */
@@ -99,9 +100,9 @@ typedef struct gtk_app_state {
 } gtk_app_state;
 
 typedef struct gtk_widget_state {
-    GtkWidget *root;               /* Scrolled container for a list, otherwise the control. */
-    GtkWidget *filters[9];         /* Tables: a filter entry above each column. */
-    GtkWidget *content;            /* A window's GtkLayout. */
+    GtkWidget *root;       /* Scrolled container for a list, otherwise the control. */
+    GtkWidget *filters[9]; /* Tables: a filter entry above each column. */
+    GtkWidget *content;    /* A window's GtkLayout. */
     GtkWidget *content_box, *menu_bar;
     int menu_height;
     int frame_width, frame_height; /* WINDOW: last configured client size. */
@@ -131,11 +132,11 @@ typedef struct gtk_widget_state {
     guint tree_load_source;
     int tree_load_node;
     uint64_t tree_load_revision;
-    GtkWidget *about_text; /* Owned by the window's content container. */
+    GtkWidget *about_text;  /* Owned by the window's content container. */
     GtkWidget *about_image; /* Owned by the window's content container; NULL without an image. */
-    int about_resizable;   /* WINDOW: the copyable text dialog, whose text follows the window size. */
-    int about_text_x;      /* WINDOW: left edge of the about text, in pixels. */
-    int resize_pending;    /* WINDOW: the cells changed; RESIZE is still to be reported. */
+    int about_resizable;    /* WINDOW: the copyable text dialog, whose text follows the window size. */
+    int about_text_x;       /* WINDOW: left edge of the about text, in pixels. */
+    int resize_pending;     /* WINDOW: the cells changed; RESIZE is still to be reported. */
     PangoFontDescription *preview_font;
     GtkCssProvider *preview_css;
     PangoFontDescription *hex_font;
@@ -148,7 +149,7 @@ typedef struct gtk_widget_state {
     GtkWidget *die_menu; /* The right-click menu, made on first use (gtk_die_menu). */
     int die_adjusting, die_dragging, die_cell_width, die_cell_height, die_gutter;
     size_t die_rows, die_columns;
-    int bold_applied;          /* LABEL / VALUE: the bold attribute last applied. */
+    int bold_applied;                /* LABEL / VALUE: the bold attribute last applied. */
     int client_width, client_height; /* WINDOW with a frame: content size last reported by RESIZE. */
 } gtk_widget_state;
 
@@ -383,8 +384,8 @@ static xxwidgets_status gtk_preview_font(xxwidgets_widget *widget, xxwidgets_fon
 static xxwidgets_status gtk_choose_font(xxwidgets_widget *owner, xxwidgets_font_role role, xxwidgets_font *font, int *accepted)
 {
     /* One title per role: a role without one falls back to a generic title. */
-    static const char *const titles[XXWIDGETS_FONT_ROLE_COUNT] = {XXW_N_("Controls font"), XXW_N_("Table views font"), XXW_N_("Tree views font"),
-                                                                  XXW_N_("Text edits font"), XXW_N_("Hex views font"), XXW_N_("Disasm views font")};
+    static const char *const titles[XXWIDGETS_FONT_ROLE_COUNT] = {XXW_N_("Controls font"),   XXW_N_("Table views font"), XXW_N_("Tree views font"),
+                                                                  XXW_N_("Text edits font"), XXW_N_("Hex views font"),   XXW_N_("Disasm views font")};
     const char *title = (int)role >= 0 && (int)role < XXWIDGETS_FONT_ROLE_COUNT && titles[role] ? titles[role] : XXW_N_("Choose font");
     GtkWidget *dialog = gtk_font_chooser_dialog_new(XXW_TR(owner->app, title), GTK_WINDOW(owner->native));
     PangoFontDescription *description = gtk_font_description(font);
@@ -403,16 +404,18 @@ static xxwidgets_status gtk_choose_font(xxwidgets_widget *owner, xxwidgets_font_
         int size = description ? pango_font_description_get_size(description) : 0;
         /* GtkFontChooser describes point sizes; the public API uses integers. */
         unsigned int points = size > 0 ? (unsigned int)(size / PANGO_SCALE + (size % PANGO_SCALE >= PANGO_SCALE / 2)) : 0;
-        if (!family || strlen(family) >= sizeof(font->family) || points < 4 || points > 96 ||
-            pango_font_description_get_size_is_absolute(description)) status = XXWIDGETS_INVALID_ARGUMENT;
+        if (!family || strlen(family) >= sizeof(font->family) || points < 4 || points > 96 || pango_font_description_get_size_is_absolute(description))
+            status = XXWIDGETS_INVALID_ARGUMENT;
         else {
             xxwidgets_font chosen = {0};
             memcpy(chosen.family, family, strlen(family) + 1);
             chosen.point_size = points;
             chosen.bold = pango_font_description_get_weight(description) >= PANGO_WEIGHT_BOLD;
             chosen.italic = pango_font_description_get_style(description) != PANGO_STYLE_NORMAL;
-            if (xxwidgets_font_valid(&chosen)) { *font = chosen; *accepted = 1; }
-            else status = XXWIDGETS_INVALID_ARGUMENT;
+            if (xxwidgets_font_valid(&chosen)) {
+                *font = chosen;
+                *accepted = 1;
+            } else status = XXWIDGETS_INVALID_ARGUMENT;
         }
         if (description) pango_font_description_free(description);
     }
@@ -448,16 +451,17 @@ static xxwidgets_status gtk_hexview_font(xxwidgets_widget *widget, const xxwidge
         PangoFontDescription *theme;
         g_object_get(gtk_settings_get_default(), "gtk-font-name", &name, NULL);
         theme = pango_font_description_from_string(name ? name : "Sans 10");
-        pango_font_description_set_size(description, theme && pango_font_description_get_size(theme) ?
-            pango_font_description_get_size(theme) : 10 * PANGO_SCALE);
+        pango_font_description_set_size(description, theme && pango_font_description_get_size(theme) ? pango_font_description_get_size(theme) : 10 * PANGO_SCALE);
         if (theme) pango_font_description_free(theme);
         g_free(name);
     }
     if (!provider) provider = gtk_css_provider_new();
-    if (!provider) { pango_font_description_free(description); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!provider) {
+        pango_font_description_free(description);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     font_css_load(provider, description);
-    if (!state->hex_font_css)
-        font_attach(GTK_WIDGET(widget->native), provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2);
+    if (!state->hex_font_css) font_attach(GTK_WIDGET(widget->native), provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2);
     previous = state->hex_font;
     state->hex_font = description;
     state->hex_font_css = provider;
@@ -989,8 +993,7 @@ static void cells_follow_font(xxwidgets_app *app)
     state->cell_height = height;
     for (widget = app->widgets; widget; widget = widget->next) {
         int x, y, pixel_width, pixel_height;
-        if (!widget->platform || !widget->native || (widget->parent && (!widget->parent->platform || !((gtk_widget_state *)widget->parent->platform)->content)))
-            continue;
+        if (!widget->platform || !widget->native || (widget->parent && (!widget->parent->platform || !((gtk_widget_state *)widget->parent->platform)->content))) continue;
         /* Placed in pixels (gtk_place): the program lays it out again on the
          * RESIZE reported below. */
         if (widget->has_frame) continue;
@@ -1029,8 +1032,7 @@ static void cells_follow_font(xxwidgets_app *app)
             native->about_text_x = native->about_image ? 12 * cell_width + 2 * padding : padding;
             if (scroll && gtk_widget_get_parent(scroll) == native->content) {
                 gtk_layout_move(GTK_LAYOUT(native->content), scroll, native->about_text_x, height);
-                if (!native->about_resizable)
-                    gtk_widget_set_size_request(scroll, widget->rect.width * cell_width - native->about_text_x - padding, 17 * height);
+                if (!native->about_resizable) gtk_widget_set_size_request(scroll, widget->rect.width * cell_width - native->about_text_x - padding, 17 * height);
             }
             if (native->about_image && gtk_widget_get_parent(native->about_image) == native->content)
                 gtk_layout_move(GTK_LAYOUT(native->content), native->about_image, padding, height);
@@ -1086,7 +1088,8 @@ static gboolean window_configure(GtkWidget *native, GdkEventConfigure *event, gp
         /* A window still short of the minimum it was given grows again, and
          * that size is ours too (a configure can report the size from before
          * the minimum); a few resizes at most, so later ones stay the user's. */
-        if (state->fit_position && state->fit_position < 4 && (content_width < state->min_width || content_height < state->min_height + state->menu_height)) ++state->fit_position;
+        if (state->fit_position && state->fit_position < 4 && (content_width < state->min_width || content_height < state->min_height + state->menu_height))
+            ++state->fit_position;
         else state->fit_position = 0;
     }
     state->frame_width = event->width;
@@ -1207,7 +1210,10 @@ static gboolean list_key(GtkWidget *native, GdkEventKey *event, gpointer data)
             return TRUE;
         }
         if (gtk_key_input(event, &key, &modifiers)) {
-            if (key == XXWIDGETS_KEY_F1 + 5) { xxwidgets_hexview_activate_column(widget, (widget->hex_header + 1) % 3); return TRUE; }
+            if (key == XXWIDGETS_KEY_F1 + 5) {
+                xxwidgets_hexview_activate_column(widget, (widget->hex_header + 1) % 3);
+                return TRUE;
+            }
             if (key == XXWIDGETS_KEY_F1 + 9) {
                 gtk_hex_menu(widget, (modifiers & XXWIDGETS_MOD_SHIFT) ? 3 : widget->hex_header, 0, event->time);
                 return TRUE;
@@ -1329,19 +1335,20 @@ static void gtk_hex_menu(xxwidgets_widget *widget, unsigned int column, guint bu
 {
     GtkWidget *menu, *group;
     const char *last = "";
-    if (!xxwidgets_focusable(widget) || column > 3)
-        return;
-    if (column < 3)
-        xxwidgets_hexview_activate_column(widget, column);
-    menu = gtk_menu_new(); group = menu;
+    if (!xxwidgets_focusable(widget) || column > 3) return;
+    if (column < 3) xxwidgets_hexview_activate_column(widget, column);
+    menu = gtk_menu_new();
+    group = menu;
     gtk_menu_attach_to_widget(GTK_MENU(menu), GTK_WIDGET(widget->native), NULL);
     g_signal_connect_swapped(menu, "selection-done", G_CALLBACK(gtk_widget_destroy), menu);
     for (size_t i = 0; i < xxwidgets_hexview_menu_count(column); ++i) {
         xxwidgets_hex_menu_item entry = xxwidgets_hexview_menu_item(widget, column, i);
         if (strcmp(last, entry.group)) {
             GtkWidget *parent = gtk_menu_item_new_with_label(entry.group);
-            group = gtk_menu_new(); gtk_menu_item_set_submenu(GTK_MENU_ITEM(parent), group);
-            gtk_menu_shell_append(GTK_MENU_SHELL(menu), parent); last = entry.group;
+            group = gtk_menu_new();
+            gtk_menu_item_set_submenu(GTK_MENU_ITEM(parent), group);
+            gtk_menu_shell_append(GTK_MENU_SHELL(menu), parent);
+            last = entry.group;
         }
         GtkWidget *item = column == 3 ? gtk_menu_item_new_with_label(entry.title) : gtk_check_menu_item_new_with_label(entry.title);
         if (column != 3) {
@@ -1360,8 +1367,7 @@ static PangoLayout *gtk_hex_layout(GtkWidget *native, GtkCellRenderer *cell, con
 {
     PangoLayout *layout = gtk_widget_create_pango_layout(native, text);
     PangoFontDescription *font = NULL;
-    if (cell)
-        g_object_get(cell, "font-desc", &font, NULL);
+    if (cell) g_object_get(cell, "font-desc", &font, NULL);
     if (font) {
         pango_layout_set_font_description(layout, font);
         pango_font_description_free(font);
@@ -1376,32 +1382,32 @@ static double gtk_hex_character_width(PangoLayout *layout)
     pango_layout_get_size(layout, &width, NULL);
     return width > 0 ? (double)width / PANGO_SCALE : 1;
 }
-typedef struct { GtkCellRendererText parent; } GtkHexSymbolRenderer;
-typedef struct { GtkCellRendererTextClass parent; } GtkHexSymbolRendererClass;
+typedef struct {
+    GtkCellRendererText parent;
+} GtkHexSymbolRenderer;
+typedef struct {
+    GtkCellRendererTextClass parent;
+} GtkHexSymbolRendererClass;
 G_DEFINE_TYPE(GtkHexSymbolRenderer, gtk_hex_symbol_renderer, GTK_TYPE_CELL_RENDERER_TEXT)
-static void gtk_hex_draw_symbol(PangoLayout *layout, cairo_t *cr, const char *text, int length,
-                                double left, double width, const GdkRectangle *cell_area)
+static void gtk_hex_draw_symbol(PangoLayout *layout, cairo_t *cr, const char *text, int length, double left, double width, const GdkRectangle *cell_area)
 {
     PangoRectangle logical;
     pango_layout_set_text(layout, text, length);
     pango_layout_get_pixel_extents(layout, NULL, &logical);
     double scale = logical.width > width ? width / logical.width : 1;
     cairo_save(cr);
-    cairo_translate(cr, left + (width - logical.width * scale) / 2,
-                     cell_area->y + (cell_area->height - logical.height) / 2);
+    cairo_translate(cr, left + (width - logical.width * scale) / 2, cell_area->y + (cell_area->height - logical.height) / 2);
     cairo_scale(cr, scale, 1);
     cairo_move_to(cr, -logical.x, -logical.y);
     pango_cairo_show_layout(cr, layout);
     cairo_restore(cr);
 }
-static void gtk_hex_symbol_render(GtkCellRenderer *cell, cairo_t *cr, GtkWidget *native,
-                                  const GdkRectangle *background_area, const GdkRectangle *cell_area,
+static void gtk_hex_symbol_render(GtkCellRenderer *cell, cairo_t *cr, GtkWidget *native, const GdkRectangle *background_area, const GdkRectangle *cell_area,
                                   GtkCellRendererState flags)
 {
     xxwidgets_widget *w = g_object_get_data(G_OBJECT(cell), "hex-widget");
     size_t row = (size_t)GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(cell), "hex-row"));
-    if (!w || row >= w->item_count)
-        return;
+    if (!w || row >= w->item_count) return;
     (void)flags;
     GdkRGBA foreground, background, selected, selected_text, disabled;
     GtkStyleContext *style = gtk_widget_get_style_context(native);
@@ -1432,7 +1438,8 @@ static void gtk_hex_symbol_render(GtkCellRenderer *cell, cairo_t *cr, GtkWidget 
         uint32_t tint;
         if (!highlighted && xxwidgets_hexview_highlight_span(w, spans[i].offset, spans[i].bytes, &tint)) {
             cairo_set_source_rgba(cr, ((tint >> 16) & 255) / 255.0, ((tint >> 8) & 255) / 255.0, (tint & 255) / 255.0, 0.45);
-            cairo_rectangle(cr, left, background_area->y, extent, background_area->height); cairo_fill(cr);
+            cairo_rectangle(cr, left, background_area->y, extent, background_area->height);
+            cairo_fill(cr);
         }
         if (highlighted) {
             gdk_cairo_set_source_rgba(cr, &selected);
@@ -1444,8 +1451,7 @@ static void gtk_hex_symbol_render(GtkCellRenderer *cell, cairo_t *cr, GtkWidget 
             gtk_hex_draw_symbol(layout, cr, text + spans[i].start, (int)spans[i].length, left, width, cell_area);
         }
         gdk_cairo_set_source_rgba(cr, &disabled);
-        for (size_t byte = spans[i].length ? 1 : 0; byte < cells; ++byte)
-            gtk_hex_draw_symbol(layout, cr, "\xc2\xb7", 2, left + byte * width, width, cell_area);
+        for (size_t byte = spans[i].length ? 1 : 0; byte < cells; ++byte) gtk_hex_draw_symbol(layout, cr, "\xc2\xb7", 2, left + byte * width, width, cell_area);
     }
     cairo_restore(cr);
     g_object_unref(layout);
@@ -1465,16 +1471,14 @@ static size_t gtk_hex_hit(xxwidgets_widget *w, double x, double y, size_t *bytes
     GtkTreePath *path = NULL;
     GtkTreeViewColumn *column;
     int cell_x, cell_y, index = 0, trailing = 0;
-    if (!gtk_tree_view_get_path_at_pos(tree, (int)x, (int)y, &path, &column, &cell_x, &cell_y))
-        return SIZE_MAX;
+    if (!gtk_tree_view_get_path_at_pos(tree, (int)x, (int)y, &path, &column, &cell_x, &cell_y)) return SIZE_MAX;
     size_t row = (size_t)gtk_tree_path_get_indices(path)[0];
     unsigned col = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(column), "hex-column"));
     GList *cells = gtk_cell_layout_get_cells(GTK_CELL_LAYOUT(column));
     GtkCellRenderer *cell = cells ? cells->data : NULL;
     PangoLayout *layout = gtk_hex_layout(GTK_WIDGET(tree), cell, xxwidgets_hexview_cell(w, row, col));
     gint xpad = 0;
-    if (cell)
-        g_object_get(cell, "xpad", &xpad, NULL);
+    if (cell) g_object_get(cell, "xpad", &xpad, NULL);
     size_t offset = SIZE_MAX;
     if (col == 2) {
         double width = gtk_hex_character_width(layout);
@@ -1491,30 +1495,25 @@ static size_t gtk_hex_hit(xxwidgets_widget *w, double x, double y, size_t *bytes
     g_list_free(cells);
     g_object_unref(layout);
     gtk_tree_path_free(path);
-    if (offset != SIZE_MAX)
-        xxwidgets_hexview_activate_column(w, col);
+    if (offset != SIZE_MAX) xxwidgets_hexview_activate_column(w, col);
     return offset;
 }
 static gboolean gtk_hex_pointer(GtkWidget *native, GdkEventButton *event, gpointer data)
 {
     xxwidgets_widget *w = data;
-    if (w->app->syncing || !xxwidgets_focusable(w))
-        return FALSE;
+    if (w->app->syncing || !xxwidgets_focusable(w)) return FALSE;
     if (event->type == GDK_BUTTON_RELEASE) {
         w->hex_dragging = 0;
         return event->button == 1;
     }
-    if (event->button != 1 && event->button != 3)
-        return FALSE;
+    if (event->button != 1 && event->button != 3) return FALSE;
     gtk_widget_grab_focus(native);
     size_t bytes, at = gtk_hex_hit(w, event->x, event->y, &bytes);
     if (event->button == 1) {
         w->hex_dragging = at != SIZE_MAX;
-        if (at != SIZE_MAX)
-            (void)xxwidgets_hexview_pointer_span(w, at, bytes, (event->state & GDK_SHIFT_MASK) != 0);
+        if (at != SIZE_MAX) (void)xxwidgets_hexview_pointer_span(w, at, bytes, (event->state & GDK_SHIFT_MASK) != 0);
     } else {
-        if (at != SIZE_MAX && !xxwidgets_hexview_contains(w, at, bytes))
-            (void)xxwidgets_hexview_pointer_span(w, at, bytes, 0);
+        if (at != SIZE_MAX && !xxwidgets_hexview_contains(w, at, bytes)) (void)xxwidgets_hexview_pointer_span(w, at, bytes, 0);
         gtk_hex_menu(w, 3, event->button, event->time);
     }
     return TRUE;
@@ -1522,26 +1521,21 @@ static gboolean gtk_hex_pointer(GtkWidget *native, GdkEventButton *event, gpoint
 static gboolean gtk_hex_motion(GtkWidget *native, GdkEventMotion *event, gpointer data)
 {
     xxwidgets_widget *w = data;
-    if (!w->hex_dragging || !(event->state & GDK_BUTTON1_MASK) || !xxwidgets_focusable(w))
-        return FALSE;
+    if (!w->hex_dragging || !(event->state & GDK_BUTTON1_MASK) || !xxwidgets_focusable(w)) return FALSE;
     size_t bytes, at = gtk_hex_hit(w, event->x, event->y, &bytes);
     if (at == SIZE_MAX) {
         GtkTreePath *first = NULL, *last = NULL;
         if (gtk_tree_view_get_visible_range(GTK_TREE_VIEW(native), &first, &last)) {
             size_t row = (size_t)gtk_tree_path_get_indices(event->y < 0 ? first : last)[0];
-            if (event->y < 0 && row)
-                --row;
-            else if (event->y >= 0 && row + 1 < w->item_count)
-                ++row;
+            if (event->y < 0 && row) --row;
+            else if (event->y >= 0 && row + 1 < w->item_count) ++row;
             at = row * w->hex_columns + w->hex_cursor % w->hex_columns;
-            if (at >= w->hex_size)
-                at = w->hex_size - 1;
+            if (at >= w->hex_size) at = w->hex_size - 1;
             gtk_tree_path_free(first);
             gtk_tree_path_free(last);
         }
     }
-    if (at != SIZE_MAX)
-        (void)xxwidgets_hexview_pointer_span(w, at, bytes, 1);
+    if (at != SIZE_MAX) (void)xxwidgets_hexview_pointer_span(w, at, bytes, 1);
     return TRUE;
 }
 static void gtk_disasm_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeModel *model, GtkTreeIter *iter, gpointer data)
@@ -1564,7 +1558,7 @@ static void gtk_disasm_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell, Gt
             uint32_t rgb = values[j];
             if (rgb == UINT32_MAX) continue;
             PangoAttribute *a = j ? pango_attr_background_new((guint16)(((rgb >> 16) & 255) * 257), (guint16)(((rgb >> 8) & 255) * 257), (guint16)((rgb & 255) * 257))
-                                 : pango_attr_foreground_new((guint16)(((rgb >> 16) & 255) * 257), (guint16)(((rgb >> 8) & 255) * 257), (guint16)((rgb & 255) * 257));
+                                  : pango_attr_foreground_new((guint16)(((rgb >> 16) & 255) * 257), (guint16)(((rgb >> 8) & 255) * 257), (guint16)((rgb & 255) * 257));
             a->start_index = (guint)spans[i].start;
             a->end_index = (guint)(spans[i].start + spans[i].length);
             pango_attr_list_insert(attributes, a);
@@ -1608,18 +1602,20 @@ static void gtk_hex_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTr
     gtk_style_context_get_background_color(style, GTK_STATE_FLAG_NORMAL, &background);
     gtk_style_context_get_color(style, GTK_STATE_FLAG_SELECTED, &selected_text);
     gtk_style_context_get_background_color(style, GTK_STATE_FLAG_SELECTED, &selected);
-    xxwidgets_hex_span all[64]; size_t all_count = xxwidgets_hexview_spans(w, row, col, all);
+    xxwidgets_hex_span all[64];
+    size_t all_count = xxwidgets_hexview_spans(w, row, col, all);
     for (size_t i = 0; i < all_count; ++i) {
         uint32_t rgb;
         if (!xxwidgets_hexview_highlight_span(w, all[i].offset, all[i].bytes, &rgb)) continue;
         PangoAttribute *tint = pango_attr_background_new((guint16)(((rgb >> 16) & 255) * 257), (guint16)(((rgb >> 8) & 255) * 257), (guint16)((rgb & 255) * 257));
-        tint->start_index = (guint)all[i].start; tint->end_index = (guint)(all[i].start + all[i].length); pango_attr_list_change(attributes, tint);
+        tint->start_index = (guint)all[i].start;
+        tint->end_index = (guint)(all[i].start + all[i].length);
+        pango_attr_list_change(attributes, tint);
     }
     for (size_t i = 0; i < count; ++i) {
-        PangoAttribute *bg =
-            pango_attr_background_new((guint16)(selected.red * 65535), (guint16)(selected.green * 65535), (guint16)(selected.blue * 65535));
-        PangoAttribute *fg = pango_attr_foreground_new((guint16)(selected_text.red * 65535), (guint16)(selected_text.green * 65535),
-                                                       (guint16)(selected_text.blue * 65535));
+        PangoAttribute *bg = pango_attr_background_new((guint16)(selected.red * 65535), (guint16)(selected.green * 65535), (guint16)(selected.blue * 65535));
+        PangoAttribute *fg =
+            pango_attr_foreground_new((guint16)(selected_text.red * 65535), (guint16)(selected_text.green * 65535), (guint16)(selected_text.blue * 65535));
         bg->start_index = fg->start_index = (guint)spans[i].start;
         bg->end_index = fg->end_index = (guint)(spans[i].start + spans[i].length);
         pango_attr_list_change(attributes, bg);
@@ -1644,7 +1640,8 @@ static void gtk_hex_resized(GObject *column, GParamSpec *property, gpointer data
     xxwidgets_widget *widget = data;
     size_t index = GPOINTER_TO_UINT(g_object_get_data(column, "hex-column"));
     (void)property;
-    if (!widget->app->syncing && index < 3) widget->hex_widths[index] = MAX(4, (gtk_tree_view_column_get_width(GTK_TREE_VIEW_COLUMN(column)) + 4) / gtk_hex_cell_width(widget));
+    if (!widget->app->syncing && index < 3)
+        widget->hex_widths[index] = MAX(4, (gtk_tree_view_column_get_width(GTK_TREE_VIEW_COLUMN(column)) + 4) / gtk_hex_cell_width(widget));
 }
 
 static void scanresults_selected(GtkTreeSelection *selection, gpointer data)
@@ -1655,7 +1652,8 @@ static void scanresults_selected(GtkTreeSelection *selection, gpointer data)
     int previous = widget->value;
     scanresults_selection_read(widget);
     if (widget->kind == XXWIDGETS_HEXVIEW) {
-        int selected = widget->value; widget->value = previous;
+        int selected = widget->value;
+        widget->value = previous;
         if (xxwidgets_hexview_selection_input(widget, selected) != XXWIDGETS_OK) return;
     }
     xxwidgets_emit(widget, XXWIDGETS_EVENT_SELECT, widget->value);
@@ -1697,7 +1695,8 @@ static void scanresults_sync(xxwidgets_widget *widget)
                     for (size_t col = 0; col < 3; ++col)
                         gtk_list_store_set(store, &iter, (gint)col, xxwidgets_hexview_cell(widget, widget->hex_sync_dirty_rows[i], col), -1);
             }
-            state->rendered_hex_revision = widget->hex_revision; refreshed = 0;
+            state->rendered_hex_revision = widget->hex_revision;
+            refreshed = 0;
         }
     }
     if (refreshed) {
@@ -1906,8 +1905,7 @@ static gboolean treeview_key(GtkWidget *native, GdkEventKey *key, gpointer data)
         return TRUE;
     }
     /* A mark's first character presses it on the selected row (S, ?). */
-    if (!(key->state & (GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_META_MASK)) &&
-        xxwidgets_treeview_mark_key(widget, (unsigned int)gdk_keyval_to_unicode(key->keyval)))
+    if (!(key->state & (GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_META_MASK)) && xxwidgets_treeview_mark_key(widget, (unsigned int)gdk_keyval_to_unicode(key->keyval)))
         return TRUE;
     if (key->keyval == GDK_KEY_space) {
         if (xxwidgets_treeview_has_children(widget, (size_t)widget->value) && xxwidgets_treeview_get_expanded(widget, (size_t)widget->value, &expanded) == XXWIDGETS_OK)
@@ -1962,8 +1960,7 @@ static void treeview_mark_cell(GtkTreeViewColumn *column, GtkCellRenderer *cell,
     /* The marks take the row's colours, as its text does (B7). */
     treeview_cell_color(column, cell, model, iter, data);
     gtk_tree_model_get(model, iter, 1, &node, -1);
-    g_object_set(cell, "text", node >= 0 && (xxwidgets_treeview_node_marks(widget, (size_t)node) >> mark & 1u)
-        ? xxwidgets_treeview_mark_label(widget, mark) : "", NULL);
+    g_object_set(cell, "text", node >= 0 && (xxwidgets_treeview_node_marks(widget, (size_t)node) >> mark & 1u) ? xxwidgets_treeview_mark_label(widget, mark) : "", NULL);
 }
 
 static gboolean treeview_mark_press(GtkWidget *native, GdkEventButton *button, gpointer data)
@@ -1973,8 +1970,7 @@ static gboolean treeview_mark_press(GtkWidget *native, GdkEventButton *button, g
     GtkTreeViewColumn *column = NULL;
     GtkTreeIter iter;
     int node = -1, mark;
-    if (button->type != GDK_BUTTON_PRESS || button->button != 1 || widget->app->syncing || !xxwidgets_focusable(widget) ||
-        !xxwidgets_treeview_mark_count(widget) ||
+    if (button->type != GDK_BUTTON_PRESS || button->button != 1 || widget->app->syncing || !xxwidgets_focusable(widget) || !xxwidgets_treeview_mark_count(widget) ||
         !gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(native), (gint)button->x, (gint)button->y, &path, &column, NULL, NULL))
         return FALSE;
     mark = column ? GPOINTER_TO_INT(g_object_get_data(G_OBJECT(column), "xxwidgets-mark")) - 1 : -1;
@@ -2222,21 +2218,17 @@ static gboolean systemprocessesviewer_button_press(GtkWidget *native, GdkEventBu
 
 static gboolean systemprocessesviewer_key(GtkWidget *native, GdkEventKey *event, gpointer data)
 {
-    if (event->keyval == GDK_KEY_Menu ||
-        (event->keyval == GDK_KEY_F10 && (event->state & GDK_SHIFT_MASK)))
-        return browser_popup_menu(native, data);
+    if (event->keyval == GDK_KEY_Menu || (event->keyval == GDK_KEY_F10 && (event->state & GDK_SHIFT_MASK))) return browser_popup_menu(native, data);
     return FALSE;
 }
 
-static void table_activated(GtkTreeView *native, GtkTreePath *path,
-    GtkTreeViewColumn *column, gpointer data)
+static void table_activated(GtkTreeView *native, GtkTreePath *path, GtkTreeViewColumn *column, gpointer data)
 {
     xxwidgets_widget *widget = data;
     int row = gtk_tree_path_get_indices(path)[0];
     (void)native;
     (void)column;
-    if (widget->app->syncing || !xxwidgets_focusable(widget) || row < 0 ||
-        (size_t)row >= xxwidgets_tabular_rows(widget)) return;
+    if (widget->app->syncing || !xxwidgets_focusable(widget) || row < 0 || (size_t)row >= xxwidgets_tabular_rows(widget)) return;
     widget->value = xxwidgets_table_filterable(widget) ? xxwidgets_tabular_value(widget, row) : row;
     xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
 }
@@ -2248,8 +2240,8 @@ static gboolean window_shortcut(GtkWidget *native, GdkEventKey *event, gpointer 
     GtkWidget *focused = gtk_window_get_focus(GTK_WINDOW(native));
     unsigned int key, modifiers;
     for (xxwidgets_widget *candidate = window->app->widgets; candidate; candidate = candidate->next)
-        if (candidate->parent == window && candidate->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && candidate->native == focused &&
-            gtk_die_key(focused, event, candidate)) return TRUE;
+        if (candidate->parent == window && candidate->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && candidate->native == focused && gtk_die_key(focused, event, candidate))
+            return TRUE;
     if (!gtk_key_input(event, &key, &modifiers)) return FALSE;
     return xxwidgets_shortcut_dispatch(data, key, modifiers);
 }
@@ -2563,37 +2555,42 @@ static xxwidgets_status gtk_poll_backend(xxwidgets_app *app, int timeout_ms)
 static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget);
 static void gtk_destroy_backend(xxwidgets_widget *widget);
 
-static GdkAtom file_uri_target(void) { return gdk_atom_intern_static_string("text/uri-list"); }
+static GdkAtom file_uri_target(void)
+{
+    return gdk_atom_intern_static_string("text/uri-list");
+}
 
 static gboolean file_drag_motion(GtkWidget *native, GdkDragContext *context, gint x, gint y, guint time, gpointer data)
 {
     xxwidgets_widget *widget = data, *window = widget->parent ? widget->parent : widget;
-    (void)native; (void)x; (void)y;
+    (void)native;
+    (void)x;
+    (void)y;
     if (!window->accept_file_drops || !g_list_find(gdk_drag_context_list_targets(context), file_uri_target())) return FALSE;
-    gdk_drag_status(context, xxwidgets_can_drop_files(window) && (gdk_drag_context_get_actions(context) & GDK_ACTION_COPY)
-        ? GDK_ACTION_COPY : 0, time);
+    gdk_drag_status(context, xxwidgets_can_drop_files(window) && (gdk_drag_context_get_actions(context) & GDK_ACTION_COPY) ? GDK_ACTION_COPY : 0, time);
     return TRUE;
 }
 
 static gboolean file_drag_drop(GtkWidget *native, GdkDragContext *context, gint x, gint y, guint time, gpointer data)
 {
     xxwidgets_widget *widget = data, *window = widget->parent ? widget->parent : widget;
-    (void)x; (void)y;
+    (void)x;
+    (void)y;
     if (!window->accept_file_drops || !g_list_find(gdk_drag_context_list_targets(context), file_uri_target())) return FALSE;
-    if (xxwidgets_can_drop_files(window) && (gdk_drag_context_get_actions(context) & GDK_ACTION_COPY))
-        gtk_drag_get_data(native, context, file_uri_target(), time);
+    if (xxwidgets_can_drop_files(window) && (gdk_drag_context_get_actions(context) & GDK_ACTION_COPY)) gtk_drag_get_data(native, context, file_uri_target(), time);
     else gtk_drag_finish(context, FALSE, FALSE, time);
     return TRUE;
 }
 
-static void file_drag_received(GtkWidget *native, GdkDragContext *context, gint x, gint y,
-                               GtkSelectionData *selection, guint info, guint time, gpointer data)
+static void file_drag_received(GtkWidget *native, GdkDragContext *context, gint x, gint y, GtkSelectionData *selection, guint info, guint time, gpointer data)
 {
     xxwidgets_widget *widget = data, *window = widget->parent ? widget->parent : widget;
     gchar **uris = NULL, **paths = NULL;
     size_t count = 0, i;
     int accepted = 0;
-    (void)x; (void)y; (void)info;
+    (void)x;
+    (void)y;
+    (void)info;
     if (gtk_selection_data_get_target(selection) != file_uri_target()) return;
     g_signal_stop_emission_by_name(native, "drag-data-received");
     if (!xxwidgets_can_drop_files(window) || !(gdk_drag_context_get_actions(context) & GDK_ACTION_COPY)) goto done;
@@ -2605,7 +2602,9 @@ static void file_drag_received(GtkWidget *native, GdkDragContext *context, gint 
     for (i = 0; i < count; ++i) {
         gchar *host = NULL, *filename = g_filename_from_uri(uris[i], &host, NULL);
         if (!filename || (host && *host && g_ascii_strcasecmp(host, "localhost"))) {
-            g_free(host); g_free(filename); goto done;
+            g_free(host);
+            g_free(filename);
+            goto done;
         }
         g_free(host);
         paths[i] = g_filename_to_utf8(filename, -1, NULL, NULL, NULL);
@@ -2614,7 +2613,8 @@ static void file_drag_received(GtkWidget *native, GdkDragContext *context, gint 
     }
     accepted = xxwidgets_emit_drop_files(window, (const char *const *)paths, count);
 done:
-    g_strfreev(paths); g_strfreev(uris);
+    g_strfreev(paths);
+    g_strfreev(uris);
     gtk_drag_finish(context, accepted, FALSE, time);
 }
 
@@ -2630,9 +2630,19 @@ static void gtk_plot_draw(void *user, int kind, double x, double y, double x2, d
 {
     cairo_t *cr = user;
     cairo_set_source_rgb(cr, ((rgb >> 16) & 255) / 255.0, ((rgb >> 8) & 255) / 255.0, (rgb & 255) / 255.0);
-    if (kind == 0) { cairo_move_to(cr,x,y); cairo_line_to(cr,x2,y2); cairo_stroke(cr); }
-    else if (kind == 1) { cairo_rectangle(cr,x,y,x2-x,y2-y); cairo_fill(cr); }
-    else { cairo_select_font_face(cr,"monospace",CAIRO_FONT_SLANT_NORMAL,CAIRO_FONT_WEIGHT_NORMAL); cairo_set_font_size(cr,12); cairo_move_to(cr,x,y+12); cairo_show_text(cr,text); }
+    if (kind == 0) {
+        cairo_move_to(cr, x, y);
+        cairo_line_to(cr, x2, y2);
+        cairo_stroke(cr);
+    } else if (kind == 1) {
+        cairo_rectangle(cr, x, y, x2 - x, y2 - y);
+        cairo_fill(cr);
+    } else {
+        cairo_select_font_face(cr, "monospace", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+        cairo_set_font_size(cr, 12);
+        cairo_move_to(cr, x, y + 12);
+        cairo_show_text(cr, text);
+    }
 }
 /* A theme whose text is lighter than mid grey is dark. Drawing areas have no
  * background color of their own to compare with (theirs is transparent). */
@@ -2643,19 +2653,81 @@ static int gtk_dark_theme(GtkWidget *native)
     gtk_style_context_get_color(context, gtk_style_context_get_state(context), &color);
     return 0.299 * color.red + 0.587 * color.green + 0.114 * color.blue > 0.5;
 }
-static gboolean gtk_canvas_paint(GtkWidget *native,cairo_t *cr,gpointer data) {
-    xxwidgets_widget *w=data;int width=gtk_widget_get_allocated_width(native),height=gtk_widget_get_allocated_height(native),dark=gtk_dark_theme(native);
-    double grey=dark?0.20:0.92;cairo_set_source_rgb(cr,grey,grey,grey);cairo_paint(cr);if(w->kind==XXWIDGETS_SPLITTER){grey=dark?0.38:0.55;cairo_set_source_rgb(cr,grey,grey,grey);cairo_paint(cr);return FALSE;}
-    if(!w->canvas_pixels||!w->canvas_width||!w->canvas_height)return FALSE;size_t n=(size_t)w->canvas_width*w->canvas_height;uint32_t *pixels=malloc(n*4);if(!pixels)return FALSE;
-    for(size_t i=0;i<n;++i){uint32_t c=w->canvas_pixels[i];unsigned a=c&255,r=(c>>24),g=(c>>16)&255,b=(c>>8)&255;pixels[i]=(a<<24)|((r*a/255)<<16)|((g*a/255)<<8)|(b*a/255);}
-    cairo_surface_t *surface=cairo_image_surface_create_for_data((unsigned char*)pixels,CAIRO_FORMAT_ARGB32,w->canvas_width,w->canvas_height,w->canvas_width*4);double x,y,rw,rh;xxwidgets_canvas_fit(w,width,height,&x,&y,&rw,&rh);
-    cairo_save(cr);cairo_translate(cr,x,y);cairo_scale(cr,rw/w->canvas_width,rh/w->canvas_height);cairo_set_source_surface(cr,surface,0,0);cairo_pattern_set_filter(cairo_get_source(cr),CAIRO_FILTER_NEAREST);cairo_paint(cr);cairo_restore(cr);cairo_surface_destroy(surface);free(pixels);
-    for(size_t i=0;i<w->canvas_label_count;++i){xxwidgets_canvas_label *l=w->canvas_labels+i;uint32_t c=l->color;cairo_set_source_rgb(cr,(c>>24)/255.0,((c>>16)&255)/255.0,((c>>8)&255)/255.0);cairo_set_font_size(cr,11);cairo_move_to(cr,x+l->x*rw/w->canvas_width,y+l->y*rh/w->canvas_height+11);cairo_show_text(cr,l->text);}
-    if(w->value>=0){cairo_set_source_rgb(cr,1,0,0);cairo_rectangle(cr,x+(w->value%w->canvas_width)*rw/w->canvas_width,y+(w->value/w->canvas_width)*rh/w->canvas_height,fmax(2,rw/w->canvas_width),fmax(2,rh/w->canvas_height));cairo_stroke(cr);}return FALSE;
+static gboolean gtk_canvas_paint(GtkWidget *native, cairo_t *cr, gpointer data)
+{
+    xxwidgets_widget *w = data;
+    int width = gtk_widget_get_allocated_width(native), height = gtk_widget_get_allocated_height(native), dark = gtk_dark_theme(native);
+    double grey = dark ? 0.20 : 0.92;
+    cairo_set_source_rgb(cr, grey, grey, grey);
+    cairo_paint(cr);
+    if (w->kind == XXWIDGETS_SPLITTER) {
+        grey = dark ? 0.38 : 0.55;
+        cairo_set_source_rgb(cr, grey, grey, grey);
+        cairo_paint(cr);
+        return FALSE;
+    }
+    if (!w->canvas_pixels || !w->canvas_width || !w->canvas_height) return FALSE;
+    size_t n = (size_t)w->canvas_width * w->canvas_height;
+    uint32_t *pixels = malloc(n * 4);
+    if (!pixels) return FALSE;
+    for (size_t i = 0; i < n; ++i) {
+        uint32_t c = w->canvas_pixels[i];
+        unsigned a = c & 255, r = (c >> 24), g = (c >> 16) & 255, b = (c >> 8) & 255;
+        pixels[i] = (a << 24) | ((r * a / 255) << 16) | ((g * a / 255) << 8) | (b * a / 255);
+    }
+    cairo_surface_t *surface = cairo_image_surface_create_for_data((unsigned char *)pixels, CAIRO_FORMAT_ARGB32, w->canvas_width, w->canvas_height, w->canvas_width * 4);
+    double x, y, rw, rh;
+    xxwidgets_canvas_fit(w, width, height, &x, &y, &rw, &rh);
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, rw / w->canvas_width, rh / w->canvas_height);
+    cairo_set_source_surface(cr, surface, 0, 0);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
+    cairo_paint(cr);
+    cairo_restore(cr);
+    cairo_surface_destroy(surface);
+    free(pixels);
+    for (size_t i = 0; i < w->canvas_label_count; ++i) {
+        xxwidgets_canvas_label *l = w->canvas_labels + i;
+        uint32_t c = l->color;
+        cairo_set_source_rgb(cr, (c >> 24) / 255.0, ((c >> 16) & 255) / 255.0, ((c >> 8) & 255) / 255.0);
+        cairo_set_font_size(cr, 11);
+        cairo_move_to(cr, x + l->x * rw / w->canvas_width, y + l->y * rh / w->canvas_height + 11);
+        cairo_show_text(cr, l->text);
+    }
+    if (w->value >= 0) {
+        cairo_set_source_rgb(cr, 1, 0, 0);
+        cairo_rectangle(cr, x + (w->value % w->canvas_width) * rw / w->canvas_width, y + (w->value / w->canvas_width) * rh / w->canvas_height,
+                        fmax(2, rw / w->canvas_width), fmax(2, rh / w->canvas_height));
+        cairo_stroke(cr);
+    }
+    return FALSE;
 }
-static gboolean gtk_canvas_pointer(GtkWidget *native,GdkEventButton *event,gpointer data){if(event->button!=1)return FALSE;xxwidgets_widget *w=data;gtk_widget_grab_focus(native);if(w->kind==XXWIDGETS_SPLITTER)xxwidgets_splitter_input(w,event->x,event->y,gtk_widget_get_allocated_width(native),gtk_widget_get_allocated_height(native));else xxwidgets_canvas_input(w,event->x,event->y,gtk_widget_get_allocated_width(native),gtk_widget_get_allocated_height(native));return TRUE;}
-static gboolean gtk_canvas_motion(GtkWidget *native,GdkEventMotion *event,gpointer data){if(!(event->state&GDK_BUTTON1_MASK))return FALSE;xxwidgets_widget *w=data;if(w->kind==XXWIDGETS_SPLITTER)xxwidgets_splitter_input(w,event->x,event->y,gtk_widget_get_allocated_width(native),gtk_widget_get_allocated_height(native));else xxwidgets_canvas_input(w,event->x,event->y,gtk_widget_get_allocated_width(native),gtk_widget_get_allocated_height(native));return TRUE;}
-static gboolean gtk_canvas_key(GtkWidget *native,GdkEventKey *event,gpointer data){(void)native;unsigned key=0,mods=0;xxwidgets_widget *w=data;if(!gtk_key_input(event,&key,&mods))return FALSE;return w->kind==XXWIDGETS_SPLITTER?xxwidgets_splitter_key(w,(int)key):xxwidgets_canvas_key(w,(int)key);}
+static gboolean gtk_canvas_pointer(GtkWidget *native, GdkEventButton *event, gpointer data)
+{
+    if (event->button != 1) return FALSE;
+    xxwidgets_widget *w = data;
+    gtk_widget_grab_focus(native);
+    if (w->kind == XXWIDGETS_SPLITTER) xxwidgets_splitter_input(w, event->x, event->y, gtk_widget_get_allocated_width(native), gtk_widget_get_allocated_height(native));
+    else xxwidgets_canvas_input(w, event->x, event->y, gtk_widget_get_allocated_width(native), gtk_widget_get_allocated_height(native));
+    return TRUE;
+}
+static gboolean gtk_canvas_motion(GtkWidget *native, GdkEventMotion *event, gpointer data)
+{
+    if (!(event->state & GDK_BUTTON1_MASK)) return FALSE;
+    xxwidgets_widget *w = data;
+    if (w->kind == XXWIDGETS_SPLITTER) xxwidgets_splitter_input(w, event->x, event->y, gtk_widget_get_allocated_width(native), gtk_widget_get_allocated_height(native));
+    else xxwidgets_canvas_input(w, event->x, event->y, gtk_widget_get_allocated_width(native), gtk_widget_get_allocated_height(native));
+    return TRUE;
+}
+static gboolean gtk_canvas_key(GtkWidget *native, GdkEventKey *event, gpointer data)
+{
+    (void)native;
+    unsigned key = 0, mods = 0;
+    xxwidgets_widget *w = data;
+    if (!gtk_key_input(event, &key, &mods)) return FALSE;
+    return w->kind == XXWIDGETS_SPLITTER ? xxwidgets_splitter_key(w, (int)key) : xxwidgets_canvas_key(w, (int)key);
+}
 
 static gboolean gtk_plot_paint(GtkWidget *native, cairo_t *cr, gpointer data)
 {
@@ -2703,15 +2775,15 @@ static void gtk_die_sync(xxwidgets_widget *widget)
     if (!rows) rows = 1;
     if (!columns) columns = 1;
     if (rows != state->die_rows || columns != state->die_columns) {
-        state->die_rows = rows; state->die_columns = columns;
+        state->die_rows = rows;
+        state->die_columns = columns;
         xxwidgets_die_edit_page(widget, rows, columns);
         xxwidgets_die_edit_view_get(widget, &view);
     }
     state->die_adjusting = 1;
-    gtk_adjustment_configure(state->die_vertical, (double)view.first_line, 0,
-        (double)(view.line_count > rows ? view.line_count : rows), 1, (double)rows, (double)rows);
-    gtk_adjustment_configure(state->die_horizontal, (double)view.first_column, 0,
-        (double)(view.max_columns + 1 > columns ? view.max_columns + 1 : columns), 1, (double)columns, (double)columns);
+    gtk_adjustment_configure(state->die_vertical, (double)view.first_line, 0, (double)(view.line_count > rows ? view.line_count : rows), 1, (double)rows, (double)rows);
+    gtk_adjustment_configure(state->die_horizontal, (double)view.first_column, 0, (double)(view.max_columns + 1 > columns ? view.max_columns + 1 : columns), 1,
+                             (double)columns, (double)columns);
     state->die_adjusting = 0;
     gtk_widget_queue_draw(GTK_WIDGET(widget->native));
 }
@@ -2750,11 +2822,15 @@ static gboolean gtk_die_draw(GtkWidget *native, cairo_t *cr, gpointer data)
     gtk_style_context_get_color(context, GTK_STATE_FLAG_SELECTED, &selected_text);
     if (selection.alpha < 0.1) selection = (GdkRGBA){0.20, 0.40, 0.70, 1};
     if (selected_text.alpha < 0.1) selected_text = (GdkRGBA){1, 1, 1, 1};
-    cairo_set_source_rgb(cr, 1, 1, 1); cairo_paint(cr);
+    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_paint(cr);
     xxwidgets_die_edit_view_get(widget, &view);
     count = width > state->die_gutter ? (size_t)((width - state->die_gutter) / state->die_cell_width + 1) : 1;
     cells = calloc(count, sizeof(*cells));
-    if (!cells) { g_object_unref(layout); return TRUE; }
+    if (!cells) {
+        g_object_unref(layout);
+        return TRUE;
+    }
     for (size_t row = 0; row < (size_t)(height / state->die_cell_height + 1); ++row) {
         size_t line = view.first_line + row;
         int y = (int)row * state->die_cell_height;
@@ -2765,14 +2841,17 @@ static gboolean gtk_die_draw(GtkWidget *native, cairo_t *cr, gpointer data)
         if (execution || (!view.read_only && line == current)) {
             if (execution) cairo_set_source_rgb(cr, 1, 0.91, 0.64);
             else cairo_set_source_rgb(cr, 1, 1, 0.88);
-            cairo_rectangle(cr, state->die_gutter, y, width - state->die_gutter, state->die_cell_height); cairo_fill(cr);
+            cairo_rectangle(cr, state->die_gutter, y, width - state->die_gutter, state->die_cell_height);
+            cairo_fill(cr);
         }
         cairo_set_source_rgb(cr, 0.93, 0.93, 0.93);
-        cairo_rectangle(cr, 0, y, state->die_gutter - state->die_cell_width / 2, state->die_cell_height); cairo_fill(cr);
+        cairo_rectangle(cr, 0, y, state->die_gutter - state->die_cell_width / 2, state->die_cell_height);
+        cairo_fill(cr);
         if (breakpoint) {
             double radius = MIN(state->die_cell_width, state->die_cell_height) * 0.325;
             cairo_set_source_rgb(cr, 0.82, 0.12, 0.12);
-            cairo_arc(cr, state->die_cell_width * 0.5, y + state->die_cell_height * 0.5, radius, 0, 6.283185307179586); cairo_fill(cr);
+            cairo_arc(cr, state->die_cell_width * 0.5, y + state->die_cell_height * 0.5, radius, 0, 6.283185307179586);
+            cairo_fill(cr);
         }
         if (execution) {
             double left = state->die_cell_width + 1, right = state->die_cell_width * 2 - 1;
@@ -2785,20 +2864,26 @@ static gboolean gtk_die_draw(GtkWidget *native, cairo_t *cr, gpointer data)
             cairo_line_to(cr, head, middle + state->die_cell_height * 0.36);
             cairo_line_to(cr, head, middle + state->die_cell_height * 0.2);
             cairo_line_to(cr, left, middle + state->die_cell_height * 0.2);
-            cairo_close_path(cr); cairo_fill(cr);
+            cairo_close_path(cr);
+            cairo_fill(cr);
         }
         g_snprintf(number, sizeof(number), "%zu", line + 1);
         pango_layout_set_text(layout, number, -1);
-        { int nwidth; pango_layout_get_pixel_size(layout, &nwidth, NULL);
-          cairo_set_source_rgb(cr, 0.4, 0.4, 0.4);
-          cairo_move_to(cr, state->die_gutter - state->die_cell_width - nwidth, y); pango_cairo_show_layout(cr, layout); }
+        {
+            int nwidth;
+            pango_layout_get_pixel_size(layout, &nwidth, NULL);
+            cairo_set_source_rgb(cr, 0.4, 0.4, 0.4);
+            cairo_move_to(cr, state->die_gutter - state->die_cell_width - nwidth, y);
+            pango_cairo_show_layout(cr, layout);
+        }
         xxwidgets_die_edit_render_line(widget, line, view.first_column, cells, count);
         for (size_t column = 0; column < count; ++column) {
             int x = state->die_gutter + (int)column * state->die_cell_width;
             char utf8[5];
             if (cells[column].selected) {
                 gdk_cairo_set_source_rgba(cr, &selection);
-                cairo_rectangle(cr, x, y, state->die_cell_width, state->die_cell_height); cairo_fill(cr);
+                cairo_rectangle(cr, x, y, state->die_cell_width, state->die_cell_height);
+                cairo_fill(cr);
             }
             if (cells[column].scalar >= 32) {
                 xxwidgets_die_edit_encode(cells[column].scalar, utf8);
@@ -2806,16 +2891,22 @@ static gboolean gtk_die_draw(GtkWidget *native, cairo_t *cr, gpointer data)
                 if (cells[column].selected) gdk_cairo_set_source_rgba(cr, &selected_text);
                 else if (cells[column].style == XXWIDGETS_DIE_STYLE_TEXT) gdk_cairo_set_source_rgba(cr, &text);
                 else gtk_die_rgb(cr, xxwidgets_die_edit_color(cells[column].style));
-                cairo_save(cr); cairo_rectangle(cr, x, y, state->die_cell_width, state->die_cell_height); cairo_clip(cr);
-                cairo_move_to(cr, x, y); pango_cairo_show_layout(cr, layout); cairo_restore(cr);
+                cairo_save(cr);
+                cairo_rectangle(cr, x, y, state->die_cell_width, state->die_cell_height);
+                cairo_clip(cr);
+                cairo_move_to(cr, x, y);
+                pango_cairo_show_layout(cr, layout);
+                cairo_restore(cr);
             }
             if (cells[column].caret && gtk_widget_has_focus(native)) {
                 gdk_cairo_set_source_rgba(cr, &text);
-                cairo_rectangle(cr, x, y, 1, state->die_cell_height); cairo_fill(cr);
+                cairo_rectangle(cr, x, y, 1, state->die_cell_height);
+                cairo_fill(cr);
             }
         }
     }
-    free(cells); g_object_unref(layout);
+    free(cells);
+    g_object_unref(layout);
     return TRUE;
 }
 
@@ -2858,8 +2949,15 @@ static void gtk_die_hit(xxwidgets_widget *widget, double x, double y, int extend
     int row = (int)floor(y / state->die_cell_height);
     int column = (int)floor((x - state->die_gutter + state->die_cell_width / 2) / state->die_cell_width);
     xxwidgets_die_edit_view_get(widget, &view);
-    if (row < 0) { xxwidgets_die_edit_scroll(widget, -1, 0); row = 0; xxwidgets_die_edit_view_get(widget, &view); }
-    else if ((size_t)row >= state->die_rows) { xxwidgets_die_edit_scroll(widget, 1, 0); row = (int)state->die_rows - 1; xxwidgets_die_edit_view_get(widget, &view); }
+    if (row < 0) {
+        xxwidgets_die_edit_scroll(widget, -1, 0);
+        row = 0;
+        xxwidgets_die_edit_view_get(widget, &view);
+    } else if ((size_t)row >= state->die_rows) {
+        xxwidgets_die_edit_scroll(widget, 1, 0);
+        row = (int)state->die_rows - 1;
+        xxwidgets_die_edit_view_get(widget, &view);
+    }
     if (column < 0) column = 0;
     xxwidgets_die_edit_point(widget, view.first_line + (size_t)row, view.first_column + (size_t)column, extend);
 }
@@ -2930,12 +3028,16 @@ static gboolean gtk_die_pointer(GtkWidget *native, GdkEventButton *event, gpoint
     }
     if (event->button != 1) return FALSE;
     if (event->type == GDK_BUTTON_RELEASE) {
-        if (state->die_dragging) { state->die_dragging = 0; gtk_grab_remove(native); }
+        if (state->die_dragging) {
+            state->die_dragging = 0;
+            gtk_grab_remove(native);
+        }
         return TRUE;
     }
     if (!xxwidgets_focusable(widget) || widget->app->syncing) return FALSE;
     gtk_widget_grab_focus(native);
-    state->die_dragging = 1; gtk_grab_add(native);
+    state->die_dragging = 1;
+    gtk_grab_add(native);
     gtk_die_hit(widget, event->x, event->y, !!(event->state & GDK_SHIFT_MASK));
     return TRUE;
 }
@@ -2944,7 +3046,11 @@ static gboolean gtk_die_motion(GtkWidget *native, GdkEventMotion *event, gpointe
 {
     gtk_widget_state *state = ((xxwidgets_widget *)data)->platform;
     if (!state->die_dragging) return FALSE;
-    if (!(event->state & GDK_BUTTON1_MASK)) { state->die_dragging = 0; gtk_grab_remove(native); return FALSE; }
+    if (!(event->state & GDK_BUTTON1_MASK)) {
+        state->die_dragging = 0;
+        gtk_grab_remove(native);
+        return FALSE;
+    }
     gtk_die_hit(data, event->x, event->y, 1);
     return TRUE;
 }
@@ -2961,7 +3067,10 @@ static gboolean gtk_die_scroll(GtkWidget *native, GdkEventScroll *event, gpointe
         else if (event->direction == GDK_SCROLL_LEFT) dx = -1;
         else if (event->direction == GDK_SCROLL_RIGHT) dx = 1;
     }
-    if (event->state & GDK_SHIFT_MASK) { dx += dy; dy = 0; }
+    if (event->state & GDK_SHIFT_MASK) {
+        dx += dy;
+        dy = 0;
+    }
     xxwidgets_die_edit_scroll(widget, (int)(dy < 0 ? floor(dy * 3) : ceil(dy * 3)), (int)(dx < 0 ? floor(dx * 3) : ceil(dx * 3)));
     gtk_die_sync(widget);
     return TRUE;
@@ -2970,15 +3079,21 @@ static gboolean gtk_die_scroll(GtkWidget *native, GdkEventScroll *event, gpointe
 static gboolean gtk_die_focus(GtkWidget *native, GdkEventFocus *event, gpointer data)
 {
     gtk_widget_state *state = ((xxwidgets_widget *)data)->platform;
-    if (event->in) { gtk_im_context_set_client_window(state->die_im, gtk_widget_get_window(native)); gtk_im_context_focus_in(state->die_im); }
-    else { gtk_im_context_focus_out(state->die_im); gtk_im_context_reset(state->die_im); }
+    if (event->in) {
+        gtk_im_context_set_client_window(state->die_im, gtk_widget_get_window(native));
+        gtk_im_context_focus_in(state->die_im);
+    } else {
+        gtk_im_context_focus_out(state->die_im);
+        gtk_im_context_reset(state->die_im);
+    }
     gtk_widget_queue_draw(native);
     return FALSE;
 }
 
 static void gtk_die_allocate(GtkWidget *native, GtkAllocation *allocation, gpointer data)
 {
-    (void)native; (void)allocation;
+    (void)native;
+    (void)allocation;
     gtk_die_sync(data);
 }
 
@@ -2986,7 +3101,10 @@ static gboolean gtk_die_grab_broken(GtkWidget *native, GdkEventGrabBroken *event
 {
     gtk_widget_state *state = ((xxwidgets_widget *)data)->platform;
     (void)event;
-    if (state->die_dragging) { state->die_dragging = 0; gtk_grab_remove(native); }
+    if (state->die_dragging) {
+        state->die_dragging = 0;
+        gtk_grab_remove(native);
+    }
     return FALSE;
 }
 
@@ -3055,14 +3173,17 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             state->die_horizontal = GTK_ADJUSTMENT(gtk_adjustment_new(0, 0, 1, 1, 1, 1));
             vertical = gtk_scrollbar_new(GTK_ORIENTATION_VERTICAL, state->die_vertical);
             horizontal = gtk_scrollbar_new(GTK_ORIENTATION_HORIZONTAL, state->die_horizontal);
-            gtk_widget_set_hexpand(native, TRUE); gtk_widget_set_vexpand(native, TRUE);
+            gtk_widget_set_hexpand(native, TRUE);
+            gtk_widget_set_vexpand(native, TRUE);
             gtk_grid_attach(GTK_GRID(state->root), native, 0, 0, 1, 1);
             gtk_grid_attach(GTK_GRID(state->root), vertical, 1, 0, 1, 1);
             gtk_grid_attach(GTK_GRID(state->root), horizontal, 0, 1, 1, 1);
-            gtk_widget_show(native); gtk_widget_show(vertical); gtk_widget_show(horizontal);
+            gtk_widget_show(native);
+            gtk_widget_show(vertical);
+            gtk_widget_show(horizontal);
             gtk_widget_set_can_focus(native, TRUE);
-            gtk_widget_add_events(native, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK |
-                GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_FOCUS_CHANGE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
+            gtk_widget_add_events(native, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK |
+                                              GDK_FOCUS_CHANGE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
             state->die_im = gtk_im_multicontext_new();
             g_signal_connect(state->die_im, "commit", G_CALLBACK(gtk_die_commit), widget);
             g_signal_connect(state->die_vertical, "value-changed", G_CALLBACK(gtk_die_adjusted), widget);
@@ -3133,8 +3254,14 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_CANVAS:
         case XXWIDGETS_SPLITTER:
-            native=gtk_drawing_area_new();gtk_widget_set_can_focus(native,TRUE);gtk_widget_add_events(native,GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK|GDK_POINTER_MOTION_MASK|GDK_KEY_PRESS_MASK);
-            g_signal_connect(native,"draw",G_CALLBACK(gtk_canvas_paint),widget);g_signal_connect(native,"button-press-event",G_CALLBACK(gtk_canvas_pointer),widget);g_signal_connect(native,"motion-notify-event",G_CALLBACK(gtk_canvas_motion),widget);g_signal_connect(native,"key-press-event",G_CALLBACK(gtk_canvas_key),widget);break;
+            native = gtk_drawing_area_new();
+            gtk_widget_set_can_focus(native, TRUE);
+            gtk_widget_add_events(native, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK | GDK_KEY_PRESS_MASK);
+            g_signal_connect(native, "draw", G_CALLBACK(gtk_canvas_paint), widget);
+            g_signal_connect(native, "button-press-event", G_CALLBACK(gtk_canvas_pointer), widget);
+            g_signal_connect(native, "motion-notify-event", G_CALLBACK(gtk_canvas_motion), widget);
+            g_signal_connect(native, "key-press-event", G_CALLBACK(gtk_canvas_key), widget);
+            break;
         case XXWIDGETS_ENTROPY_PLOT:
             native = gtk_drawing_area_new();
             gtk_widget_add_events(native, GDK_BUTTON_PRESS_MASK);
@@ -3211,20 +3338,22 @@ static xxwidgets_status gtk_create_backend(xxwidgets_widget *widget)
             gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(state->root), GTK_SHADOW_IN);
             gtk_container_add(GTK_CONTAINER(state->root), native);
             for (column = 0; column < columns; ++column) {
-                GtkCellRenderer *renderer = widget->kind == XXWIDGETS_HEXVIEW && column == 2
-                                                ? g_object_new(gtk_hex_symbol_renderer_get_type(), NULL)
-                                                : gtk_cell_renderer_text_new();
+                GtkCellRenderer *renderer =
+                    widget->kind == XXWIDGETS_HEXVIEW && column == 2 ? g_object_new(gtk_hex_symbol_renderer_get_type(), NULL) : gtk_cell_renderer_text_new();
                 GtkTreeViewColumn *view_column =
                     gtk_tree_view_column_new_with_attributes(xxwidgets_tabular_column_title(widget, column), renderer, "text", (gint)column, NULL);
                 gtk_tree_view_column_set_resizable(view_column, TRUE);
                 gtk_tree_view_column_set_sizing(view_column, GTK_TREE_VIEW_COLUMN_FIXED);
-                gtk_tree_view_column_set_fixed_width(view_column,
-                                                     (xxwidgets_entropy_table(widget) || widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) ? (int)xxwidgets_tabular_column_width(widget, column) * 8 : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[column] : data_widths[column]);
+                gtk_tree_view_column_set_fixed_width(
+                    view_column, (xxwidgets_entropy_table(widget) || widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ||
+                                  xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget))
+                                     ? (int)xxwidgets_tabular_column_width(widget, column) * 8
+                                 : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[column]
+                                                                         : data_widths[column]);
                 gtk_tree_view_column_set_min_width(view_column, xxwidgets_debugger_table_kind(widget) && column == 0 ? 16 : 60);
                 /* GTK otherwise gives spare space to the last (PID) column,
                  * leaving the process name at its narrow initial width. */
-                if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER)
-                    gtk_tree_view_column_set_expand(view_column, column == 0);
+                if (widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER) gtk_tree_view_column_set_expand(view_column, column == 0);
                 g_object_set(renderer, "single-paragraph-mode", TRUE, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
                 gtk_tree_view_append_column(GTK_TREE_VIEW(native), view_column);
                 if (xxwidgets_table_filterable(widget) && column < 9) {
@@ -3708,8 +3837,8 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_LISTBOX:
         case XXWIDGETS_ARCHIVEVIEW: {
-            int rebuild_rows = state->rendered_items > widget->item_count ||
-                (xxwidgets_formatted_rows(widget) && state->rendered_hex_revision != xxwidgets_row_revision(widget));
+            int rebuild_rows =
+                state->rendered_items > widget->item_count || (xxwidgets_formatted_rows(widget) && state->rendered_hex_revision != xxwidgets_row_revision(widget));
             if (rebuild_rows) {
                 GList *rows = gtk_container_get_children(GTK_CONTAINER(native));
                 GList *row;
@@ -3792,7 +3921,8 @@ static xxwidgets_status gtk_sync_backend(xxwidgets_widget *widget)
         }
     }
     if (state->die_dragging && (!widget->enabled || !widget->visible)) {
-        state->die_dragging = 0; gtk_grab_remove(native);
+        state->die_dragging = 0;
+        gtk_grab_remove(native);
     }
     if (state->hex_overview_dragging && (!widget->enabled || !widget->visible)) {
         state->hex_overview_dragging = 0;
@@ -3892,8 +4022,7 @@ static gboolean options_key(GtkWidget *native, GdkEventKey *key, gpointer user)
         GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(native));
         xxwidgets_widget *button = dialog->app->modal_default, *candidate;
         for (candidate = dialog->app->widgets; focus && candidate; candidate = candidate->next)
-            if (candidate->parent == dialog && candidate->kind == XXWIDGETS_BUTTON && candidate->native == (void *)focus &&
-                candidate->enabled && candidate->visible) {
+            if (candidate->parent == dialog && candidate->kind == XXWIDGETS_BUTTON && candidate->native == (void *)focus && candidate->enabled && candidate->visible) {
                 button = candidate;
                 break;
             }
@@ -3954,8 +4083,7 @@ static xxwidgets_status gtk_about_content(xxwidgets_widget *window, const xxwidg
     /* About keeps its size. The copyable text dialog (xxwidgets_text_dialog,
      * the only one without a program name) can be resized: its text follows
      * the window in about_text_layout, held to its own minimum. */
-    int text_dialog = !about->image && !about->item_count && about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME] &&
-                      !about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME][0];
+    int text_dialog = !about->image && !about->item_count && about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME] && !about->texts[XXWIDGETS_ABOUT_PROGRAM_NAME][0];
     state->about_resizable = text_dialog;
     state->about_text_x = text_x;
     gtk_window_set_resizable(GTK_WINDOW(window->native), text_dialog);
@@ -4004,8 +4132,12 @@ static xxwidgets_status gtk_paste_text(xxwidgets_widget *owner, char *text, size
     const char *bytes = value ? value : "";
     *required = strlen(bytes) + 1;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (text || capacity) { if (capacity < *required) status = XXWIDGETS_BUFFER_TOO_SMALL; else memcpy(text, bytes, *required); }
-    g_free(value); return status;
+    if (text || capacity) {
+        if (capacity < *required) status = XXWIDGETS_BUFFER_TOO_SMALL;
+        else memcpy(text, bytes, *required);
+    }
+    g_free(value);
+    return status;
 }
 
 static xxwidgets_status gtk_copy_text(xxwidgets_widget *window, const char *text)
@@ -4092,13 +4224,18 @@ static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_
     GtkFileChooser *chooser;
     xxwidgets_status status = XXWIDGETS_OK;
     /* The "_" marks each button's mnemonic; a translation places its own. */
-    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title :
-                                         save   ? XXW_TR(owner->app, "Save File") :
-                                         folder ? XXW_TR(owner->app, "Select Folder") : XXW_TR(owner->app, "Open File"),
+    dialog = gtk_file_chooser_dialog_new(title && title[0] ? title
+                                         : save            ? XXW_TR(owner->app, "Save File")
+                                         : folder          ? XXW_TR(owner->app, "Select Folder")
+                                                           : XXW_TR(owner->app, "Open File"),
                                          GTK_WINDOW(owner->native),
-                                         save ? GTK_FILE_CHOOSER_ACTION_SAVE : folder ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER : GTK_FILE_CHOOSER_ACTION_OPEN,
+                                         save     ? GTK_FILE_CHOOSER_ACTION_SAVE
+                                         : folder ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER
+                                                  : GTK_FILE_CHOOSER_ACTION_OPEN,
                                          XXW_TR(owner->app, "_Cancel"), GTK_RESPONSE_CANCEL,
-                                         save ? XXW_TR(owner->app, "_Save") : folder ? XXW_TR(owner->app, "_Select") : XXW_TR(owner->app, "_Open"),
+                                         save     ? XXW_TR(owner->app, "_Save")
+                                         : folder ? XXW_TR(owner->app, "_Select")
+                                                  : XXW_TR(owner->app, "_Open"),
                                          GTK_RESPONSE_ACCEPT, NULL);
     if (!dialog) return XXWIDGETS_PLATFORM_ERROR;
     /* Destroying the window from outside during gtk_dialog_run must not free
@@ -4132,16 +4269,14 @@ static xxwidgets_status gtk_choose_file(xxwidgets_widget *owner, xxwidgets_file_
 static size_t gtk_hexview_page_rows(const xxwidgets_widget *widget)
 {
     size_t fallback = (size_t)(widget->rect.height > 1 ? widget->rect.height - 1 : 1);
-    if (!widget->native || !widget->item_count)
-        return fallback;
+    if (!widget->native || !widget->item_count) return fallback;
     GtkTreeView *tree = GTK_TREE_VIEW(widget->native);
     GdkRectangle visible, row;
     GtkTreePath *path = gtk_tree_path_new_from_indices(0, -1);
     gtk_tree_view_get_visible_rect(tree, &visible);
     gtk_tree_view_get_background_area(tree, path, NULL, &row);
     gtk_tree_path_free(path);
-    if (visible.height <= 0 || row.height <= 0)
-        return fallback;
+    if (visible.height <= 0 || row.height <= 0) return fallback;
     size_t rows = (size_t)(visible.height / row.height);
     return rows ? rows : 1;
 }
@@ -4189,8 +4324,8 @@ static xxwidgets_status gtk_window_menu(xxwidgets_widget *window)
     if (old_height != menu_height) {
         state->min_width = state->min_height = -1;
         window_update_minimum(window);
-        apply_geometry(window, window->rect.x * app->cell_width, window->rect.y * app->cell_height,
-                       window->rect.width * app->cell_width, window->rect.height * app->cell_height);
+        apply_geometry(window, window->rect.x * app->cell_width, window->rect.y * app->cell_height, window->rect.width * app->cell_width,
+                       window->rect.height * app->cell_height);
     }
     return XXWIDGETS_OK;
 }
@@ -4277,8 +4412,7 @@ static xxwidgets_status gtk_measure(xxwidgets_widget *widget, const char *text, 
     if (!app || !state || !state->root || !native) return XXWIDGETS_INVALID_ARGUMENT;
     if (text && !g_utf8_validate(text, -1, NULL)) return XXWIDGETS_INVALID_ARGUMENT;
     if (app->control_height <= 0 || app->label_height <= 0) measure_frame_metrics(app);
-    one_row = widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_VALUE ||
-              xxwidgets_combo_kind(widget);
+    one_row = widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_VALUE || xxwidgets_combo_kind(widget);
     switch (widget->kind) {
         case XXWIDGETS_LABEL:
             *width = text_pixel_width(native, text ? text : widget->text, widget->bold, &text_height);
@@ -4293,8 +4427,8 @@ static xxwidgets_status gtk_measure(xxwidgets_widget *widget, const char *text, 
             GtkBorder padding, border;
             gtk_style_context_get_padding(context, flags, &padding);
             gtk_style_context_get_border(context, flags, &border);
-            *width = text_pixel_width(native, text ? text : widget->text, widget->kind == XXWIDGETS_VALUE && widget->bold, NULL) +
-                     padding.left + padding.right + border.left + border.right + 2;
+            *width = text_pixel_width(native, text ? text : widget->text, widget->kind == XXWIDGETS_VALUE && widget->bold, NULL) + padding.left + padding.right +
+                     border.left + border.right + 2;
             natural_size(state->root, &natural_width, &natural_height);
             *height = natural_height > app->control_height ? natural_height : app->control_height;
             return XXWIDGETS_OK;
@@ -4347,9 +4481,7 @@ static xxwidgets_status gtk_measure(xxwidgets_widget *widget, const char *text, 
                 natural_width += title - shown;
             }
             break;
-        default:
-            natural_size(state->root, &natural_width, &natural_height);
-            break;
+        default: natural_size(state->root, &natural_width, &natural_height); break;
     }
     if (one_row && natural_height < app->control_height) natural_height = app->control_height;
     *width = natural_width > 0 ? natural_width : 1;
@@ -4504,8 +4636,19 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"GTK3",
                                                     gtk_choose_file,
                                                     gtk_has_focus,
                                                     gtk_accept_file_drops,
-                                                    gtk_hexview_page_rows, gtk_paste_text, gtk_hexview_font, gtk_window_menu, NULL /* about_rich_content */,
-                                                    NULL /* translation_changed */, gtk_set_tooltip,
-                                                    gtk_metrics, gtk_measure, gtk_place, gtk_native_frame,
-                                                    gtk_minimum_frame, gtk_supports_kind, gtk_set_icon,
-                                                    NULL /* begin_update: nothing to batch */, NULL /* end_update */};
+                                                    gtk_hexview_page_rows,
+                                                    gtk_paste_text,
+                                                    gtk_hexview_font,
+                                                    gtk_window_menu,
+                                                    NULL /* about_rich_content */,
+                                                    NULL /* translation_changed */,
+                                                    gtk_set_tooltip,
+                                                    gtk_metrics,
+                                                    gtk_measure,
+                                                    gtk_place,
+                                                    gtk_native_frame,
+                                                    gtk_minimum_frame,
+                                                    gtk_supports_kind,
+                                                    gtk_set_icon,
+                                                    NULL /* begin_update: nothing to batch */,
+                                                    NULL /* end_update */};

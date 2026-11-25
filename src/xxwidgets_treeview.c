@@ -34,7 +34,10 @@ typedef struct xxwidgets_tree_projection {
 } xxwidgets_tree_projection;
 
 /* Lazy node flags: PENDING, children not fetched yet; MORE, a "... N more" item. */
-enum { TREE_PENDING = 1u, TREE_MORE = 2u };
+enum {
+    TREE_PENDING = 1u,
+    TREE_MORE = 2u
+};
 
 /* One page fetched into a shown tree: content revision from -> from + 1
  * appended nodes [first, ...) and rewrote node changed (SIZE_MAX: none). */
@@ -382,7 +385,8 @@ xxwidgets_status xxwidgets_treeview_set_nodes(xxwidgets_widget *widget, const xx
 xxwidgets_tree_color xxwidgets_treeview_node_color(const xxwidgets_widget *widget, size_t index)
 {
     return tree_widget(widget) && widget->tree && index < widget->tree->count && widget->tree->colors
-        ? widget->tree->colors[index] : (xxwidgets_tree_color){UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX};
+               ? widget->tree->colors[index]
+               : (xxwidgets_tree_color){UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX};
 }
 
 xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, const xxwidgets_tree_node *nodes, const xxwidgets_tree_color *colors, size_t count)
@@ -397,10 +401,10 @@ xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, 
         if ((nodes[i].parent != SIZE_MAX && nodes[i].parent >= i) || !xxwidgets_valid_utf8(nodes[i].text) || (nodes[i].expanded != 0 && nodes[i].expanded != 1))
             return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; colors && i < count; ++i)
-        if ((colors[i].foreground != UINT32_MAX && colors[i].foreground > 0xffffffu) ||
-            (colors[i].background != UINT32_MAX && colors[i].background > 0xffffffu) ||
+        if ((colors[i].foreground != UINT32_MAX && colors[i].foreground > 0xffffffu) || (colors[i].background != UINT32_MAX && colors[i].background > 0xffffffu) ||
             (colors[i].dark_foreground != UINT32_MAX && colors[i].dark_foreground > 0xffffffu) ||
-            (colors[i].dark_background != UINT32_MAX && colors[i].dark_background > 0xffffffu)) return XXWIDGETS_INVALID_ARGUMENT;
+            (colors[i].dark_background != UINT32_MAX && colors[i].dark_background > 0xffffffu))
+            return XXWIDGETS_INVALID_ARGUMENT;
     tree = (struct xxwidgets_tree_state *)calloc(1, sizeof(*tree));
     if (!tree) return XXWIDGETS_OUT_OF_MEMORY;
     tree->count = count;
@@ -419,7 +423,10 @@ xxwidgets_status xxwidgets_treeview_set_colored_nodes(xxwidgets_widget *widget, 
     }
     if (colors && count) {
         tree->colors = (xxwidgets_tree_color *)malloc(count * sizeof(*colors));
-        if (!tree->colors) { status = XXWIDGETS_OUT_OF_MEMORY; goto failed; }
+        if (!tree->colors) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto failed;
+        }
         memcpy(tree->colors, colors, count * sizeof(*colors));
     }
     for (i = 0; i < count; ++i) {
@@ -544,8 +551,7 @@ static xxwidgets_status tree_reserve(struct xxwidgets_tree_state *tree, size_t e
     if (needed <= tree->capacity) return XXWIDGETS_OK;
     capacity = tree->capacity ? tree->capacity : 64;
     while (capacity < needed) capacity = capacity > (size_t)INT_MAX / 2 ? (size_t)INT_MAX : capacity * 2;
-    if (capacity > SIZE_MAX / sizeof(xxwidgets_tree_node) || capacity > SIZE_MAX / sizeof(xxwidgets_tree_color))
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (capacity > SIZE_MAX / sizeof(xxwidgets_tree_node) || capacity > SIZE_MAX / sizeof(xxwidgets_tree_color)) return XXWIDGETS_OUT_OF_MEMORY;
     /* An array that grew before a later one failed is only larger than needed. */
     grown = realloc(tree->nodes, capacity * sizeof(*tree->nodes));
     if (!grown) return XXWIDGETS_OUT_OF_MEMORY;
@@ -579,8 +585,7 @@ static xxwidgets_status tree_reserve(struct xxwidgets_tree_state *tree, size_t e
 }
 
 /* Appends a node as the last child of parent (SIZE_MAX: a root); reserved. */
-static void link_node(struct xxwidgets_tree_state *tree, size_t parent, char *text, char *display,
-                      const xxwidgets_tree_color *color, uint64_t id, unsigned char flags)
+static void link_node(struct xxwidgets_tree_state *tree, size_t parent, char *text, char *display, const xxwidgets_tree_color *color, uint64_t id, unsigned char flags)
 {
     size_t i = tree->count++;
     tree->nodes[i].parent = parent;
@@ -680,8 +685,7 @@ static xxwidgets_status tree_page(struct xxwidgets_tree_state *tree, size_t pare
     }
     if (more_needed || (placeholder != SIZE_MAX && !n)) {
         char label[160];
-        if (more_needed)
-            snprintf(label, sizeof(label), "... %zu %s", total - offset - n, tree->app ? XXW_TR(tree->app, "more") : "more");
+        if (more_needed) snprintf(label, sizeof(label), "... %zu %s", total - offset - n, tree->app ? XXW_TR(tree->app, "more") : "more");
         else snprintf(label, sizeof(label), "...");
         status = source_text(label, &more_original, &more_display);
         if (status != XXWIDGETS_OK) goto done;
@@ -699,16 +703,25 @@ static xxwidgets_status tree_page(struct xxwidgets_tree_state *tree, size_t pare
             size_t *changed_list = (size_t *)realloc(tree->delta_changed, capacity * sizeof(*changed_list));
             if (grown) tree->deltas = grown;
             if (changed_list) tree->delta_changed = changed_list;
-            if (!grown || !changed_list) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
+            if (!grown || !changed_list) {
+                status = XXWIDGETS_OUT_OF_MEMORY;
+                goto done;
+            }
             tree->delta_capacity = capacity;
         }
     }
     if (more_needed && placeholder == SIZE_MAX && tree->more_count == tree->more_capacity) {
         size_t capacity = tree->more_capacity ? tree->more_capacity * 2 : 8;
         xxwidgets_tree_more *grown;
-        if (capacity > SIZE_MAX / sizeof(*grown)) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
+        if (capacity > SIZE_MAX / sizeof(*grown)) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto done;
+        }
         grown = (xxwidgets_tree_more *)realloc(tree->more, capacity * sizeof(*grown));
-        if (!grown) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
+        if (!grown) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto done;
+        }
         tree->more = grown;
         tree->more_capacity = capacity;
     }
@@ -855,15 +868,13 @@ xxwidgets_status xxwidgets_treeview_user_expand(xxwidgets_widget *widget, size_t
     }
     changed = widget->tree->nodes[index].expanded != expanded;
     status = xxwidgets_treeview_set_expanded(widget, index, expanded);
-    if (status == XXWIDGETS_OK && changed && widget->tree->nodes[index].expanded == expanded)
-        xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, (int)index);
+    if (status == XXWIDGETS_OK && changed && widget->tree->nodes[index].expanded == expanded) xxwidgets_emit(widget, XXWIDGETS_EVENT_CHANGE, (int)index);
     return status;
 }
 
 void xxwidgets_treeview_user_activate(xxwidgets_widget *widget, size_t index)
 {
-    if (lazy_tree(widget) && index < widget->tree->count && (widget->tree->flags[index] & TREE_MORE))
-        (void)xxwidgets_treeview_user_expand(widget, index, 1);
+    if (lazy_tree(widget) && index < widget->tree->count && (widget->tree->flags[index] & TREE_MORE)) (void)xxwidgets_treeview_user_expand(widget, index, 1);
     else xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, (int)index);
 }
 
@@ -969,8 +980,7 @@ xxwidgets_status xxwidgets_treeview_source_refresh(xxwidgets_widget *widget)
      * one page per open node, however far pages had been loaded. */
     widget->tree_loading = 1; /* The callbacks must not replace the tree meanwhile. */
     status = tree_page(tree, SIZE_MAX, SIZE_MAX, NULL);
-    if (status == XXWIDGETS_OK && chain_count)
-        status = tree_load_until(tree, SIZE_MAX, chain[chain_count - 1].id, chain[chain_count - 1].loaded);
+    if (status == XXWIDGETS_OK && chain_count) status = tree_load_until(tree, SIZE_MAX, chain[chain_count - 1].id, chain[chain_count - 1].loaded);
     /* Nodes appended while loading are visited too, so expanded descendants
      * are restored below their restored ancestors. */
     for (i = 0; status == XXWIDGETS_OK && keep_count && i < tree->count; ++i) {
@@ -984,8 +994,7 @@ xxwidgets_status xxwidgets_treeview_source_refresh(xxwidgets_widget *widget)
     if (status != XXWIDGETS_OK) goto done;
     for (i = 0; selected == SIZE_MAX && i < chain_count; ++i) selected = find_id(tree, chain[i].id);
     if (selected == SIZE_MAX && tree->count) selected = tree->first_root;
-    for (node = selected == SIZE_MAX ? SIZE_MAX : tree->nodes[selected].parent; node != SIZE_MAX; node = tree->nodes[node].parent)
-        tree->nodes[node].expanded = 1;
+    for (node = selected == SIZE_MAX ? SIZE_MAX : tree->nodes[selected].parent; node != SIZE_MAX; node = tree->nodes[node].parent) tree->nodes[node].expanded = 1;
     status = build_projection(tree, &tree->projection);
     if (status != XXWIDGETS_OK) goto done;
     status = install_tree(widget, tree, selected == SIZE_MAX ? -1 : (int)selected);
@@ -1071,8 +1080,7 @@ xxwidgets_status xxwidgets_treeview_source_fetch(xxwidgets_widget *widget, size_
     return status == XXWIDGETS_OK ? relayout(widget) : status;
 }
 
-int xxwidgets_treeview_source_delta(const xxwidgets_widget *widget, uint64_t applied, size_t *first, const size_t **changed,
-                                    size_t *changed_count)
+int xxwidgets_treeview_source_delta(const xxwidgets_widget *widget, uint64_t applied, size_t *first, const size_t **changed, size_t *changed_count)
 {
     struct xxwidgets_tree_state *tree = lazy_tree(widget) ? widget->tree : NULL;
     size_t start, k, count = 0;
@@ -1136,8 +1144,7 @@ size_t xxwidgets_treeview_child_at(xxwidgets_widget *widget, size_t parent, size
     return node;
 }
 
-xxwidgets_status xxwidgets_treeview_set_marks(xxwidgets_widget *widget, const char *const *labels, size_t label_count,
-                                              const unsigned int *masks, size_t count)
+xxwidgets_status xxwidgets_treeview_set_marks(xxwidgets_widget *widget, const char *const *labels, size_t label_count, const unsigned int *masks, size_t count)
 {
     struct xxwidgets_tree_state *tree;
     char *copies[XXWIDGETS_TREE_MARKS_MAX] = {0};
@@ -1155,9 +1162,11 @@ xxwidgets_status xxwidgets_treeview_set_marks(xxwidgets_widget *widget, const ch
         for (i = 0; i < label_count; ++i) {
             const unsigned char *s = (const unsigned char *)labels[i];
             if (!s || !*s || !xxwidgets_valid_utf8(labels[i]) || strlen(labels[i]) > 16) return XXWIDGETS_INVALID_ARGUMENT;
-            for (; *s; ++s) if (*s < 32 || *s == 127) return XXWIDGETS_INVALID_ARGUMENT;
+            for (; *s; ++s)
+                if (*s < 32 || *s == 127) return XXWIDGETS_INVALID_ARGUMENT;
         }
-        for (i = 0; i < count; ++i) if (masks[i] >> label_count) return XXWIDGETS_INVALID_ARGUMENT;
+        for (i = 0; i < count; ++i)
+            if (masks[i] >> label_count) return XXWIDGETS_INVALID_ARGUMENT;
         if (count) {
             bits = (unsigned int *)malloc(count * sizeof(*bits));
             if (!bits) return XXWIDGETS_OUT_OF_MEMORY;
@@ -1280,8 +1289,7 @@ size_t xxwidgets_treeview_node_at_row(const xxwidgets_widget *widget, size_t row
 }
 size_t xxwidgets_treeview_row_of_node(const xxwidgets_widget *widget, size_t index)
 {
-    return tree_widget(widget) && index < xxwidgets_treeview_count(widget) && index < widget->tree->projection.nodes
-        ? widget->tree->projection.row_of[index] : SIZE_MAX;
+    return tree_widget(widget) && index < xxwidgets_treeview_count(widget) && index < widget->tree->projection.nodes ? widget->tree->projection.row_of[index] : SIZE_MAX;
 }
 size_t xxwidgets_treeview_depth(const xxwidgets_widget *widget, size_t index)
 {

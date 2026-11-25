@@ -81,46 +81,19 @@ static const char *const color_names[XXWIDGETS_DISASM_COLOR_COUNT] = {
     XXW_N_("ARM instruction Nop"),
 };
 static const uint32_t default_foreground[XXWIDGETS_DISASM_COLOR_COUNT] = {
-    UINT32_MAX,
-    0xFF0000,
-    0x960000,
-    0x007800,
-    0x0000A0,
-    0x006E8C,
-    UINT32_MAX,
-    0x960000,
-    0xAA5500,
-    0x008080,
-    0x808000,
-    0xC71585,
-    0x800080,
-    0x556B2F,
-    0x2E8B57,
-    0x2E8B57,
-    0x2E8B57,
-    0x8C00B0,
-    0xB22222,
-    0x969696,
-    0x2864B4,
-    0x2864B4,
-    0x1E8C1E,
-    0x0000CD,
-    0x787878,
-    0x8C00B0,
-    0x960000,
-    0xAA5500,
-    0x0000CD,
-    0x8C00B0,
-    0xB22222,
-    0x2864B4,
-    0x2864B4,
-    0x969696,
+    UINT32_MAX, 0xFF0000, 0x960000, 0x007800, 0x0000A0, 0x006E8C, UINT32_MAX, 0x960000, 0xAA5500, 0x008080, 0x808000, 0xC71585,
+    0x800080,   0x556B2F, 0x2E8B57, 0x2E8B57, 0x2E8B57, 0x8C00B0, 0xB22222,   0x969696, 0x2864B4, 0x2864B4, 0x1E8C1E, 0x0000CD,
+    0x787878,   0x8C00B0, 0x960000, 0xAA5500, 0x0000CD, 0x8C00B0, 0xB22222,   0x2864B4, 0x2864B4, 0x969696,
 };
 
 const char *xxwidgets_disasm_color_key(xxwidgets_disasm_color_id color)
-{ return color >= 0 && color < XXWIDGETS_DISASM_COLOR_COUNT ? color_keys[color] : NULL; }
+{
+    return color >= 0 && color < XXWIDGETS_DISASM_COLOR_COUNT ? color_keys[color] : NULL;
+}
 const char *xxwidgets_disasm_color_name(xxwidgets_disasm_color_id color)
-{ return color >= 0 && color < XXWIDGETS_DISASM_COLOR_COUNT ? color_names[color] : NULL; }
+{
+    return color >= 0 && color < XXWIDGETS_DISASM_COLOR_COUNT ? color_names[color] : NULL;
+}
 
 xxwidgets_status xxwidgets_disasm_options_init(xxwidgets_disasm_options *options)
 {
@@ -139,11 +112,11 @@ xxwidgets_status xxwidgets_disasm_options_validate(const xxwidgets_disasm_option
 {
     if (!options || options->syntax < XXWIDGETS_DISASM_SYNTAX_INTEL || options->syntax > XXWIDGETS_DISASM_SYNTAX_ATT ||
         (options->uppercase != 0 && options->uppercase != 1) || (options->location_colon != 0 && options->location_colon != 1) ||
-        (options->highlight != 0 && options->highlight != 1) || !xxwidgets_font_valid(&options->font)) return XXWIDGETS_INVALID_ARGUMENT;
+        (options->highlight != 0 && options->highlight != 1) || !xxwidgets_font_valid(&options->font))
+        return XXWIDGETS_INVALID_ARGUMENT;
     for (size_t i = 0; i < XXWIDGETS_DISASM_COLOR_COUNT; ++i) {
         const xxwidgets_disasm_color *c = options->colors + i;
-        if ((c->foreground > 0xFFFFFF && c->foreground != UINT32_MAX) ||
-            (c->background > 0xFFFFFF && c->background != UINT32_MAX)) return XXWIDGETS_INVALID_ARGUMENT;
+        if ((c->foreground > 0xFFFFFF && c->foreground != UINT32_MAX) || (c->background > 0xFFFFFF && c->background != UINT32_MAX)) return XXWIDGETS_INVALID_ARGUMENT;
     }
     return XXWIDGETS_OK;
 }
@@ -198,8 +171,9 @@ static int register_class(const char *word, int arm)
     if (arm) {
         if (one_of(word, "sp wsp r13")) return XXWIDGETS_DISASM_COLOR_ARM_REGS_STACK;
         if (one_of(word, "lr pc ip fp xzr wzr cpsr spsr nzcv fpsr fpcr")) return XXWIDGETS_DISASM_COLOR_REGS;
-        if ((word[0] == 'r' || word[0] == 'x' || word[0] == 'w' || word[0] == 'v' || word[0] == 'q' || word[0] == 'd' || word[0] == 's') &&
-            word[1] >= '0' && word[1] <= '9') return XXWIDGETS_DISASM_COLOR_ARM_REGS_GENERAL;
+        if ((word[0] == 'r' || word[0] == 'x' || word[0] == 'w' || word[0] == 'v' || word[0] == 'q' || word[0] == 'd' || word[0] == 's') && word[1] >= '0' &&
+            word[1] <= '9')
+            return XXWIDGETS_DISASM_COLOR_ARM_REGS_GENERAL;
         return -1;
     }
     if (one_of(word, "sp esp rsp bp ebp rbp spl bpl")) return XXWIDGETS_DISASM_COLOR_X86_REGS_STACK;
@@ -212,7 +186,8 @@ static int register_class(const char *word, int arm)
     if (!strncmp(word, "ymm", 3)) return XXWIDGETS_DISASM_COLOR_X86_REGS_YMM;
     if (!strncmp(word, "zmm", 3)) return XXWIDGETS_DISASM_COLOR_X86_REGS_ZMM;
     if (one_of(word, "al ah ax eax rax bl bh bx ebx rbx cl ch cx ecx rcx dl dh dx edx rdx si esi rsi sil di edi rdi dil") ||
-        (word[0] == 'r' && isdigit((unsigned char)word[1]))) return XXWIDGETS_DISASM_COLOR_X86_REGS_GENERAL;
+        (word[0] == 'r' && isdigit((unsigned char)word[1])))
+        return XXWIDGETS_DISASM_COLOR_X86_REGS_GENERAL;
     return -1;
 }
 static int mnemonic_class(const char *word, int arm)
@@ -223,7 +198,8 @@ static int mnemonic_class(const char *word, int arm)
         if (!strcmp(word, "push")) return XXWIDGETS_DISASM_COLOR_ARM_OPCODE_PUSH;
         if (!strcmp(word, "pop")) return XXWIDGETS_DISASM_COLOR_ARM_OPCODE_POP;
         if (!strcmp(word, "nop")) return XXWIDGETS_DISASM_COLOR_ARM_OPCODE_NOP;
-        if (!strncmp(word, "b.", 2) || one_of(word, "b br bx beq bne bcs bcc bhs blo bmi bpl bvs bvc bhi bls bge blt bgt ble bal bnv cbz cbnz tbz tbnz")) return XXWIDGETS_DISASM_COLOR_ARM_OPCODE_BRANCH;
+        if (!strncmp(word, "b.", 2) || one_of(word, "b br bx beq bne bcs bcc bhs blo bmi bpl bvs bvc bhi bls bge blt bgt ble bal bnv cbz cbnz tbz tbnz"))
+            return XXWIDGETS_DISASM_COLOR_ARM_OPCODE_BRANCH;
     } else {
         if (!strncmp(word, "call", 4)) return XXWIDGETS_DISASM_COLOR_X86_OPCODE_CALL;
         if (!strncmp(word, "ret", 3) || !strncmp(word, "iret", 4)) return XXWIDGETS_DISASM_COLOR_X86_OPCODE_RET;
@@ -237,8 +213,7 @@ static int mnemonic_class(const char *word, int arm)
     }
     return XXWIDGETS_DISASM_COLOR_OPCODE;
 }
-size_t xxwidgets_disasm_spans(const xxwidgets_widget *widget, size_t row, size_t column, int selected,
-                             xxwidgets_disasm_span *spans, size_t capacity)
+size_t xxwidgets_disasm_spans(const xxwidgets_widget *widget, size_t row, size_t column, int selected, xxwidgets_disasm_span *spans, size_t capacity)
 {
     const xxwidgets_disasm_options *options;
     const char *text;
@@ -255,9 +230,11 @@ size_t xxwidgets_disasm_spans(const xxwidgets_widget *widget, size_t row, size_t
     if (instruction.flags & XXWIDGETS_DEBUGGER_CURRENT) row_background = options->colors[XXWIDGETS_DISASM_COLOR_CURRENTIP].background;
     if (selected && column != 0) return 0;
     if (column != 3) {
-        int color = column == 0 ? (selected ? XXWIDGETS_DISASM_COLOR_ARROWS_SELECTED : XXWIDGETS_DISASM_COLOR_ARROWS)
-                    : column == 2 ? XXWIDGETS_DISASM_COLOR_NUMBERS : column == 4 ? XXWIDGETS_DISASM_COLOR_REFS
-                    : (instruction.flags & XXWIDGETS_DEBUGGER_CURRENT) ? XXWIDGETS_DISASM_COLOR_CURRENTIP : -1;
+        int color = column == 0                                        ? (selected ? XXWIDGETS_DISASM_COLOR_ARROWS_SELECTED : XXWIDGETS_DISASM_COLOR_ARROWS)
+                    : column == 2                                      ? XXWIDGETS_DISASM_COLOR_NUMBERS
+                    : column == 4                                      ? XXWIDGETS_DISASM_COLOR_REFS
+                    : (instruction.flags & XXWIDGETS_DEBUGGER_CURRENT) ? XXWIDGETS_DISASM_COLOR_CURRENTIP
+                                                                       : -1;
         xxwidgets_disasm_color c = color >= 0 ? options->colors[color] : (xxwidgets_disasm_color){UINT32_MAX, UINT32_MAX};
         spans[0] = (xxwidgets_disasm_span){0, strlen(text), c.foreground, c.background == UINT32_MAX ? row_background : c.background};
         return 1;
@@ -274,15 +251,17 @@ size_t xxwidgets_disasm_spans(const xxwidgets_widget *widget, size_t row, size_t
             }
             word[n] = 0;
             const char *plain = word + (word[0] == '%' || word[0] == '$' || word[0] == '#');
-            if (mnemonic) { color = mnemonic_class(plain, widget->disasm_arm); mnemonic = one_of(plain, "lock rep repe repz repne repnz"); }
-            else if ((color = register_class(plain, widget->disasm_arm)) >= 0) {}
-            else color = isdigit((unsigned char)*plain) || word[0] == '$' || word[0] == '#' ? XXWIDGETS_DISASM_COLOR_NUMBERS : XXWIDGETS_DISASM_COLOR_REFS;
+            if (mnemonic) {
+                color = mnemonic_class(plain, widget->disasm_arm);
+                mnemonic = one_of(plain, "lock rep repe repz repne repnz");
+            } else if ((color = register_class(plain, widget->disasm_arm)) >= 0) {
+            } else color = isdigit((unsigned char)*plain) || word[0] == '$' || word[0] == '#' ? XXWIDGETS_DISASM_COLOR_NUMBERS : XXWIDGETS_DISASM_COLOR_REFS;
         } else {
             at++;
             color = XXWIDGETS_DISASM_COLOR_REFS;
             if (text[start] == ' ' || text[start] == '\t' || text[start] == ',') color = -1;
         }
-        xxwidgets_disasm_color c = color >= 0 ? options->colors[color] : (xxwidgets_disasm_color){UINT32_MAX,UINT32_MAX};
+        xxwidgets_disasm_color c = color >= 0 ? options->colors[color] : (xxwidgets_disasm_color){UINT32_MAX, UINT32_MAX};
         spans[count++] = (xxwidgets_disasm_span){start, at - start, c.foreground, c.background == UINT32_MAX ? row_background : c.background};
     }
     return count;

@@ -37,10 +37,9 @@ static int process_memory_windows_identity(HANDLE process, uint64_t start)
 #ifndef _WIN64
 static int process_memory_windows_pointer_width(HANDLE process)
 {
-    typedef BOOL (WINAPI *process_memory_is_wow64_process2_fn)(HANDLE, USHORT *, USHORT *);
+    typedef BOOL(WINAPI * process_memory_is_wow64_process2_fn)(HANDLE, USHORT *, USHORT *);
     HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
-    process_memory_is_wow64_process2_fn query = kernel ?
-        (process_memory_is_wow64_process2_fn)(void (*)(void))GetProcAddress(kernel, "IsWow64Process2") : NULL;
+    process_memory_is_wow64_process2_fn query = kernel ? (process_memory_is_wow64_process2_fn)(void (*)(void))GetProcAddress(kernel, "IsWow64Process2") : NULL;
     if (query) {
         USHORT machine = 0, native_machine = 0;
         if (!query(process, &machine, &native_machine)) return 0;
@@ -53,8 +52,8 @@ static int process_memory_windows_pointer_width(HANDLE process)
         BOOL wow64 = FALSE;
         GetNativeSystemInfo(&system);
         /* PROCESSOR_ARCHITECTURE_ARM64 is 12, including with older SDKs. */
-        if (system.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ||
-            system.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_IA64 || system.wProcessorArchitecture == 12U)
+        if (system.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 || system.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_IA64 ||
+            system.wProcessorArchitecture == 12U)
             return IsWow64Process(process, &wow64) && wow64;
         return 1;
     }
@@ -77,13 +76,13 @@ static int process_memory_windows_readable(const MEMORY_BASIC_INFORMATION *regio
 
 /* Start at the requested point within a readable region, so a main module's
  * header remains the first byte even if the query groups preceding pages. */
-static int process_memory_windows_region(const MEMORY_BASIC_INFORMATION *region, uint64_t address,
-    uint64_t *base, uint64_t *size)
+static int process_memory_windows_region(const MEMORY_BASIC_INFORMATION *region, uint64_t address, uint64_t *base, uint64_t *size)
 {
     uint64_t start = (uint64_t)(uintptr_t)region->BaseAddress;
     uint64_t length = (uint64_t)region->RegionSize;
-    if (!process_memory_windows_readable(region) || !length || address < start || address - start >= length ||
-        start > (uint64_t)INT64_MAX || length > (uint64_t)INT64_MAX - start) return 0;
+    if (!process_memory_windows_readable(region) || !length || address < start || address - start >= length || start > (uint64_t)INT64_MAX ||
+        length > (uint64_t)INT64_MAX - start)
+        return 0;
     *base = address;
     *size = length - (address - start);
     return 1;
@@ -116,7 +115,8 @@ static int process_memory_windows_initial_region(HANDLE process, DWORD pid, uint
     SYSTEM_INFO system;
     uint64_t address = process_memory_windows_main_module(pid), maximum;
     if (address && VirtualQueryEx(process, (LPCVOID)(uintptr_t)address, &region, sizeof(region)) == sizeof(region) &&
-        process_memory_windows_region(&region, address, base, size)) return 1;
+        process_memory_windows_region(&region, address, base, size))
+        return 1;
     /* A module snapshot can be unavailable for a process that still permits
      * memory queries. Find its first committed, readable, non-guard range. */
     GetSystemInfo(&system);

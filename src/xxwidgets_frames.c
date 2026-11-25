@@ -63,9 +63,8 @@ xxwidgets_status xxwidgets_app_get_metrics(const xxwidgets_app *app, xxwidgets_m
         if (status != XXWIDGETS_OK) return status;
         /* A backend reporting nonsense is treated as a cell backend rather
          * than dividing by zero in every layout. */
-        if (native.cell_width > 0 && native.cell_height > 0 && native.control_height > 0 && native.label_height > 0 &&
-            native.spacing >= 0 && native.margin >= 0 && native.small_icon >= 0 && native.frame_inset >= 0 && native.panel_inset >= 0 &&
-            native.caption_gap >= 0) {
+        if (native.cell_width > 0 && native.cell_height > 0 && native.control_height > 0 && native.label_height > 0 && native.spacing >= 0 && native.margin >= 0 &&
+            native.small_icon >= 0 && native.frame_inset >= 0 && native.panel_inset >= 0 && native.caption_gap >= 0) {
             native.unit_is_cell = native.unit_is_cell != 0;
             *metrics = native;
             return XXWIDGETS_OK;
@@ -209,8 +208,8 @@ xxwidgets_status xxwidgets_widget_set_frame(xxwidgets_widget *widget, xxwidgets_
     if (!widget) return XXWIDGETS_INVALID_ARGUMENT;
     window = widget->kind == XXWIDGETS_WINDOW;
     if (window) frame.x = frame.y = 0;
-    if (frame.x < 0 || frame.y < 0 || frame.x > FRAME_LIMIT || frame.y > FRAME_LIMIT || frame.width < 1 || frame.height < 1 ||
-        frame.width > FRAME_LIMIT || frame.height > FRAME_LIMIT)
+    if (frame.x < 0 || frame.y < 0 || frame.x > FRAME_LIMIT || frame.y > FRAME_LIMIT || frame.width < 1 || frame.height < 1 || frame.width > FRAME_LIMIT ||
+        frame.height > FRAME_LIMIT)
         return XXWIDGETS_INVALID_ARGUMENT;
     previous_frame = widget->frame;
     previous_rect = widget->rect;
@@ -309,8 +308,7 @@ xxwidgets_status xxwidgets_window_set_minimum_frame(xxwidgets_widget *window, in
     xxwidgets_metrics metrics;
     xxwidgets_status status;
     int previous_width, previous_height, columns, rows;
-    if (!window || window->kind != XXWIDGETS_WINDOW || width < 0 || height < 0 || width > FRAME_LIMIT || height > FRAME_LIMIT)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!window || window->kind != XXWIDGETS_WINDOW || width < 0 || height < 0 || width > FRAME_LIMIT || height > FRAME_LIMIT) return XXWIDGETS_INVALID_ARGUMENT;
     previous_width = window->min_frame_width;
     previous_height = window->min_frame_height;
     window->min_frame_width = width;
@@ -365,8 +363,7 @@ static xxwidgets_status apply_icon(xxwidgets_widget *button)
     return status;
 }
 
-xxwidgets_status xxwidgets_button_set_icon(xxwidgets_widget *button, const void *rgba, unsigned int width, unsigned int height, size_t stride,
-                                         unsigned int flags)
+xxwidgets_status xxwidgets_button_set_icon(xxwidgets_widget *button, const void *rgba, unsigned int width, unsigned int height, size_t stride, unsigned int flags)
 {
     unsigned char *copy = NULL, *previous;
     unsigned int previous_width, previous_height, previous_flags, row;
@@ -379,8 +376,7 @@ xxwidgets_status xxwidgets_button_set_icon(xxwidgets_widget *button, const void 
         if (!width || !height || width > ICON_LIMIT || height > ICON_LIMIT || stride < (size_t)width * 4u) return XXWIDGETS_INVALID_ARGUMENT;
         copy = (unsigned char *)malloc((size_t)width * height * 4u);
         if (!copy) return XXWIDGETS_OUT_OF_MEMORY;
-        for (row = 0; row < height; ++row)
-            memcpy(copy + (size_t)row * width * 4u, (const unsigned char *)rgba + (size_t)row * stride, (size_t)width * 4u);
+        for (row = 0; row < height; ++row) memcpy(copy + (size_t)row * width * 4u, (const unsigned char *)rgba + (size_t)row * stride, (size_t)width * 4u);
     }
     previous = button->icon_rgba;
     previous_width = button->icon_width;

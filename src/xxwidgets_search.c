@@ -15,7 +15,10 @@ struct xxwidgets_search_widget {
     xxwidgets_widget *controls[XXWIDGETS_SEARCH_CONTROL_COUNT];
 };
 
-static int boolean(int value) { return value == 0 || value == 1; }
+static int boolean(int value)
+{
+    return value == 0 || value == 1;
+}
 
 xxwidgets_status xxwidgets_search_options_init(xxwidgets_search_options *options)
 {
@@ -30,21 +33,17 @@ xxwidgets_status xxwidgets_search_options_init(xxwidgets_search_options *options
 
 xxwidgets_status xxwidgets_search_options_validate(const xxwidgets_search_options *options)
 {
-    if (!options || !memchr(options->pattern, 0, sizeof(options->pattern)) ||
-        !memchr(options->encoding, 0, sizeof(options->encoding)) || !options->encoding[0] ||
-        !xxwidgets_valid_utf8(options->pattern) || !xxwidgets_valid_utf8(options->encoding) ||
-        options->mode < XXWIDGETS_SEARCH_TEXT || options->mode > XXWIDGETS_SEARCH_REGEX ||
-        !boolean(options->backward) || !boolean(options->wrap) || !boolean(options->selection_only) ||
-        !boolean(options->case_sensitive) || !options->alignment ||
-        (options->length != UINT64_MAX && options->length > UINT64_MAX - options->start))
+    if (!options || !memchr(options->pattern, 0, sizeof(options->pattern)) || !memchr(options->encoding, 0, sizeof(options->encoding)) || !options->encoding[0] ||
+        !xxwidgets_valid_utf8(options->pattern) || !xxwidgets_valid_utf8(options->encoding) || options->mode < XXWIDGETS_SEARCH_TEXT ||
+        options->mode > XXWIDGETS_SEARCH_REGEX || !boolean(options->backward) || !boolean(options->wrap) || !boolean(options->selection_only) ||
+        !boolean(options->case_sensitive) || !options->alignment || (options->length != UINT64_MAX && options->length > UINT64_MAX - options->start))
         return XXWIDGETS_INVALID_ARGUMENT;
     return XXWIDGETS_OK;
 }
 
 static int valid_bounds(xxwidgets_rect b)
 {
-    return b.x >= 0 && b.y >= 0 && b.width >= 70 && b.height >= 15 &&
-        b.x <= INT_MAX - b.width && b.y <= INT_MAX - b.height;
+    return b.x >= 0 && b.y >= 0 && b.width >= 70 && b.height >= 15 && b.x <= INT_MAX - b.width && b.y <= INT_MAX - b.height;
 }
 
 static void rectangles(xxwidgets_rect b, xxwidgets_rect r[XXWIDGETS_SEARCH_CONTROL_COUNT])
@@ -81,12 +80,19 @@ static int numeric(const char *text, uint64_t *value, int allow_blank)
     const unsigned char *p = (const unsigned char *)text;
     int digits = 0;
     while (*p == ' ' || *p == '\t') ++p;
-    if (!*p && allow_blank) { *value = UINT64_MAX; return 1; }
-    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) { base = 16; p += 2; }
+    if (!*p && allow_blank) {
+        *value = UINT64_MAX;
+        return 1;
+    }
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        base = 16;
+        p += 2;
+    }
     for (; *p && *p != ' ' && *p != '\t'; ++p) {
-        unsigned int digit = *p >= '0' && *p <= '9' ? (unsigned int)(*p - '0') :
-            *p >= 'a' && *p <= 'f' ? (unsigned int)(*p - 'a' + 10) :
-            *p >= 'A' && *p <= 'F' ? (unsigned int)(*p - 'A' + 10) : 16;
+        unsigned int digit = *p >= '0' && *p <= '9'   ? (unsigned int)(*p - '0')
+                             : *p >= 'a' && *p <= 'f' ? (unsigned int)(*p - 'a' + 10)
+                             : *p >= 'A' && *p <= 'F' ? (unsigned int)(*p - 'A' + 10)
+                                                      : 16;
         if (digit >= base || result > (UINT64_MAX - digit) / base) return 0;
         result = result * base + digit;
         digits = 1;
@@ -107,7 +113,8 @@ static xxwidgets_status read_options(const xxwidgets_search_widget *widget, xxwi
     uint64_t *numbers[] = {&selected.start, &selected.length, &selected.alignment};
     int *flags[] = {&selected.backward, &selected.wrap, &selected.selection_only, &selected.case_sensitive};
     static const xxwidgets_search_control_id number_ids[] = {XXWIDGETS_SEARCH_START, XXWIDGETS_SEARCH_LENGTH, XXWIDGETS_SEARCH_ALIGNMENT};
-    static const xxwidgets_search_control_id flag_ids[] = {XXWIDGETS_SEARCH_BACKWARD, XXWIDGETS_SEARCH_WRAP, XXWIDGETS_SEARCH_SELECTION_ONLY, XXWIDGETS_SEARCH_CASE_SENSITIVE};
+    static const xxwidgets_search_control_id flag_ids[] = {XXWIDGETS_SEARCH_BACKWARD, XXWIDGETS_SEARCH_WRAP, XXWIDGETS_SEARCH_SELECTION_ONLY,
+                                                           XXWIDGETS_SEARCH_CASE_SENSITIVE};
     if (error) *error = XXW_N_("Check the search settings.");
     if (!widget || !options) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_widget_get_text(widget->controls[XXWIDGETS_SEARCH_PATTERN], selected.pattern, sizeof(selected.pattern), NULL);
@@ -154,8 +161,10 @@ static void recover(xxwidgets_widget *control)
 
 xxwidgets_status xxwidgets_search_widget_set(xxwidgets_search_widget *widget, const xxwidgets_search_options *options)
 {
-    static const xxwidgets_search_control_id text_ids[] = {XXWIDGETS_SEARCH_PATTERN, XXWIDGETS_SEARCH_ENCODING, XXWIDGETS_SEARCH_START, XXWIDGETS_SEARCH_LENGTH, XXWIDGETS_SEARCH_ALIGNMENT};
-    static const xxwidgets_search_control_id value_ids[] = {XXWIDGETS_SEARCH_MODE, XXWIDGETS_SEARCH_BACKWARD, XXWIDGETS_SEARCH_WRAP, XXWIDGETS_SEARCH_SELECTION_ONLY, XXWIDGETS_SEARCH_CASE_SENSITIVE};
+    static const xxwidgets_search_control_id text_ids[] = {XXWIDGETS_SEARCH_PATTERN, XXWIDGETS_SEARCH_ENCODING, XXWIDGETS_SEARCH_START, XXWIDGETS_SEARCH_LENGTH,
+                                                           XXWIDGETS_SEARCH_ALIGNMENT};
+    static const xxwidgets_search_control_id value_ids[] = {XXWIDGETS_SEARCH_MODE, XXWIDGETS_SEARCH_BACKWARD, XXWIDGETS_SEARCH_WRAP, XXWIDGETS_SEARCH_SELECTION_ONLY,
+                                                            XXWIDGETS_SEARCH_CASE_SENSITIVE};
     char *previous_text[5] = {0};
     int previous_value[5], values[5];
     char start[32], length[32], alignment[32];
@@ -167,13 +176,22 @@ xxwidgets_status xxwidgets_search_widget_set(xxwidgets_search_widget *widget, co
     if (options->length == UINT64_MAX) length[0] = 0;
     else snprintf(length, sizeof(length), "0x%" PRIX64, options->length);
     snprintf(alignment, sizeof(alignment), "%" PRIu64, options->alignment);
-    texts[0] = options->pattern; texts[1] = options->encoding;
-    texts[2] = start; texts[3] = length; texts[4] = alignment;
-    values[0] = options->mode; values[1] = options->backward; values[2] = options->wrap;
-    values[3] = options->selection_only; values[4] = options->case_sensitive;
+    texts[0] = options->pattern;
+    texts[1] = options->encoding;
+    texts[2] = start;
+    texts[3] = length;
+    texts[4] = alignment;
+    values[0] = options->mode;
+    values[1] = options->backward;
+    values[2] = options->wrap;
+    values[3] = options->selection_only;
+    values[4] = options->case_sensitive;
     for (i = 0; i < 5; ++i) {
         previous_text[i] = xxwidgets_strdup(widget->controls[text_ids[i]]->text);
-        if (!previous_text[i]) { status = XXWIDGETS_OUT_OF_MEMORY; goto finish; }
+        if (!previous_text[i]) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto finish;
+        }
         previous_value[i] = widget->controls[value_ids[i]]->value;
     }
     for (i = 0; i < 5; ++i) {
@@ -187,9 +205,12 @@ xxwidgets_status xxwidgets_search_widget_set(xxwidgets_search_widget *widget, co
 rollback:
     for (i = 0; i < 5; ++i) {
         xxwidgets_widget *text = widget->controls[text_ids[i]], *value = widget->controls[value_ids[i]];
-        free(text->text); text->text = previous_text[i]; previous_text[i] = NULL;
+        free(text->text);
+        text->text = previous_text[i];
+        previous_text[i] = NULL;
         value->value = previous_value[i];
-        recover(text); recover(value);
+        recover(text);
+        recover(value);
     }
 finish:
     for (i = 0; i < 5; ++i) free(previous_text[i]);
@@ -198,14 +219,27 @@ finish:
 
 xxwidgets_status xxwidgets_search_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_search_widget **out_widget)
 {
-    static const char *const names[XXWIDGETS_SEARCH_CONTROL_COUNT] = {
-        "", "", "", XXW_N_("Search backward"), XXW_N_("Wrap at source boundaries"), XXW_N_("Selection only"), XXW_N_("Case sensitive"), "", "", "",
-        XXW_N_("Search pattern"), XXW_N_("Search mode"), XXW_N_("Encoding"), XXW_N_("Start offset"), XXW_N_("Length"), XXW_N_("Alignment"),
-        "Number: u32le:123 or f64be:1.5. Regex: . [] () | ? {n,m}; no unbounded repeats."};
-    static const xxwidgets_kind kinds[XXWIDGETS_SEARCH_CONTROL_COUNT] = {
-        XXWIDGETS_EDIT, XXWIDGETS_COMBOBOX, XXWIDGETS_EDIT, XXWIDGETS_CHECKBOX, XXWIDGETS_CHECKBOX,
-        XXWIDGETS_CHECKBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_EDIT, XXWIDGETS_EDIT, XXWIDGETS_EDIT,
-        XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_LABEL};
+    static const char *const names[XXWIDGETS_SEARCH_CONTROL_COUNT] = {"",
+                                                                      "",
+                                                                      "",
+                                                                      XXW_N_("Search backward"),
+                                                                      XXW_N_("Wrap at source boundaries"),
+                                                                      XXW_N_("Selection only"),
+                                                                      XXW_N_("Case sensitive"),
+                                                                      "",
+                                                                      "",
+                                                                      "",
+                                                                      XXW_N_("Search pattern"),
+                                                                      XXW_N_("Search mode"),
+                                                                      XXW_N_("Encoding"),
+                                                                      XXW_N_("Start offset"),
+                                                                      XXW_N_("Length"),
+                                                                      XXW_N_("Alignment"),
+                                                                      "Number: u32le:123 or f64be:1.5. Regex: . [] () | ? {n,m}; no unbounded repeats."};
+    static const xxwidgets_kind kinds[XXWIDGETS_SEARCH_CONTROL_COUNT] = {XXWIDGETS_EDIT,     XXWIDGETS_COMBOBOX, XXWIDGETS_EDIT,  XXWIDGETS_CHECKBOX, XXWIDGETS_CHECKBOX,
+                                                                         XXWIDGETS_CHECKBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_EDIT,  XXWIDGETS_EDIT,     XXWIDGETS_EDIT,
+                                                                         XXWIDGETS_LABEL,    XXWIDGETS_LABEL,    XXWIDGETS_LABEL, XXWIDGETS_LABEL,    XXWIDGETS_LABEL,
+                                                                         XXWIDGETS_LABEL,    XXWIDGETS_LABEL};
     static const wchar_t *const modes[] = {L"Text", L"Hex bytes", L"Signature", L"Number", L"Bounded regex"};
     xxwidgets_rect rects[XXWIDGETS_SEARCH_CONTROL_COUNT];
     xxwidgets_search_options defaults;
@@ -227,9 +261,13 @@ xxwidgets_status xxwidgets_search_widget_create(xxwidgets_widget *owner, xxwidge
         if (status != XXWIDGETS_OK) goto failed;
     }
     for (i = 0; i < 5; ++i) {
-        labels[i].data = (wchar_t *)modes[i]; labels[i].length = wcslen(modes[i]);
-        labels[i].capacity = labels[i].length + 1; labels[i].is_view = true;
-        records[i].meta_string = &labels[i]; records[i].var.type = XX_VAR_TYPE_UINT64; records[i].var.val.u64 = i;
+        labels[i].data = (wchar_t *)modes[i];
+        labels[i].length = wcslen(modes[i]);
+        labels[i].capacity = labels[i].length + 1;
+        labels[i].is_view = true;
+        records[i].meta_string = &labels[i];
+        records[i].var.type = XX_VAR_TYPE_UINT64;
+        records[i].var.val.u64 = i;
     }
     status = xxwidgets_combobox_set_records(widget->controls[XXWIDGETS_SEARCH_MODE], records, 5);
     if (status != XXWIDGETS_OK) goto failed;
@@ -270,7 +308,10 @@ xxwidgets_status xxwidgets_search_widget_set_rect(xxwidgets_search_widget *widge
         xxwidgets_status status = xxwidgets_widget_set_rect(widget->controls[i], rects[i]);
         if (status != XXWIDGETS_OK) {
             size_t j;
-            for (j = 0; j < i; ++j) { widget->controls[j]->rect = previous[j]; recover(widget->controls[j]); }
+            for (j = 0; j < i; ++j) {
+                widget->controls[j]->rect = previous[j];
+                recover(widget->controls[j]);
+            }
             return status;
         }
     }
@@ -295,8 +336,7 @@ static void search_event(xxwidgets_app *app, const xxwidgets_event *event, void 
     }
 }
 
-xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *title,
-    xxwidgets_search_options *options, xxwidgets_search_action *action)
+xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_search_options *options, xxwidgets_search_action *action)
 {
     xxwidgets_search_widget *form = NULL;
     xxwidgets_widget *focus = NULL, *control, *error = NULL, *previous_default;
@@ -309,19 +349,23 @@ xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *ti
     xxwidgets_status status, cleanup;
     int enabled, disabled = 0, attached = 0;
     if (action) *action = XXWIDGETS_SEARCH_CANCEL;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !action ||
-        xxwidgets_search_options_validate(options) != XXWIDGETS_OK || owner->rect.x > INT_MAX - 74 || owner->rect.y > INT_MAX - 22)
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !action || xxwidgets_search_options_validate(options) != XXWIDGETS_OK ||
+        owner->rect.x > INT_MAX - 74 || owner->rect.y > INT_MAX - 22)
         return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
-    previous_event = app->on_event; previous_user = app->user_data; previous_default = app->modal_default;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    previous_default = app->modal_default;
     enabled = owner->enabled;
     for (control = app->widgets; control; control = control->next)
         if (control->parent == owner && xxwidgets_focusable(control) && (!focus || xxwidgets_widget_has_focus(control) == 1)) focus = control;
-    app->on_event = search_event; app->user_data = &state;
+    app->on_event = search_event;
+    app->user_data = &state;
     status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + (owner->rect.width > 74 ? (owner->rect.width - 74) / 2 : 0),
-            owner->rect.y + (owner->rect.height > 22 ? (owner->rect.height - 22) / 2 : 0), 74, 22}, &state.window);
+                                     (xxwidgets_rect){owner->rect.x + (owner->rect.width > 74 ? (owner->rect.width - 74) / 2 : 0),
+                                                      owner->rect.y + (owner->rect.height > 22 ? (owner->rect.height - 22) / 2 : 0), 74, 22},
+                                     &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
     status = xxwidgets_search_widget_create(state.window, (xxwidgets_rect){2, 1, 70, 15}, &form);
@@ -356,21 +400,41 @@ xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *ti
         if (status == XXWIDGETS_INVALID_ARGUMENT || status == XXWIDGETS_BUFFER_TOO_SMALL) {
             status = xxwidgets_widget_set_text(error, XXW_TR(app, message ? message : XXW_N_("Check the search settings.")));
             state.pending = XXWIDGETS_SEARCH_CANCEL;
-        } else if (status == XXWIDGETS_OK) { accepted = state.pending; state.done = 1; }
+        } else if (status == XXWIDGETS_OK) {
+            accepted = state.pending;
+            state.done = 1;
+        }
     }
     if (app->quit) accepted = XXWIDGETS_SEARCH_CANCEL;
 finish:
     if (disabled) {
         cleanup = xxwidgets_widget_set_enabled(owner, enabled);
-        if (cleanup != XXWIDGETS_OK) { owner->enabled = enabled; recover(owner); }
+        if (cleanup != XXWIDGETS_OK) {
+            owner->enabled = enabled;
+            recover(owner);
+        }
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    if (attached) { cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
-    if (form) { cleanup = xxwidgets_search_widget_destroy(form); if (status == XXWIDGETS_OK) status = cleanup; }
-    if (state.window) { cleanup = xxwidgets_widget_destroy(state.window); if (status == XXWIDGETS_OK) status = cleanup; }
-    app->modal_window = NULL; app->modal_default = previous_default;
-    app->on_event = previous_event; app->user_data = previous_user;
+    if (attached) {
+        cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (form) {
+        cleanup = xxwidgets_search_widget_destroy(form);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    if (state.window) {
+        cleanup = xxwidgets_widget_destroy(state.window);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
+    app->modal_window = NULL;
+    app->modal_default = previous_default;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
     if (focus) xxwidgets_widget_focus(focus);
-    if (status == XXWIDGETS_OK && accepted != XXWIDGETS_SEARCH_CANCEL) { *options = selected; *action = accepted; }
+    if (status == XXWIDGETS_OK && accepted != XXWIDGETS_SEARCH_CANCEL) {
+        *options = selected;
+        *action = accepted;
+    }
     return status;
 }

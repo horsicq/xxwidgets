@@ -40,11 +40,11 @@ typedef struct xxwidgets_debugger_stack_entry {
  * Record getters borrow strings until replacement/clear/destruction. Empty
  * selection returns SIZE_MAX and a zeroed record. All calls use the UI thread.
  */
-#define XXWIDGETS_DECLARE_DEBUGGER_TABLE(name, type) \
+#define XXWIDGETS_DECLARE_DEBUGGER_TABLE(name, type)                                                                     \
     XXWIDGETS_API xxwidgets_status xxwidgets_debugger_##name##_set_rows(xxwidgets_widget *, const type *, size_t count); \
-    XXWIDGETS_API xxwidgets_status xxwidgets_debugger_##name##_clear(xxwidgets_widget *); \
-    XXWIDGETS_API size_t xxwidgets_debugger_##name##_count(const xxwidgets_widget *); \
-    XXWIDGETS_API xxwidgets_status xxwidgets_debugger_##name##_get_row(const xxwidgets_widget *, size_t index, type *); \
+    XXWIDGETS_API xxwidgets_status xxwidgets_debugger_##name##_clear(xxwidgets_widget *);                                \
+    XXWIDGETS_API size_t xxwidgets_debugger_##name##_count(const xxwidgets_widget *);                                    \
+    XXWIDGETS_API xxwidgets_status xxwidgets_debugger_##name##_get_row(const xxwidgets_widget *, size_t index, type *);  \
     XXWIDGETS_API xxwidgets_status xxwidgets_debugger_##name##_get_selection(xxwidgets_widget *, size_t *index, type *)
 XXWIDGETS_DECLARE_DEBUGGER_TABLE(disasm, xxwidgets_debugger_instruction);
 XXWIDGETS_DECLARE_DEBUGGER_TABLE(registers, xxwidgets_debugger_register);

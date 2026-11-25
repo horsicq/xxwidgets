@@ -68,8 +68,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_set_items(xxwidgets_da
 XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_clear(xxwidgets_data_struct_view *view);
 XXWIDGETS_API size_t xxwidgets_data_struct_view_count(const xxwidgets_data_struct_view *view);
 XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_select(xxwidgets_data_struct_view *view, size_t index);
-XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_get_selection(const xxwidgets_data_struct_view *view, size_t *index,
-                                                                        xxwidgets_data_struct_item *item);
+XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_get_selection(const xxwidgets_data_struct_view *view, size_t *index, xxwidgets_data_struct_item *item);
 
 #ifdef __cplusplus
 }

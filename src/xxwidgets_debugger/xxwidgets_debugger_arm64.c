@@ -5,9 +5,7 @@
 
 #include <stdio.h>
 
-xxwidgets_status xxwidgets_debugger_format_arm64(
-    const xxwidgets_debugger_arm64_state *state,
-    xxwidgets_debugger_register_rows *rows)
+xxwidgets_status xxwidgets_debugger_format_arm64(const xxwidgets_debugger_arm64_state *state, xxwidgets_debugger_register_rows *rows)
 {
     xxwidgets_status status;
     unsigned i;

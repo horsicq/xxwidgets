@@ -201,8 +201,7 @@ xxwidgets_status xxwidgets_side_panel_get_minimum_height(xxwidgets_side_panel *p
             else ++top;
         }
     /* Items H high, S apart, and at least S between the two groups. */
-    *height = 2 * metrics.panel_inset + (top + bottom) * metrics.control_height +
-              (top + bottom > 0 ? (top + bottom - 1) * metrics.spacing : 0);
+    *height = 2 * metrics.panel_inset + (top + bottom) * metrics.control_height + (top + bottom > 0 ? (top + bottom - 1) * metrics.spacing : 0);
     return XXWIDGETS_OK;
 }
 
@@ -286,8 +285,7 @@ xxwidgets_status xxwidgets_side_panel_set_visible(xxwidgets_side_panel *panel, i
     if (!panel || (visible != 0 && visible != 1)) return XXWIDGETS_INVALID_ARGUMENT;
     panel->visible = visible;
     if (panel->frame) status = xxwidgets_widget_set_visible(panel->frame, visible);
-    for (i = 0; status == XXWIDGETS_OK && i < panel->count; ++i)
-        status = xxwidgets_widget_set_visible(panel->items[i].widget, item_shown(panel, &panel->items[i]));
+    for (i = 0; status == XXWIDGETS_OK && i < panel->count; ++i) status = xxwidgets_widget_set_visible(panel->items[i].widget, item_shown(panel, &panel->items[i]));
     return status;
 }
 

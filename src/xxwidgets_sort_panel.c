@@ -90,13 +90,11 @@ xxwidgets_status xxwidgets_sort_settings_init(xxwidgets_sort_settings *settings)
     settings->use_custom_database = 1;
     settings->all_file_types = 1;
     settings->all_types = 1;
-    if (xxwidgets_sort_settings_set(&settings->directory, "") != XXWIDGETS_OK ||
-        xxwidgets_sort_settings_set(&settings->read_buffer_size, "") != XXWIDGETS_OK ||
+    if (xxwidgets_sort_settings_set(&settings->directory, "") != XXWIDGETS_OK || xxwidgets_sort_settings_set(&settings->read_buffer_size, "") != XXWIDGETS_OK ||
         xxwidgets_sort_settings_set(&settings->file_buffer_size, "") != XXWIDGETS_OK ||
         xxwidgets_sort_settings_set(&settings->main_database, "$data/db") != XXWIDGETS_OK ||
         xxwidgets_sort_settings_set(&settings->custom_database, "$data/db_custom") != XXWIDGETS_OK ||
-        xxwidgets_sort_settings_set(&settings->file_types, "") != XXWIDGETS_OK ||
-        xxwidgets_sort_settings_set(&settings->types, "") != XXWIDGETS_OK ||
+        xxwidgets_sort_settings_set(&settings->file_types, "") != XXWIDGETS_OK || xxwidgets_sort_settings_set(&settings->types, "") != XXWIDGETS_OK ||
         xxwidgets_sort_settings_set(&settings->result_directory, "collection") != XXWIDGETS_OK ||
         xxwidgets_sort_settings_set(&settings->catalog_format, "{ft}.{type}.{name}.{version}.{info}.txt") != XXWIDGETS_OK ||
         xxwidgets_sort_settings_set(&settings->copy_format, "{ft}/{type}/{name}({version})[{info}]/{md5}_{original_filename}") != XXWIDGETS_OK) {
@@ -389,8 +387,7 @@ static void update_enabled(xxwidgets_sort_panel *panel)
     xxwidgets_widget_set_enabled(panel->controls[XXWIDGETS_SORT_MOVE_TO_FIRST], copy);
 }
 
-xxwidgets_status xxwidgets_sort_panel_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidgets_sort_panel_config *config,
-                                             xxwidgets_sort_panel **out)
+xxwidgets_status xxwidgets_sort_panel_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidgets_sort_panel_config *config, xxwidgets_sort_panel **out)
 {
     static const struct {
         xxwidgets_sort_panel_control_id id;
@@ -453,13 +450,12 @@ xxwidgets_status xxwidgets_sort_panel_create(xxwidgets_widget *owner, xxwidgets_
     panel->help = sort_strdup(config && config->variables_help ? config->variables_help : k_default_help);
     if (!panel->help) status = XXWIDGETS_OUT_OF_MEMORY;
     for (i = 0; status == XXWIDGETS_OK && i < sizeof(k_controls) / sizeof(k_controls[0]); i++) {
-        status = xxwidgets_widget_create(app, owner, k_controls[i].kind, k_controls[i].text, (xxwidgets_rect){bounds.x, bounds.y, 10, 2},
-                                         &panel->controls[k_controls[i].id]);
+        status =
+            xxwidgets_widget_create(app, owner, k_controls[i].kind, k_controls[i].text, (xxwidgets_rect){bounds.x, bounds.y, 10, 2}, &panel->controls[k_controls[i].id]);
         if (status == XXWIDGETS_OK && k_controls[i].tooltip) xxwidgets_widget_set_tooltip(panel->controls[k_controls[i].id], k_controls[i].tooltip);
     }
     for (i = 0; status == XXWIDGETS_OK && i < FLAG_COUNT; i++) {
-        status = xxwidgets_widget_create(app, owner, XXWIDGETS_CHECKBOX, k_flags[i].label, (xxwidgets_rect){bounds.x, bounds.y, 10, 2},
-                                         &panel->controls[k_flags[i].id]);
+        status = xxwidgets_widget_create(app, owner, XXWIDGETS_CHECKBOX, k_flags[i].label, (xxwidgets_rect){bounds.x, bounds.y, 10, 2}, &panel->controls[k_flags[i].id]);
     }
     if (status != XXWIDGETS_OK) {
         xxwidgets_sort_panel_destroy(panel);
@@ -563,9 +559,8 @@ xxwidgets_status xxwidgets_sort_panel_get(const xxwidgets_sort_panel *panel, xxw
     settings->copy_format = text_of(panel, XXWIDGETS_SORT_COPY_FORMAT);
     settings->remove_source = checked(panel, XXWIDGETS_SORT_REMOVE_SOURCE);
     settings->move_to_first = checked(panel, XXWIDGETS_SORT_MOVE_TO_FIRST);
-    if (!settings->directory || !settings->read_buffer_size || !settings->file_buffer_size || !settings->main_database ||
-        !settings->custom_database || !settings->file_types || !settings->types || !settings->result_directory || !settings->catalog_format ||
-        !settings->copy_format) {
+    if (!settings->directory || !settings->read_buffer_size || !settings->file_buffer_size || !settings->main_database || !settings->custom_database ||
+        !settings->file_types || !settings->types || !settings->result_directory || !settings->catalog_format || !settings->copy_format) {
         xxwidgets_sort_settings_free(settings);
         return XXWIDGETS_OUT_OF_MEMORY;
     }
@@ -595,8 +590,7 @@ int xxwidgets_sort_panel_handle_event(xxwidgets_sort_panel *panel, const xxwidge
         else if (w == panel->controls[XXWIDGETS_SORT_TYPES_CHOOSE]) panel->pending = PENDING_TYPES;
         else if (w == panel->controls[XXWIDGETS_SORT_CATALOG_HELP] || w == panel->controls[XXWIDGETS_SORT_COPY_HELP]) panel->pending = PENDING_HELP;
         else if (w == panel->controls[XXWIDGETS_SORT_SCAN]) panel->pending = PENDING_SCAN;
-        else { /* a checkbox */
-            update_enabled(panel);
+        else { /* a checkbox */ update_enabled(panel);
             update_summaries(panel);
         }
     } else if (event->type == XXWIDGETS_EVENT_CHANGE) {
@@ -662,17 +656,17 @@ xxwidgets_status xxwidgets_sort_panel_process(xxwidgets_sort_panel *panel, int *
     pending = panel->pending;
     panel->pending = PENDING_NONE;
     switch (pending) {
-    case PENDING_BROWSE_DIRECTORY: return browse_folder(panel, XXWIDGETS_SORT_DIRECTORY, "Open Directory");
-    case PENDING_BROWSE_MAIN: return browse_folder(panel, XXWIDGETS_SORT_MAIN_DATABASE, "Open directory...");
-    case PENDING_BROWSE_CUSTOM: return browse_folder(panel, XXWIDGETS_SORT_CUSTOM_DATABASE, "Open directory...");
-    case PENDING_BROWSE_RESULT: return browse_folder(panel, XXWIDGETS_SORT_RESULT, "Open Directory");
-    case PENDING_FILE_TYPES: return pick(panel, &panel->file_types, "File types", "File type");
-    case PENDING_TYPES: return pick(panel, &panel->types, "Types", "Type");
-    case PENDING_HELP: return xxwidgets_text_dialog(panel->owner, "Format", panel->help);
-    case PENDING_SCAN:
-        if (scan) *scan = 1;
-        return XXWIDGETS_OK;
-    default: return XXWIDGETS_OK;
+        case PENDING_BROWSE_DIRECTORY: return browse_folder(panel, XXWIDGETS_SORT_DIRECTORY, "Open Directory");
+        case PENDING_BROWSE_MAIN: return browse_folder(panel, XXWIDGETS_SORT_MAIN_DATABASE, "Open directory...");
+        case PENDING_BROWSE_CUSTOM: return browse_folder(panel, XXWIDGETS_SORT_CUSTOM_DATABASE, "Open directory...");
+        case PENDING_BROWSE_RESULT: return browse_folder(panel, XXWIDGETS_SORT_RESULT, "Open Directory");
+        case PENDING_FILE_TYPES: return pick(panel, &panel->file_types, "File types", "File type");
+        case PENDING_TYPES: return pick(panel, &panel->types, "Types", "Type");
+        case PENDING_HELP: return xxwidgets_text_dialog(panel->owner, "Format", panel->help);
+        case PENDING_SCAN:
+            if (scan) *scan = 1;
+            return XXWIDGETS_OK;
+        default: return XXWIDGETS_OK;
     }
 }
 

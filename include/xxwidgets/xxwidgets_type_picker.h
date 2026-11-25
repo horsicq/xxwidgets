@@ -21,8 +21,8 @@ typedef struct xxwidgets_type_picker_item {
 /* checked: count bytes, 0/1, read as the initial state and written on OK.
  * defaults: count bytes or NULL (the Defaults button is then disabled).
  * accepted: 1 after OK, 0 after Cancel / Esc / close. */
-XXWIDGETS_API xxwidgets_status xxwidgets_type_picker_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_type_picker_item *items,
-                                                            size_t count, unsigned char *checked, const unsigned char *defaults, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_type_picker_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_type_picker_item *items, size_t count,
+                                                            unsigned char *checked, const unsigned char *defaults, int *accepted);
 
 /* The rows of a picker table for tests and custom layouts: count * 4 cells
  * (mark, name, category, note), mark "[x]" or "[ ]". The caller frees the

@@ -34,7 +34,7 @@ typedef enum xxwidgets_die_signature_debug_command {
 
 typedef struct xxwidgets_die_signature_debug_breakpoint {
     const char *source_name; /* NULL/empty means the session's primary source. */
-    size_t line;            /* 1-based. */
+    size_t line;             /* 1-based. */
 } xxwidgets_die_signature_debug_breakpoint;
 
 typedef struct xxwidgets_die_signature_debug_frame {
@@ -80,8 +80,7 @@ typedef struct xxwidgets_die_signature_debug_snapshot {
  * blocking native code must cooperate before destroy/join can return. */
 typedef struct xxwidgets_die_signature_debug_config {
     int (*setup)(JSCtx *ctx, void *user_data);
-    int (*execute)(JSCtx *ctx, const char *source, const char *source_name,
-        char **result_text, void *user_data);
+    int (*execute)(JSCtx *ctx, const char *source, const char *source_name, char **result_text, void *user_data);
     void (*cleanup)(JSCtx *ctx, void *user_data);
     void *user_data;
     int pause_on_exception;
@@ -91,43 +90,37 @@ typedef struct xxwidgets_die_signature_debug_config {
 } xxwidgets_die_signature_debug_config;
 
 XXWIDGETS_API void xxwidgets_die_signature_debug_config_init(xxwidgets_die_signature_debug_config *config);
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_create(
-    const xxwidgets_die_signature_debug_config *config, xxwidgets_die_signature_debug_session **out_session);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_create(const xxwidgets_die_signature_debug_config *config,
+                                                                            xxwidgets_die_signature_debug_session **out_session);
 /* Cancels, wakes a paused hook, joins the worker, then frees. */
 XXWIDGETS_API void xxwidgets_die_signature_debug_session_destroy(xxwidgets_die_signature_debug_session *session);
 /* Source is copied and CRLF/CR normalized to LF. Replacement is BUSY while
  * active. Each start uses a fresh
  * context; the config's user_data must remain valid until destroy. */
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_set_source(
-    xxwidgets_die_signature_debug_session *session, const char *source, const char *source_name);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_set_source(xxwidgets_die_signature_debug_session *session, const char *source,
+                                                                                const char *source_name);
 /* Copies the primary source for name (NULL/empty accepts its current name).
  * Returns UNAVAILABLE for another source. Caller frees *out_source with free. */
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_source(
-    xxwidgets_die_signature_debug_session *session, const char *name, char **out_source);
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_set_breakpoints(
-    xxwidgets_die_signature_debug_session *session,
-    const xxwidgets_die_signature_debug_breakpoint *breakpoints, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_source(xxwidgets_die_signature_debug_session *session, const char *name, char **out_source);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_set_breakpoints(xxwidgets_die_signature_debug_session *session,
+                                                                                     const xxwidgets_die_signature_debug_breakpoint *breakpoints, size_t count);
 /* Watches are lexical identifiers (including "this"), never expressions;
  * display formatting never invokes JavaScript getters or toString(). */
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_set_watches(
-    xxwidgets_die_signature_debug_session *session, const char *const *identifiers, size_t count);
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_select_frame(
-    xxwidgets_die_signature_debug_session *session, size_t frame_index);
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_start(
-    xxwidgets_die_signature_debug_session *session, int pause_on_entry);
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_command(
-    xxwidgets_die_signature_debug_session *session, xxwidgets_die_signature_debug_command command);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_set_watches(xxwidgets_die_signature_debug_session *session, const char *const *identifiers,
+                                                                                 size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_select_frame(xxwidgets_die_signature_debug_session *session, size_t frame_index);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_start(xxwidgets_die_signature_debug_session *session, int pause_on_entry);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_command(xxwidgets_die_signature_debug_session *session,
+                                                                             xxwidgets_die_signature_debug_command command);
 /* Snapshots are deep copies valid after resume/restart/destroy. Initialize out
  * to zero and free after use. Snapshot does not free an earlier value of out.
  * Mutations belong to one owner thread; snapshot/log/cancel queries may run on
  * other threads. No UI call accesses a running JSCtx. */
-XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_snapshot(
-    xxwidgets_die_signature_debug_session *session, xxwidgets_die_signature_debug_snapshot *out_snapshot);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_debug_session_snapshot(xxwidgets_die_signature_debug_session *session,
+                                                                              xxwidgets_die_signature_debug_snapshot *out_snapshot);
 XXWIDGETS_API void xxwidgets_die_signature_debug_snapshot_free(xxwidgets_die_signature_debug_snapshot *snapshot);
-XXWIDGETS_API void xxwidgets_die_signature_debug_session_log(
-    xxwidgets_die_signature_debug_session *session, const char *text);
-XXWIDGETS_API int xxwidgets_die_signature_debug_session_cancelled(
-    xxwidgets_die_signature_debug_session *session);
+XXWIDGETS_API void xxwidgets_die_signature_debug_session_log(xxwidgets_die_signature_debug_session *session, const char *text);
+XXWIDGETS_API int xxwidgets_die_signature_debug_session_cancelled(xxwidgets_die_signature_debug_session *session);
 
 #ifdef __cplusplus
 }

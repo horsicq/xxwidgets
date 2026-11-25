@@ -65,15 +65,13 @@ typedef struct xxwidget_treediff_field {
  * failure (the viewer keeps what it showed). */
 typedef struct xxwidget_treediff_source {
     /* Rows under parent (0: the roots) that pass filter, from row offset. */
-    size_t (*children)(void *user, uint64_t parent, const xxwidget_treediff_filter *filter, size_t offset,
-                       size_t capacity, xxwidget_treediff_row *rows, size_t *total);
+    size_t (*children)(void *user, uint64_t parent, const xxwidget_treediff_filter *filter, size_t offset, size_t capacity, xxwidget_treediff_row *rows, size_t *total);
     /* The details of row id. */
     size_t (*fields)(void *user, uint64_t id, xxwidget_treediff_field *fields, size_t capacity, size_t *total);
     /* Optional flat search: while the path filter is not empty, the roots are
      * the rows matching filter anywhere (their text a path); children still
      * lists below them. NULL: children gets the path filter itself. */
-    size_t (*search)(void *user, const xxwidget_treediff_filter *filter, size_t offset, size_t capacity,
-                     xxwidget_treediff_row *rows, size_t *total);
+    size_t (*search)(void *user, const xxwidget_treediff_filter *filter, size_t offset, size_t capacity, xxwidget_treediff_row *rows, size_t *total);
     /* Optional: the parent id of row id (0 for a root), so a selected search
      * result is found in the tree again when the path filter is cleared. */
     uint64_t (*parent)(void *user, uint64_t id);
@@ -83,9 +81,16 @@ typedef struct xxwidget_treediff_source {
 
 typedef struct xxwidget_treediffviewer xxwidget_treediffviewer;
 typedef enum xxwidget_treediffviewer_control_id {
-    XXWIDGET_TREEDIFF_PATH_LABEL, XXWIDGET_TREEDIFF_PATH, XXWIDGET_TREEDIFF_KINDS,
-    XXWIDGET_TREEDIFF_TREE, XXWIDGET_TREEDIFF_DETAILS, XXWIDGET_TREEDIFF_SIDE_LABEL, XXWIDGET_TREEDIFF_SIDE,
-    XXWIDGET_TREEDIFF_HEX, XXWIDGET_TREEDIFF_STATUS, XXWIDGET_TREEDIFF_CONTROL_COUNT
+    XXWIDGET_TREEDIFF_PATH_LABEL,
+    XXWIDGET_TREEDIFF_PATH,
+    XXWIDGET_TREEDIFF_KINDS,
+    XXWIDGET_TREEDIFF_TREE,
+    XXWIDGET_TREEDIFF_DETAILS,
+    XXWIDGET_TREEDIFF_SIDE_LABEL,
+    XXWIDGET_TREEDIFF_SIDE,
+    XXWIDGET_TREEDIFF_HEX,
+    XXWIDGET_TREEDIFF_STATUS,
+    XXWIDGET_TREEDIFF_CONTROL_COUNT
 } xxwidget_treediffviewer_control_id;
 
 /* Creates the controls in owner (a WINDOW) inside bounds of at least 60 x 16
@@ -94,13 +99,11 @@ typedef enum xxwidget_treediffviewer_control_id {
  * right, a status line at the bottom. Tab moves in that order. source is
  * copied (its callbacks and user data are borrowed until destroy); the roots
  * are fetched now. Destroy before the owner. */
-XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-                                                             const xxwidget_treediff_source *source,
-                                                             xxwidget_treediffviewer **out);
+XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidget_treediff_source *source,
+                                                              xxwidget_treediffviewer **out);
 XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_destroy(xxwidget_treediffviewer *viewer);
 XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_set_rect(xxwidget_treediffviewer *viewer, xxwidgets_rect bounds);
-XXWIDGETS_API xxwidgets_widget *xxwidget_treediffviewer_control(const xxwidget_treediffviewer *viewer,
-                                                               xxwidget_treediffviewer_control_id id);
+XXWIDGETS_API xxwidgets_widget *xxwidget_treediffviewer_control(const xxwidget_treediffviewer *viewer, xxwidget_treediffviewer_control_id id);
 /* Forward every event (others are ignored). Selecting a row shows its
  * fields; selecting a field or Before/After shows that blob; Enter in Path or
  * a change of the kinds applies the filter. Call it from the event callback:
@@ -113,8 +116,7 @@ XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_refresh(xxwidget_treediff
  * "". kinds holds XXWIDGET_TREEDIFF_MASK bits (CONTEXT ignored). */
 XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_set_filter(xxwidget_treediffviewer *viewer, unsigned int kinds, const char *path);
 /* The filter in effect; path is borrowed until the filter changes. */
-XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_get_filter(const xxwidget_treediffviewer *viewer, unsigned int *kinds,
-                                                                 const char **path);
+XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_get_filter(const xxwidget_treediffviewer *viewer, unsigned int *kinds, const char **path);
 /* id of the selected row, 0 for none (or a "... N more" row). */
 XXWIDGETS_API xxwidgets_status xxwidget_treediffviewer_selection(xxwidget_treediffviewer *viewer, uint64_t *id);
 /* Selects the row reached by ids from a root down (xxwidgets_treeview_source_select)

@@ -50,14 +50,13 @@ typedef enum xxwidgets_disasm_control_id {
 /* Engine-independent browser using the existing DEBUGGER_DISASM table. No
  * decoder, device or process is owned. Bounds >=96x20 cells. Initial
  * UNAVAILABLE is displayed as a mode prompt; initial I/O/allocation errors fail. */
-XXWIDGETS_API xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-                                                               const xxwidgets_disasm_source *source, xxwidgets_disasm_browser **out);
+XXWIDGETS_API xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidgets_disasm_source *source,
+                                                               xxwidgets_disasm_browser **out);
 XXWIDGETS_API xxwidgets_status xxwidgets_disasm_browser_destroy(xxwidgets_disasm_browser *browser);
 XXWIDGETS_API xxwidgets_status xxwidgets_disasm_browser_set_rect(xxwidgets_disasm_browser *browser, xxwidgets_rect bounds);
 XXWIDGETS_API xxwidgets_widget *xxwidgets_disasm_browser_control(const xxwidgets_disasm_browser *browser, xxwidgets_disasm_control_id id);
 XXWIDGETS_API size_t xxwidgets_disasm_browser_count(const xxwidgets_disasm_browser *browser);
-XXWIDGETS_API xxwidgets_status xxwidgets_disasm_browser_get_record(const xxwidgets_disasm_browser *browser, size_t index,
-                                                                   xxwidgets_disasm_record *record);
+XXWIDGETS_API xxwidgets_status xxwidgets_disasm_browser_get_record(const xxwidgets_disasm_browser *browser, size_t index, xxwidgets_disasm_record *record);
 /* Decimal / 0x physical offset. Go/mode changes clear bounded Back history;
  * Next preserves instruction boundaries supplied by the provider. */
 XXWIDGETS_API xxwidgets_status xxwidgets_disasm_browser_go_to(xxwidgets_disasm_browser *browser, const char *offset);

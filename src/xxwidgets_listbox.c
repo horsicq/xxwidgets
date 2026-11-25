@@ -37,7 +37,8 @@ xxwidgets_status xxwidgets_listbox_add(xxwidgets_widget *widget, const char *tex
 {
     char *copy, **items;
     xxwidgets_status status;
-    if (!widget || widget->kind != XXWIDGETS_LISTBOX || !xxwidgets_valid_utf8(text) || widget->item_count >= INT_MAX || widget->item_count >= (size_t)-1 / sizeof(char *) - 1)
+    if (!widget || widget->kind != XXWIDGETS_LISTBOX || !xxwidgets_valid_utf8(text) || widget->item_count >= INT_MAX ||
+        widget->item_count >= (size_t)-1 / sizeof(char *) - 1)
         return XXWIDGETS_INVALID_ARGUMENT;
     copy = xxwidgets_strdup(text);
     if (!copy) return XXWIDGETS_OUT_OF_MEMORY;

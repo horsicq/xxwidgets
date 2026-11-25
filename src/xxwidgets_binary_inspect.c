@@ -32,14 +32,14 @@ typedef struct binary_records {
 static size_t binary_length(const char *text)
 {
     size_t length;
-    for (length = 0; length <= BINARY_STRING_LIMIT; ++length) if (!text[length]) return length;
+    for (length = 0; length <= BINARY_STRING_LIMIT; ++length)
+        if (!text[length]) return length;
     return SIZE_MAX;
 }
 
 static int binary_is_kind(xxwidgets_kind kind)
 {
-    return kind == XXWIDGET_RESOURCESVIEWER || kind == XXWIDGET_IMPORTSVIEWER ||
-           kind == XXWIDGET_EXPORTSVIEWER || kind == XXWIDGET_SYMBOLSVIEWER;
+    return kind == XXWIDGET_RESOURCESVIEWER || kind == XXWIDGET_IMPORTSVIEWER || kind == XXWIDGET_EXPORTSVIEWER || kind == XXWIDGET_SYMBOLSVIEWER;
 }
 
 static xxwidgets_status binary_parse_error(const xx_pd_struct *pd)
@@ -67,22 +67,27 @@ static void binary_free_record(xxwidgets_kind kind, void *record)
     switch (kind) {
         case XXWIDGET_RESOURCESVIEWER: {
             xx_resource_record *r = (xx_resource_record *)record;
-            free(r->type_name); free(r->name); free(r->language_name);
+            free(r->type_name);
+            free(r->name);
+            free(r->language_name);
             break;
         }
         case XXWIDGET_IMPORTSVIEWER: {
             xx_import_record *r = (xx_import_record *)record;
-            free(r->library_name); free(r->name);
+            free(r->library_name);
+            free(r->name);
             break;
         }
         case XXWIDGET_EXPORTSVIEWER: {
             xx_export_record *r = (xx_export_record *)record;
-            free(r->name); free(r->forwarder);
+            free(r->name);
+            free(r->forwarder);
             break;
         }
         case XXWIDGET_SYMBOLSVIEWER: {
             xx_symbol_record *r = (xx_symbol_record *)record;
-            free(r->name); free(r->file_name);
+            free(r->name);
+            free(r->file_name);
             break;
         }
         default: break;
@@ -145,13 +150,15 @@ static xxwidgets_status binary_append(binary_records *records, const void *sourc
             copy.symbol.name = binary_copy_string(records, r->name);
             copy.symbol.file_name = binary_copy_string(records, r->file_name);
             okay = (!r->name || copy.symbol.name) && (!r->file_name || copy.symbol.file_name);
-            if (!binary_rebase_offset(&copy.symbol.offset, records->slice_offset) ||
-                !binary_rebase_offset(&copy.symbol.record_offset, records->slice_offset)) okay = 0;
+            if (!binary_rebase_offset(&copy.symbol.offset, records->slice_offset) || !binary_rebase_offset(&copy.symbol.record_offset, records->slice_offset)) okay = 0;
             break;
         }
         default: return XXWIDGETS_INVALID_ARGUMENT;
     }
-    if (!okay) { binary_free_record(records->kind, &copy); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!okay) {
+        binary_free_record(records->kind, &copy);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     if (records->count == records->capacity) {
         size_t next = records->capacity ? records->capacity * 2 : 128;
         void *expanded;
@@ -160,7 +167,10 @@ static xxwidgets_status binary_append(binary_records *records, const void *sourc
             return XXWIDGETS_UNAVAILABLE;
         }
         expanded = realloc(records->items, next * records->stride);
-        if (!expanded) { binary_free_record(records->kind, &copy); return XXWIDGETS_OUT_OF_MEMORY; }
+        if (!expanded) {
+            binary_free_record(records->kind, &copy);
+            return XXWIDGETS_OUT_OF_MEMORY;
+        }
         records->items = expanded;
         records->capacity = next;
     }
@@ -169,21 +179,21 @@ static xxwidgets_status binary_append(binary_records *records, const void *sourc
     return XXWIDGETS_OK;
 }
 
-#define BINARY_COLLECT_STREAM(kind, plural) \
+#define BINARY_COLLECT_STREAM(kind, plural)                                                                            \
     static xxwidgets_status binary_collect_##plural(Abstractformat *format, binary_records *records, xx_pd_struct *pd) \
-    { \
-        xx_##kind##_state *state = xx_format_create_##plural##_reading(format, pd); \
-        const xx_##kind##_record *record; \
-        xxwidgets_status status = XXWIDGETS_OK; \
-        if (!state) return binary_parse_error(pd); \
-        while ((record = xx_format_get_current_##kind(format, state)) != NULL) { \
-            status = binary_append(records, record); \
-            if (status != XXWIDGETS_OK) break; \
-            if (!xx_format_##kind##_move_to_next(format, state, pd)) break; \
-        } \
-        if (status == XXWIDGETS_OK && state->failed) status = binary_parse_error(pd); \
-        xx_format_free_##plural##_reading(format, state); \
-        return status; \
+    {                                                                                                                  \
+        xx_##kind##_state *state = xx_format_create_##plural##_reading(format, pd);                                    \
+        const xx_##kind##_record *record;                                                                              \
+        xxwidgets_status status = XXWIDGETS_OK;                                                                        \
+        if (!state) return binary_parse_error(pd);                                                                     \
+        while ((record = xx_format_get_current_##kind(format, state)) != NULL) {                                       \
+            status = binary_append(records, record);                                                                   \
+            if (status != XXWIDGETS_OK) break;                                                                         \
+            if (!xx_format_##kind##_move_to_next(format, state, pd)) break;                                            \
+        }                                                                                                              \
+        if (status == XXWIDGETS_OK && state->failed) status = binary_parse_error(pd);                                  \
+        xx_format_free_##plural##_reading(format, state);                                                              \
+        return status;                                                                                                 \
     }
 BINARY_COLLECT_STREAM(resource, resources)
 BINARY_COLLECT_STREAM(import, imports)
@@ -198,11 +208,11 @@ static xxwidgets_status binary_read_pe(xx_io_device *device, binary_records *rec
     xx_pe_init(&reader, device, 0);
     if (!xx_pe_check_is_valid(&reader.format, pd) || !xx_pe_handle_base_info(&reader.format, pd)) status = binary_parse_error(pd);
     else switch (records->kind) {
-        case XXWIDGET_RESOURCESVIEWER: status = binary_collect_resources(&reader.format, records, pd); break;
-        case XXWIDGET_IMPORTSVIEWER: status = binary_collect_imports(&reader.format, records, pd); break;
-        case XXWIDGET_EXPORTSVIEWER: status = binary_collect_exports(&reader.format, records, pd); break;
-        default: status = binary_collect_symbols(&reader.format, records, pd); break;
-    }
+            case XXWIDGET_RESOURCESVIEWER: status = binary_collect_resources(&reader.format, records, pd); break;
+            case XXWIDGET_IMPORTSVIEWER: status = binary_collect_imports(&reader.format, records, pd); break;
+            case XXWIDGET_EXPORTSVIEWER: status = binary_collect_exports(&reader.format, records, pd); break;
+            default: status = binary_collect_symbols(&reader.format, records, pd); break;
+        }
     xx_pe_destroy(&reader);
     return status;
 }
@@ -213,8 +223,7 @@ static int binary_elf_export_visible(const xx_elf *elf, const xx_symbol_record *
 {
     uint8_t other;
     int64_t delta = elf->elf_class == XX_ELF_CLASS_64 ? 5 : 13;
-    if (symbol->record_offset < 0 || symbol->record_offset > INT64_MAX - delta ||
-        !xx_io_read_at(elf->format.device, symbol->record_offset + delta, &other, 1)) return -1;
+    if (symbol->record_offset < 0 || symbol->record_offset > INT64_MAX - delta || !xx_io_read_at(elf->format.device, symbol->record_offset + delta, &other, 1)) return -1;
     other &= 3U;
     return other == 0 || other == 3; /* DEFAULT and PROTECTED */
 }
@@ -238,14 +247,25 @@ static xxwidgets_status binary_read_elf(xx_io_device *device, binary_records *re
     const xx_symbol_record *symbol;
     xxwidgets_status status = XXWIDGETS_OK;
     xx_elf_init(&reader, device, 0);
-    if (!xx_elf_check_is_valid(&reader.format, pd) || !xx_elf_handle_base_info(&reader.format, pd)) { status = binary_parse_error(pd); goto done; }
-    if (records->kind == XXWIDGET_RESOURCESVIEWER) { status = binary_collect_resources(&reader.format, records, pd); goto done; }
-    if (records->kind == XXWIDGET_SYMBOLSVIEWER) { status = binary_collect_symbols(&reader.format, records, pd); goto done; }
+    if (!xx_elf_check_is_valid(&reader.format, pd) || !xx_elf_handle_base_info(&reader.format, pd)) {
+        status = binary_parse_error(pd);
+        goto done;
+    }
+    if (records->kind == XXWIDGET_RESOURCESVIEWER) {
+        status = binary_collect_resources(&reader.format, records, pd);
+        goto done;
+    }
+    if (records->kind == XXWIDGET_SYMBOLSVIEWER) {
+        status = binary_collect_symbols(&reader.format, records, pd);
+        goto done;
+    }
     state = xx_elf_create_symbols_reading(&reader.format, pd);
-    if (!state) { status = binary_parse_error(pd); goto done; }
+    if (!state) {
+        status = binary_parse_error(pd);
+        goto done;
+    }
     while ((symbol = xx_elf_get_current_symbol(&reader.format, state)) != NULL) {
-        if (symbol->name && symbol->name[0] &&
-            (reader.type == XX_ELF_TYPE_REL || binary_elf_dynamic_symbol(&reader, symbol))) {
+        if (symbol->name && symbol->name[0] && (reader.type == XX_ELF_TYPE_REL || binary_elf_dynamic_symbol(&reader, symbol))) {
             if (records->kind == XXWIDGET_IMPORTSVIEWER && symbol->is_undefined) {
                 xx_import_record imported = {0};
                 imported.name = symbol->name;
@@ -253,8 +273,8 @@ static xxwidgets_status binary_read_elf(xx_io_device *device, binary_records *re
                 imported.address = UINT64_MAX;
                 status = binary_append(records, &imported);
             } else if (records->kind == XXWIDGET_EXPORTSVIEWER && !symbol->is_undefined &&
-                       (symbol->binding == XX_SYMBOL_BINDING_GLOBAL || symbol->binding == XX_SYMBOL_BINDING_WEAK) &&
-                       symbol->kind != XX_SYMBOL_KIND_FILE && symbol->kind != XX_SYMBOL_KIND_SECTION) {
+                       (symbol->binding == XX_SYMBOL_BINDING_GLOBAL || symbol->binding == XX_SYMBOL_BINDING_WEAK) && symbol->kind != XX_SYMBOL_KIND_FILE &&
+                       symbol->kind != XX_SYMBOL_KIND_SECTION) {
                 int visible = binary_elf_export_visible(&reader, symbol);
                 if (visible < 0) status = XXWIDGETS_PLATFORM_ERROR;
                 else if (visible) {
@@ -284,8 +304,7 @@ static int64_t binary_macho_offset(const xx_macho *reader, uint64_t address)
         uint64_t delta;
         if (address < segment->virtual_address) continue;
         delta = address - segment->virtual_address;
-        if (delta < segment->file_size && segment->file_offset <= (uint64_t)INT64_MAX - delta)
-            return (int64_t)(segment->file_offset + delta);
+        if (delta < segment->file_size && segment->file_offset <= (uint64_t)INT64_MAX - delta) return (int64_t)(segment->file_offset + delta);
     }
     return -1;
 }
@@ -297,17 +316,19 @@ static xxwidgets_status binary_read_macho(xx_io_device *device, binary_records *
     xxwidgets_status status = XXWIDGETS_OK;
     int i;
     xx_macho_init(&reader, device, 0);
-    if (!xx_macho_check_is_valid(&reader.format, pd) || !xx_macho_handle_base_info(&reader.format, pd) ||
-        !xx_macho_inspect_parse(&reader, &inspection, pd)) { status = binary_parse_error(pd); goto done; }
+    if (!xx_macho_check_is_valid(&reader.format, pd) || !xx_macho_handle_base_info(&reader.format, pd) || !xx_macho_inspect_parse(&reader, &inspection, pd)) {
+        status = binary_parse_error(pd);
+        goto done;
+    }
     for (i = 0; i < inspection.nSymbolCount; ++i) {
         const xx_macho_inspect_symbol *symbol = &inspection.pSymbols[i];
         if (records->kind == XXWIDGET_SYMBOLSVIEWER) {
             xx_symbol_record record = {0};
             record.name = symbol->pName;
             record.value = symbol->nValue;
-            record.address = symbol->bFromSymbolTable && !symbol->bUndefined &&
-                             ((symbol->nType & 0x0eU) == 0x0eU || (symbol->nType & 0x0eU) == 2U) ?
-                             symbol->nValue : symbol->nExportAddress;
+            record.address = symbol->bFromSymbolTable && !symbol->bUndefined && ((symbol->nType & 0x0eU) == 0x0eU || (symbol->nType & 0x0eU) == 2U)
+                                 ? symbol->nValue
+                                 : symbol->nExportAddress;
             record.is_debug = (symbol->nType & 0xe0U) != 0;
             if (record.is_debug) record.address = UINT64_MAX;
             record.offset = record.is_debug || (symbol->nType & 0x0eU) == 2U ? -1 : binary_macho_offset(&reader, record.address);
@@ -318,17 +339,15 @@ static xxwidgets_status binary_read_macho(xx_io_device *device, binary_records *
             record.native_storage_class = symbol->nDescription; /* Native n_desc encoding. */
             record.is_undefined = symbol->bUndefined != 0;
             record.is_absolute = !record.is_debug && (symbol->nType & 0x0eU) == 2U;
-            record.binding = symbol->nDescription & 0xc0U ? XX_SYMBOL_BINDING_WEAK :
-                             (symbol->bExternal ? XX_SYMBOL_BINDING_GLOBAL : XX_SYMBOL_BINDING_LOCAL);
+            record.binding = symbol->nDescription & 0xc0U ? XX_SYMBOL_BINDING_WEAK : (symbol->bExternal ? XX_SYMBOL_BINDING_GLOBAL : XX_SYMBOL_BINDING_LOCAL);
             if (record.is_debug && (symbol->nType == 0x64U || symbol->nType == 0x66U)) record.kind = XX_SYMBOL_KIND_FILE;
             status = binary_append(records, &record);
-        } else if (records->kind == XXWIDGET_IMPORTSVIEWER && symbol->bFromSymbolTable && symbol->bExternal &&
-                   symbol->bUndefined && (!symbol->nValue || (symbol->nType & 0x0eU) == 0x0cU) && symbol->pName && symbol->pName[0]) {
+        } else if (records->kind == XXWIDGET_IMPORTSVIEWER && symbol->bFromSymbolTable && symbol->bExternal && symbol->bUndefined &&
+                   (!symbol->nValue || (symbol->nType & 0x0eU) == 0x0cU) && symbol->pName && symbol->pName[0]) {
             xx_import_record record = {0};
             unsigned ordinal = symbol->nDescription >> 8;
             record.name = symbol->pName;
-            if (ordinal > 0 && ordinal < 0xfeU && ordinal <= (unsigned)inspection.nLibraryCount)
-                record.library_name = inspection.pLibraries[ordinal - 1].pName;
+            if (ordinal > 0 && ordinal < 0xfeU && ordinal <= (unsigned)inspection.nLibraryCount) record.library_name = inspection.pLibraries[ordinal - 1].pName;
             record.offset = -1;
             record.address = UINT64_MAX;
             status = binary_append(records, &record);
@@ -384,9 +403,9 @@ static xxwidgets_status binary_select_fat(xx_io_device *parent, xx_io_device **o
     offset = binary_integer(first + 8, is64 ? 8 : 4, big_endian);
     size = binary_integer(first + (is64 ? 16 : 12), is64 ? 8 : 4, big_endian);
     alignment = binary_integer(first + (is64 ? 24 : 16), 4, big_endian);
-    if (offset < table_end || size < 28 || offset > (uint64_t)total || size > (uint64_t)total - offset ||
-        offset > INT64_MAX || size > INT64_MAX || alignment > 63 || (offset & ((UINT64_C(1) << alignment) - 1)) ||
-        !xx_io_read_at(parent, (int64_t)offset, magic, sizeof(magic)) || !binary_is_macho(magic)) return XXWIDGETS_PLATFORM_ERROR;
+    if (offset < table_end || size < 28 || offset > (uint64_t)total || size > (uint64_t)total - offset || offset > INT64_MAX || size > INT64_MAX || alignment > 63 ||
+        (offset & ((UINT64_C(1) << alignment) - 1)) || !xx_io_read_at(parent, (int64_t)offset, magic, sizeof(magic)) || !binary_is_macho(magic))
+        return XXWIDGETS_PLATFORM_ERROR;
     *out_slice = xx_io_sub_open_ro(parent, (int64_t)offset, (int64_t)size);
     if (!*out_slice) return XXWIDGETS_OUT_OF_MEMORY;
     *out_offset = (int64_t)offset;
@@ -445,11 +464,11 @@ xxwidgets_status xxwidget_binaryviewer_load_file(xxwidgets_widget *widget, const
     return status;
 }
 
-#define BINARY_LOAD_WRAPPER(name, expected) \
-    xxwidgets_status xxwidget_##name##_load_file(xxwidgets_widget *widget, const char *path) \
-    { \
+#define BINARY_LOAD_WRAPPER(name, expected)                                                          \
+    xxwidgets_status xxwidget_##name##_load_file(xxwidgets_widget *widget, const char *path)         \
+    {                                                                                                \
         if (!widget || xxwidgets_widget_kind(widget) != expected) return XXWIDGETS_INVALID_ARGUMENT; \
-        return xxwidget_binaryviewer_load_file(widget, path); \
+        return xxwidget_binaryviewer_load_file(widget, path);                                        \
     }
 BINARY_LOAD_WRAPPER(resourcesviewer, XXWIDGET_RESOURCESVIEWER)
 BINARY_LOAD_WRAPPER(importsviewer, XXWIDGET_IMPORTSVIEWER)

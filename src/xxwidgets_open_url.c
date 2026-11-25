@@ -83,7 +83,8 @@ xxwidgets_status xxwidgets_open_url(xxwidgets_widget *owner, const char *url)
         (void)fcntl(report[1], F_SETFD, FD_CLOEXEC);
         child = fork();
         if (child < 0) {
-            close(report[0]); close(report[1]);
+            close(report[0]);
+            close(report[1]);
             return XXWIDGETS_PLATFORM_ERROR;
         }
         if (!child) {
@@ -92,7 +93,12 @@ xxwidgets_status xxwidgets_open_url(xxwidgets_widget *owner, const char *url)
             if (fork() == 0) {
                 int null = open("/dev/null", O_RDWR);
                 close(report[0]);
-                if (null >= 0) { dup2(null, 0); dup2(null, 1); dup2(null, 2); if (null > 2) close(null); }
+                if (null >= 0) {
+                    dup2(null, 0);
+                    dup2(null, 1);
+                    dup2(null, 2);
+                    if (null > 2) close(null);
+                }
                 setsid();
                 execlp(tool, tool, url, (char *)NULL);
                 code = errno ? errno : ENOENT;
@@ -102,9 +108,11 @@ xxwidgets_status xxwidgets_open_url(xxwidgets_widget *owner, const char *url)
             _exit(0);
         }
         close(report[1]);
-        while (waitpid(child, &status, 0) < 0 && errno == EINTR) {}
+        while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
+        }
         /* EOF: exec succeeded and closed the descriptor. */
-        do got = read(report[0], &code, sizeof(code)); while (got < 0 && errno == EINTR);
+        do got = read(report[0], &code, sizeof(code));
+        while (got < 0 && errno == EINTR);
         close(report[0]);
         if (got > 0) return code == ENOENT ? XXWIDGETS_UNAVAILABLE : XXWIDGETS_PLATFORM_ERROR;
         return XXWIDGETS_OK;

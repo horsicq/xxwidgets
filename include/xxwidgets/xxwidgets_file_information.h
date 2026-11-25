@@ -19,26 +19,23 @@ typedef enum xxwidgets_file_information_control_id {
  * DataStructs; no parser or signature engine is linked by this component.
  * Text-cell bounds must be at least 72 x 12. All calls belong to the UI thread.
  * Destroy before the owner window; borrowed controls are not destroyed by hosts. */
-XXWIDGETS_API xxwidgets_status xxwidgets_file_information_create(xxwidgets_widget *owner,
-    xxwidgets_rect bounds, xxwidgets_file_information **out);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_information_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_file_information **out);
 XXWIDGETS_API xxwidgets_status xxwidgets_file_information_destroy(xxwidgets_file_information *information);
 XXWIDGETS_API xxwidgets_status xxwidgets_file_information_set_rect(xxwidgets_file_information *information, xxwidgets_rect bounds);
-XXWIDGETS_API xxwidgets_widget *xxwidgets_file_information_control(const xxwidgets_file_information *information,
-    xxwidgets_file_information_control_id control);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_file_information_control(const xxwidgets_file_information *information, xxwidgets_file_information_control_id control);
 XXWIDGETS_API xxwidgets_data_struct_view *xxwidgets_file_information_view(const xxwidgets_file_information *information);
-XXWIDGETS_API xxwidgets_status xxwidgets_file_information_handle_event(xxwidgets_file_information *information,
-    const xxwidgets_event *event);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_information_handle_event(xxwidgets_file_information *information, const xxwidgets_event *event);
 /* Deep-copy metadata and all structures/fields. On failure the old data remains
  * installed. size >= 0; an empty items array is valid. Repeated names and raw
  * descriptors are retained. Selection and field navigation use the view API. */
-XXWIDGETS_API xxwidgets_status xxwidgets_file_information_set_data(xxwidgets_file_information *information,
-    const char *path, const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_information_set_data(xxwidgets_file_information *information, const char *path, const char *file_type, int64_t size,
+                                                                   const xxwidgets_data_struct_item *items, size_t count);
 
 /* Resizable modal browser, Close/Escape only. Copies the supplied data and
  * restores the owner's enabled state/event handler on every exit. Call outside
  * input dispatch/polling. A nested modal returns BUSY. No source file is edited. */
-XXWIDGETS_API xxwidgets_status xxwidgets_file_information_dialog(xxwidgets_widget *owner, const char *title,
-    const char *path, const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_information_dialog(xxwidgets_widget *owner, const char *title, const char *path, const char *file_type, int64_t size,
+                                                                 const xxwidgets_data_struct_item *items, size_t count);
 
 /* The index of the first item named selector (exact, ASCII case-insensitive
  * as a fallback), or SIZE_MAX when selector is NULL, empty or absent. */
@@ -46,9 +43,8 @@ XXWIDGETS_API size_t xxwidgets_file_information_find(const xxwidgets_data_struct
 /* As xxwidgets_file_information_dialog, opened with the structure that
  * xxwidgets_file_information_find picks selected, e.g. "IMAGE_FILE_HEADER";
  * the first one when it picks none. Opening at an item emits no event. */
-XXWIDGETS_API xxwidgets_status xxwidgets_file_information_dialog_at(xxwidgets_widget *owner, const char *title,
-    const char *path, const char *file_type, int64_t size, const xxwidgets_data_struct_item *items, size_t count,
-    const char *selector);
+XXWIDGETS_API xxwidgets_status xxwidgets_file_information_dialog_at(xxwidgets_widget *owner, const char *title, const char *path, const char *file_type, int64_t size,
+                                                                    const xxwidgets_data_struct_item *items, size_t count, const char *selector);
 
 #ifdef __cplusplus
 }

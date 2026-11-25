@@ -104,7 +104,8 @@ xxwidgets_status xxwidgets_archiveview_set_entries(xxwidgets_widget *widget, con
         return XXWIDGETS_INVALID_ARGUMENT;
     /* Validate the complete input before allocating or touching widget state. */
     for (i = 0; i < count; ++i)
-        if (!xxwidgets_valid_utf8(entries[i].path) || !entries[i].path[0] || (entries[i].is_directory != 0 && entries[i].is_directory != 1)) return XXWIDGETS_INVALID_ARGUMENT;
+        if (!xxwidgets_valid_utf8(entries[i].path) || !entries[i].path[0] || (entries[i].is_directory != 0 && entries[i].is_directory != 1))
+            return XXWIDGETS_INVALID_ARGUMENT;
     if (count) {
         copies = (xxwidgets_archive_entry *)calloc(count, sizeof(*copies));
         rows = (char **)calloc(count, sizeof(*rows));

@@ -1,13 +1,9 @@
 /* Copyright (c) 2026 hors<horsicq@gmail.com>. SPDX-License-Identifier: MIT */
 #include "xxwidgets_debugger_arch_internal.h"
 
-xxwidgets_status xxwidgets_debugger_format_x86_64(
-    const xxwidgets_debugger_x86_state *state, xxwidgets_debugger_register_rows *rows)
+xxwidgets_status xxwidgets_debugger_format_x86_64(const xxwidgets_debugger_x86_state *state, xxwidgets_debugger_register_rows *rows)
 {
-    static const char *const names[] = {
-        "RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI",
-        "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"
-    };
+    static const char *const names[] = {"RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"};
     static const char *const segments[] = {"ES", "CS", "SS", "DS", "FS", "GS"};
     static const char *const bases[] = {"ES.base", "CS.base", "SS.base", "DS.base", "FS.base", "GS.base"};
     static const char *const debug_names[] = {"DR0", "DR1", "DR2", "DR3", "DR6", "DR7"};

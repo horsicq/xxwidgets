@@ -76,8 +76,8 @@ typedef struct xxwidgets_options_page {
  * page selects the first page shown (NULL selects page 0) and receives the
  * last selected page on return. 1..XXWIDGETS_OPTIONS_PAGES_MAX pages. Same
  * UI-thread and BUSY rules as the other modal dialogs. */
-XXWIDGETS_API xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_options_page *pages,
-                                                              size_t count, size_t *page, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_options_page *pages, size_t count, size_t *page,
+                                                              int *accepted);
 
 /* Ready-made pages for the xxwidgets option forms. Each fills page with
  * callbacks bound to caller-owned values that must outlive the dialog. OK
@@ -93,8 +93,7 @@ typedef struct xxwidgets_optimization_page_values {
     xxwidgets_optimization_capabilities capabilities;
     xxwidgets_optimization_options options;
 } xxwidgets_optimization_page_values;
-XXWIDGETS_API xxwidgets_status xxwidgets_options_page_optimization(xxwidgets_options_page *page, const char *title,
-                                                                   xxwidgets_optimization_page_values *values);
+XXWIDGETS_API xxwidgets_status xxwidgets_options_page_optimization(xxwidgets_options_page *page, const char *title, xxwidgets_optimization_page_values *values);
 
 typedef struct xxwidgets_hex_page_values {
     xxwidgets_hex_options options;
@@ -112,8 +111,7 @@ typedef struct xxwidgets_database_paths_page_values {
     xxwidgets_database_paths_callbacks callbacks;
     void *user;
 } xxwidgets_database_paths_page_values;
-XXWIDGETS_API xxwidgets_status xxwidgets_options_page_database_paths(xxwidgets_options_page *page, const char *title,
-                                                                     xxwidgets_database_paths_page_values *values);
+XXWIDGETS_API xxwidgets_status xxwidgets_options_page_database_paths(xxwidgets_options_page *page, const char *title, xxwidgets_database_paths_page_values *values);
 
 /* Explorer context menu. OK registers or removes the menu when the checkbox
  * differs from the actual registration; Default unchecks it. Returns

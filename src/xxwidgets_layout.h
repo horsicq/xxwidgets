@@ -75,8 +75,7 @@ int xxwidgets_layout_caption_box_height(const xxwidgets_metrics *metrics, int co
 int xxwidgets_layout_caption_box_width(const xxwidgets_metrics *metrics, int control_width);
 /* Splits box (as wide and tall as the caller decided) into the three parts.
  * The control is control_height high at the top of the frame interior. */
-void xxwidgets_layout_caption_box_split(const xxwidgets_metrics *metrics, xxwidgets_rect box, int control_height,
-                                        xxwidgets_layout_caption_box *out);
+void xxwidgets_layout_caption_box_split(const xxwidgets_metrics *metrics, xxwidgets_rect box, int control_height, xxwidgets_layout_caption_box *out);
 
 /* xxwidgets_widget_set_frame after clamping rect to a valid frame: x and y
  * at least 0, width and height at least 1. A NULL widget is skipped (OK). */

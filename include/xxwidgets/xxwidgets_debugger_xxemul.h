@@ -40,8 +40,7 @@ typedef struct xxwidgets_debugger_xxemul xxwidgets_debugger_xxemul;
  * Disassembly uses cdisasm at the selected address in the current CPU mode,
  * without changing registers or executing the target.
  */
-xxwidgets_status xxwidgets_debugger_xxemul_create(xxemul *emulator, uint64_t instruction_quantum,
-    xxwidgets_debugger_xxemul **adapter);
+xxwidgets_status xxwidgets_debugger_xxemul_create(xxemul *emulator, uint64_t instruction_quantum, xxwidgets_debugger_xxemul **adapter);
 const xxwidgets_debugger_session *xxwidgets_debugger_xxemul_session(xxwidgets_debugger_xxemul *adapter);
 void xxwidgets_debugger_xxemul_destroy(xxwidgets_debugger_xxemul *adapter);
 

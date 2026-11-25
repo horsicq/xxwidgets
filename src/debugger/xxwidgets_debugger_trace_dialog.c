@@ -15,29 +15,31 @@ typedef struct modal_context {
     int owner_enabled, disabled, attached, active;
 } modal_context;
 
-static xxwidgets_status modal_begin(modal_context *modal, xxwidgets_widget *owner,
-    const char *title, xxwidgets_event_fn handler, void *user)
+static xxwidgets_status modal_begin(modal_context *modal, xxwidgets_widget *owner, const char *title, xxwidgets_event_fn handler, void *user)
 {
     xxwidgets_widget *control;
     xxwidgets_app *app;
     int width;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || owner->rect.x > INT_MAX - 86 || owner->rect.y > INT_MAX - 22)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || owner->rect.x > INT_MAX - 86 || owner->rect.y > INT_MAX - 22) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
-    modal->owner = owner; modal->app = app;
-    modal->previous_event = app->on_event; modal->previous_user = app->user_data;
-    modal->previous_default = app->modal_default; modal->owner_enabled = owner->enabled;
+    modal->owner = owner;
+    modal->app = app;
+    modal->previous_event = app->on_event;
+    modal->previous_user = app->user_data;
+    modal->previous_default = app->modal_default;
+    modal->owner_enabled = owner->enabled;
     for (control = app->widgets; control; control = control->next)
-        if (control->parent == owner && xxwidgets_focusable(control) &&
-            (!modal->focus || xxwidgets_widget_has_focus(control) == 1)) modal->focus = control;
-    app->on_event = handler; app->user_data = user;
+        if (control->parent == owner && xxwidgets_focusable(control) && (!modal->focus || xxwidgets_widget_has_focus(control) == 1)) modal->focus = control;
+    app->on_event = handler;
+    app->user_data = user;
     modal->active = 1;
     width = owner->rect.width < 86 ? owner->rect.width : 86;
     if (width < 67) width = 67;
     xxwidgets_status status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + (owner->rect.width > width ? (owner->rect.width - width) / 2 : 0),
-            owner->rect.y + (owner->rect.height > 22 ? (owner->rect.height - 22) / 2 : 0), width, 22}, &modal->window);
+                                                      (xxwidgets_rect){owner->rect.x + (owner->rect.width > width ? (owner->rect.width - width) / 2 : 0),
+                                                                       owner->rect.y + (owner->rect.height > 22 ? (owner->rect.height - 22) / 2 : 0), width, 22},
+                                                      &modal->window);
     if (status == XXWIDGETS_OK) {
         app->modal_window = modal->window;
         status = xxwidgets_window_set_minimum_size(modal->window, 67, 22);
@@ -79,8 +81,10 @@ static xxwidgets_status modal_finish(modal_context *modal, xxwidgets_status stat
         cleanup = xxwidgets_widget_destroy(modal->window);
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    modal->app->modal_window = NULL; modal->app->modal_default = modal->previous_default;
-    modal->app->on_event = modal->previous_event; modal->app->user_data = modal->previous_user;
+    modal->app->modal_window = NULL;
+    modal->app->modal_default = modal->previous_default;
+    modal->app->on_event = modal->previous_event;
+    modal->app->user_data = modal->previous_user;
     if (modal->focus && !modal->app->quit) (void)xxwidgets_widget_focus(modal->focus);
     return status;
 }
@@ -104,7 +108,11 @@ typedef struct trace_state {
     xxwidgets_status layout_status;
 } trace_state;
 
-enum { TRACE_ACCEPT = 1, TRACE_BROWSE, TRACE_CANCEL };
+enum {
+    TRACE_ACCEPT = 1,
+    TRACE_BROWSE,
+    TRACE_CANCEL
+};
 
 static xxwidgets_status trace_layout(trace_state *state)
 {
@@ -113,14 +121,25 @@ static xxwidgets_status trace_layout(trace_state *state)
     xxwidgets_status status = xxwidgets_widget_get_rect(state->modal.window, &bounds);
     if (status != XXWIDGETS_OK) return status;
     int w = bounds.width, bottom = bounds.height - 2;
-#define PLACE(member, x, y, width, height) do { status = place(state->member, x, y, width, height); if (status != XXWIDGETS_OK) return status; } while (0)
-    PLACE(count_label, 2, 0, w - 4, 1); PLACE(count, 2, 1, 28, 1);
-    PLACE(limit_hint, 2, 2, w - 4, 1); PLACE(write_file, 2, 4, w - 4, 1);
-    PLACE(path_label, 2, 6, w - 4, 1); PLACE(path, 2, 7, w - 18, 1); PLACE(browse, w - 14, 7, 12, 1);
-    PLACE(format_label, 2, 9, w - 4, 1); PLACE(format, 2, 10, w - 4, 1);
-    PLACE(examples, 2, 12, w - 4, 2); PLACE(hint, 2, 15, w - 4, 2);
+#define PLACE(member, x, y, width, height)                  \
+    do {                                                    \
+        status = place(state->member, x, y, width, height); \
+        if (status != XXWIDGETS_OK) return status;          \
+    } while (0)
+    PLACE(count_label, 2, 0, w - 4, 1);
+    PLACE(count, 2, 1, 28, 1);
+    PLACE(limit_hint, 2, 2, w - 4, 1);
+    PLACE(write_file, 2, 4, w - 4, 1);
+    PLACE(path_label, 2, 6, w - 4, 1);
+    PLACE(path, 2, 7, w - 18, 1);
+    PLACE(browse, w - 14, 7, 12, 1);
+    PLACE(format_label, 2, 9, w - 4, 1);
+    PLACE(format, 2, 10, w - 4, 1);
+    PLACE(examples, 2, 12, w - 4, 2);
+    PLACE(hint, 2, 15, w - 4, 2);
     PLACE(error, 2, bottom - 2, w - 4, 1);
-    PLACE(start, w - 36, bottom, 20, 1); PLACE(cancel, w - 14, bottom, 12, 1);
+    PLACE(start, w - 36, bottom, 20, 1);
+    PLACE(cancel, w - 14, bottom, 12, 1);
 #undef PLACE
     return XXWIDGETS_OK;
 }
@@ -130,8 +149,7 @@ static void trace_event(xxwidgets_app *app, const xxwidgets_event *event, void *
     trace_state *state = user;
     (void)app;
     if (event->widget == state->modal.window && event->type == XXWIDGETS_EVENT_CLOSE) state->done = 1;
-    else if (event->widget == state->modal.window && event->type == XXWIDGETS_EVENT_RESIZE)
-        state->layout_status = trace_layout(state);
+    else if (event->widget == state->modal.window && event->type == XXWIDGETS_EVENT_RESIZE) state->layout_status = trace_layout(state);
     else if (event->type == XXWIDGETS_EVENT_SHORTCUT) {
         if (event->value == TRACE_CANCEL) state->done = 1;
         else state->pending = event->value;
@@ -140,8 +158,7 @@ static void trace_event(xxwidgets_app *app, const xxwidgets_event *event, void *
         else if (event->widget == state->start) state->pending = TRACE_ACCEPT;
         else if (event->widget == state->browse) state->pending = TRACE_BROWSE;
         else if (event->widget == state->write_file) state->output_dirty = 1;
-    } else if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == state->write_file)
-        state->output_dirty = 1;
+    } else if (event->type == XXWIDGETS_EVENT_CHANGE && event->widget == state->write_file) state->output_dirty = 1;
 }
 
 static xxwidgets_status trace_apply_output(trace_state *state)
@@ -149,18 +166,15 @@ static xxwidgets_status trace_apply_output(trace_state *state)
     int enabled = 0;
     xxwidgets_status status = xxwidgets_widget_get_value(state->write_file, &enabled);
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(state->path, enabled);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(state->browse,
-        enabled && xxwidgets_file_dialog_available(state->modal.app));
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(state->browse, enabled && xxwidgets_file_dialog_available(state->modal.app));
     if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_enabled(state->format, enabled);
     return status;
 }
 
 static int valid_settings(const xxwidgets_debugger_trace_settings *settings)
 {
-    return settings && (settings->write_file == 0 || settings->write_file == 1) &&
-        memchr(settings->file_path, 0, sizeof(settings->file_path)) &&
-        memchr(settings->format, 0, sizeof(settings->format)) &&
-        xxwidgets_valid_utf8(settings->file_path) && xxwidgets_valid_utf8(settings->format);
+    return settings && (settings->write_file == 0 || settings->write_file == 1) && memchr(settings->file_path, 0, sizeof(settings->file_path)) &&
+           memchr(settings->format, 0, sizeof(settings->format)) && xxwidgets_valid_utf8(settings->file_path) && xxwidgets_valid_utf8(settings->format);
 }
 
 static int decimal_count(const char *text, uint64_t *count)
@@ -191,8 +205,7 @@ static int valid_format(const char *format)
     return 1;
 }
 
-static xxwidgets_status read_settings(trace_state *state, xxwidgets_debugger_trace_settings *selected,
-    char *error, size_t error_capacity)
+static xxwidgets_status read_settings(trace_state *state, xxwidgets_debugger_trace_settings *selected, char *error, size_t error_capacity)
 {
     char count[32];
     xxwidgets_status status = xxwidgets_widget_get_text(state->count, count, sizeof(count), NULL);
@@ -223,8 +236,7 @@ static xxwidgets_status read_settings(trace_state *state, xxwidgets_debugger_tra
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_debugger_trace_dialog(xxwidgets_widget *owner,
-    xxwidgets_debugger_trace_settings *settings, int *accepted)
+xxwidgets_status xxwidgets_debugger_trace_dialog(xxwidgets_widget *owner, xxwidgets_debugger_trace_settings *settings, int *accepted)
 {
     static const xxwidgets_shortcut shortcuts[] = {{"Escape", TRACE_CANCEL}, {"Ctrl+O", TRACE_BROWSE}};
     trace_state state = {0};
@@ -236,16 +248,25 @@ xxwidgets_status xxwidgets_debugger_trace_dialog(xxwidgets_widget *owner,
     snprintf(count, sizeof(count), "%" PRIu64, settings->instruction_limit);
     status = modal_begin(&state.modal, owner, "Trace", trace_event, &state);
     if (status != XXWIDGETS_OK) goto done;
-#define CONTROL(member, kind, text) do { status = control(&state.modal, &state.member, kind, text); if (status != XXWIDGETS_OK) goto done; } while (0)
-    CONTROL(count_label, XXWIDGETS_LABEL, "Instructions to execute"); CONTROL(count, XXWIDGETS_EDIT, count);
+#define CONTROL(member, kind, text)                                \
+    do {                                                           \
+        status = control(&state.modal, &state.member, kind, text); \
+        if (status != XXWIDGETS_OK) goto done;                     \
+    } while (0)
+    CONTROL(count_label, XXWIDGETS_LABEL, "Instructions to execute");
+    CONTROL(count, XXWIDGETS_EDIT, count);
     CONTROL(limit_hint, XXWIDGETS_LABEL, "Tracing stops early if the program exits.");
     CONTROL(write_file, XXWIDGETS_CHECKBOX, "Write to file");
-    CONTROL(path_label, XXWIDGETS_LABEL, "Output file"); CONTROL(path, XXWIDGETS_EDIT, settings->file_path);
+    CONTROL(path_label, XXWIDGETS_LABEL, "Output file");
+    CONTROL(path, XXWIDGETS_EDIT, settings->file_path);
     CONTROL(browse, XXWIDGETS_BUTTON, "Browse...");
-    CONTROL(format_label, XXWIDGETS_LABEL, "Record format"); CONTROL(format, XXWIDGETS_EDIT, settings->format);
+    CONTROL(format_label, XXWIDGETS_LABEL, "Record format");
+    CONTROL(format, XXWIDGETS_EDIT, settings->format);
     CONTROL(examples, XXWIDGETS_LABEL, "Examples: Address: 0x%PC%\n          EIP=%EIP%: EAX=%EAX%");
     CONTROL(hint, XXWIDGETS_LABEL, "Registers are recorded before each instruction.\nExisting files are not replaced.");
-    CONTROL(error, XXWIDGETS_LABEL, ""); CONTROL(start, XXWIDGETS_BUTTON, "Start tracing"); CONTROL(cancel, XXWIDGETS_BUTTON, "Cancel");
+    CONTROL(error, XXWIDGETS_LABEL, "");
+    CONTROL(start, XXWIDGETS_BUTTON, "Start tracing");
+    CONTROL(cancel, XXWIDGETS_BUTTON, "Cancel");
 #undef CONTROL
     status = xxwidgets_widget_set_value(state.write_file, settings->write_file);
     if (status == XXWIDGETS_OK) status = trace_apply_output(&state);
@@ -256,7 +277,8 @@ xxwidgets_status xxwidgets_debugger_trace_dialog(xxwidgets_widget *owner,
         status = xxwidgets_app_poll(state.modal.app, 30);
         if (status == XXWIDGETS_OK) status = state.layout_status;
         if (status != XXWIDGETS_OK || state.done || state.modal.app->quit) break;
-        int pending = state.pending; state.pending = 0;
+        int pending = state.pending;
+        state.pending = 0;
         if (state.output_dirty) {
             state.output_dirty = 0;
             status = trace_apply_output(&state);
@@ -273,11 +295,9 @@ xxwidgets_status xxwidgets_debugger_trace_dialog(xxwidgets_widget *owner,
                     status = xxwidgets_widget_set_text(state.error, "The output file path is too long.");
                     continue;
                 }
-                if (status == XXWIDGETS_OK) status = xxwidgets_file_dialog(state.modal.window, XXWIDGETS_FILE_DIALOG_SAVE,
-                    "Trace Output File", initial, &path, &picked);
+                if (status == XXWIDGETS_OK) status = xxwidgets_file_dialog(state.modal.window, XXWIDGETS_FILE_DIALOG_SAVE, "Trace Output File", initial, &path, &picked);
                 if (status == XXWIDGETS_OK && picked) {
-                    if (strlen(path) >= sizeof(selected.file_path))
-                        status = xxwidgets_widget_set_text(state.error, "The output file path is too long.");
+                    if (strlen(path) >= sizeof(selected.file_path)) status = xxwidgets_widget_set_text(state.error, "The output file path is too long.");
                     else {
                         status = xxwidgets_widget_set_text(state.path, path);
                         if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(state.error, "");
@@ -296,6 +316,9 @@ xxwidgets_status xxwidgets_debugger_trace_dialog(xxwidgets_widget *owner,
     if (state.modal.app->quit) state.accepted = 0;
 done:
     status = modal_finish(&state.modal, status);
-    if (status == XXWIDGETS_OK && state.accepted) { *settings = selected; *accepted = 1; }
+    if (status == XXWIDGETS_OK && state.accepted) {
+        *settings = selected;
+        *accepted = 1;
+    }
     return status;
 }

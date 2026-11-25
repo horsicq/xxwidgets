@@ -92,8 +92,8 @@ xxwidgets_status xxwidgets_window_set_modality(xxwidgets_widget *window, xxwidge
     xxwidgets_widget *other;
     xxwidgets_app *app;
     if (!window || window->kind != XXWIDGETS_WINDOW || modality < XXWIDGETS_MODELESS || modality > XXWIDGETS_APPLICATION_MODAL ||
-        (modality == XXWIDGETS_MODELESS ? owner != NULL :
-         (!owner || owner == window || owner->kind != XXWIDGETS_WINDOW || owner->app != window->app || owned_by(owner, window))))
+        (modality == XXWIDGETS_MODELESS ? owner != NULL
+                                        : (!owner || owner == window || owner->kind != XXWIDGETS_WINDOW || owner->app != window->app || owned_by(owner, window))))
         return XXWIDGETS_INVALID_ARGUMENT;
     app = window->app;
     if (app->dispatch_depth || app->polling || app->syncing || (app->quit && modality != XXWIDGETS_MODELESS)) return XXWIDGETS_BUSY;
@@ -103,9 +103,9 @@ xxwidgets_status xxwidgets_window_set_modality(xxwidgets_widget *window, xxwidge
         /* End nested scopes from the inside out. Independent window-modal
          * dialogs may coexist, but application-modal scopes form one chain. */
         if (owned_by(other, window)) return XXWIDGETS_BUSY;
-        if (modality != XXWIDGETS_MODELESS &&
-            ((other->modality == XXWIDGETS_APPLICATION_MODAL && !owned_by(owner, other)) ||
-             (other->modality == XXWIDGETS_WINDOW_MODAL && other->modality_owner == owner))) return XXWIDGETS_BUSY;
+        if (modality != XXWIDGETS_MODELESS && ((other->modality == XXWIDGETS_APPLICATION_MODAL && !owned_by(owner, other)) ||
+                                               (other->modality == XXWIDGETS_WINDOW_MODAL && other->modality_owner == owner)))
+            return XXWIDGETS_BUSY;
     }
     return set_modality(window, owner, modality);
 }

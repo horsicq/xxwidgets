@@ -16,7 +16,10 @@ struct xxwidgets_hash {
 #define CONTROL(v, id) ((v)->controls[XXWIDGETS_HASH_##id])
 static void free_entries(xxwidgets_hash_entry *entries, size_t count)
 {
-    for (size_t i = 0; i < count; ++i) { free((void *)entries[i].algorithm); free((void *)entries[i].value); }
+    for (size_t i = 0; i < count; ++i) {
+        free((void *)entries[i].algorithm);
+        free((void *)entries[i].value);
+    }
     free(entries);
 }
 static int valid_bounds(xxwidgets_rect b)
@@ -48,8 +51,7 @@ xxwidgets_status xxwidgets_hash_create(xxwidgets_widget *owner, xxwidgets_rect b
 {
     xxwidgets_hash *v;
     xxwidgets_status status;
-    static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_TREEVIEW, XXWIDGETS_LABEL,
-        XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
+    static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL, XXWIDGETS_LABEL, XXWIDGETS_TREEVIEW, XXWIDGETS_LABEL, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
     static const char *const text[] = {"", "", XXW_N_("Hashes"), "", XXW_N_("Copy selected"), XXW_N_("Copy all"), XXW_N_("Select a hash")};
     if (!out) return XXWIDGETS_INVALID_ARGUMENT;
     *out = NULL;
@@ -68,30 +70,39 @@ xxwidgets_status xxwidgets_hash_create(xxwidgets_widget *owner, xxwidgets_rect b
     if (status != XXWIDGETS_OK) goto fail;
     status = xxwidgets_hash_set_data(v, "", 0, NULL, 0);
     if (status != XXWIDGETS_OK) goto fail;
-    *out = v; return XXWIDGETS_OK;
+    *out = v;
+    return XXWIDGETS_OK;
 fail:
-    xxwidgets_hash_destroy(v); return status;
+    xxwidgets_hash_destroy(v);
+    return status;
 }
 xxwidgets_status xxwidgets_hash_destroy(xxwidgets_hash *v)
 {
     if (!v) return XXWIDGETS_INVALID_ARGUMENT;
     if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
-    for (size_t i = 0; i < XXWIDGETS_HASH_CONTROL_COUNT; ++i) if (v->controls[i]) xxwidgets_widget_destroy(v->controls[i]);
-    free_entries(v->entries, v->count); free(v->path); free(v->summary); free(v);
+    for (size_t i = 0; i < XXWIDGETS_HASH_CONTROL_COUNT; ++i)
+        if (v->controls[i]) xxwidgets_widget_destroy(v->controls[i]);
+    free_entries(v->entries, v->count);
+    free(v->path);
+    free(v->summary);
+    free(v);
     return XXWIDGETS_OK;
 }
 xxwidgets_widget *xxwidgets_hash_control(const xxwidgets_hash *v, xxwidgets_hash_control_id id)
 {
     return v && id >= 0 && id < XXWIDGETS_HASH_CONTROL_COUNT ? v->controls[id] : NULL;
 }
-size_t xxwidgets_hash_count(const xxwidgets_hash *v) { return v ? v->count : 0; }
+size_t xxwidgets_hash_count(const xxwidgets_hash *v)
+{
+    return v ? v->count : 0;
+}
 xxwidgets_status xxwidgets_hash_get_entry(const xxwidgets_hash *v, size_t index, xxwidgets_hash_entry *entry)
 {
     if (!v || !entry || index >= v->count) return XXWIDGETS_INVALID_ARGUMENT;
-    *entry = v->entries[index]; return XXWIDGETS_OK;
+    *entry = v->entries[index];
+    return XXWIDGETS_OK;
 }
-xxwidgets_status xxwidgets_hash_set_data(xxwidgets_hash *v, const char *path, uint64_t size,
-    const xxwidgets_hash_entry *entries, size_t count)
+xxwidgets_status xxwidgets_hash_set_data(xxwidgets_hash *v, const char *path, uint64_t size, const xxwidgets_hash_entry *entries, size_t count)
 {
     xxwidgets_hash_entry *copy = NULL;
     xxwidgets_tree_node nodes[64];
@@ -102,19 +113,22 @@ xxwidgets_status xxwidgets_hash_set_data(xxwidgets_hash *v, const char *path, ui
     for (size_t i = 0; i < count; ++i) {
         const char *name = entries[i].algorithm, *value = entries[i].value;
         size_t length;
-        if (!name || !value || !*name || strlen(name) > 64 || !(length = strlen(value)) || length > 512 || length % 2)
-            return XXWIDGETS_INVALID_ARGUMENT;
-        for (const unsigned char *p = (const unsigned char *)name; *p; ++p) if (*p < 32 || *p >= 127) return XXWIDGETS_INVALID_ARGUMENT;
-        for (const char *p = value; *p; ++p) if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F')))
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!name || !value || !*name || strlen(name) > 64 || !(length = strlen(value)) || length > 512 || length % 2) return XXWIDGETS_INVALID_ARGUMENT;
+        for (const unsigned char *p = (const unsigned char *)name; *p; ++p)
+            if (*p < 32 || *p >= 127) return XXWIDGETS_INVALID_ARGUMENT;
+        for (const char *p = value; *p; ++p)
+            if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F'))) return XXWIDGETS_INVALID_ARGUMENT;
     }
-    new_path = xxwidgets_strdup(path); summary = malloc(128); copy = count ? calloc(count, sizeof(*copy)) : NULL;
+    new_path = xxwidgets_strdup(path);
+    summary = malloc(128);
+    copy = count ? calloc(count, sizeof(*copy)) : NULL;
     if (!new_path || !summary || (count && !copy)) goto finish;
-    snprintf(summary, 128, "%" PRIu64 " %s | %zu %s | %s", size, XXW_TR(v->owner->app, "bytes"), count,
-        xxwidgets_app_ngettext(v->owner->app, "hash", "hashes", count), XXW_TR(v->owner->app, "Whole file"));
+    snprintf(summary, 128, "%" PRIu64 " %s | %zu %s | %s", size, XXW_TR(v->owner->app, "bytes"), count, xxwidgets_app_ngettext(v->owner->app, "hash", "hashes", count),
+             XXW_TR(v->owner->app, "Whole file"));
     for (size_t i = 0; i < count; ++i) {
         size_t capacity = strlen(entries[i].algorithm) + strlen(entries[i].value) + 12;
-        copy[i].algorithm = xxwidgets_strdup(entries[i].algorithm); copy[i].value = xxwidgets_strdup(entries[i].value);
+        copy[i].algorithm = xxwidgets_strdup(entries[i].algorithm);
+        copy[i].value = xxwidgets_strdup(entries[i].value);
         rows[i] = malloc(capacity);
         if (!copy[i].algorithm || !copy[i].value || !rows[i]) goto finish;
         snprintf(rows[i], capacity, "%-8s  %s", entries[i].algorithm, entries[i].value);
@@ -136,13 +150,21 @@ xxwidgets_status xxwidgets_hash_set_data(xxwidgets_hash *v, const char *path, ui
         (void)xxwidgets_widget_set_enabled(CONTROL(v, COPY_ALL), v->count != 0);
         goto finish;
     }
-    free_entries(v->entries, v->count); free(v->path); free(v->summary);
-    v->entries = copy; v->count = count; v->path = new_path; v->summary = summary;
-    copy = NULL; new_path = summary = NULL;
+    free_entries(v->entries, v->count);
+    free(v->path);
+    free(v->summary);
+    v->entries = copy;
+    v->count = count;
+    v->path = new_path;
+    v->summary = summary;
+    copy = NULL;
+    new_path = summary = NULL;
     (void)xxwidgets_widget_set_text(CONTROL(v, STATUS), count ? XXW_TR(v->owner->app, "Select a hash") : XXW_TR(v->owner->app, "No hashes"));
 finish:
     for (size_t i = 0; i < count; ++i) free(rows[i]);
-    free_entries(copy, copy ? count : 0); free(new_path); free(summary);
+    free_entries(copy, copy ? count : 0);
+    free(new_path);
+    free(summary);
     return status;
 }
 xxwidgets_status xxwidgets_hash_export_text(const xxwidgets_hash *v, char *buffer, size_t capacity, size_t *required)
@@ -152,9 +174,11 @@ xxwidgets_status xxwidgets_hash_export_text(const xxwidgets_hash *v, char *buffe
     for (size_t i = 0; i < v->count; ++i) length += strlen(v->entries[i].algorithm) + strlen(v->entries[i].value) + 3;
     if (required) *required = length + 1;
     if (!buffer && !capacity) return XXWIDGETS_OK;
-    if (capacity <= length) { if (capacity) buffer[0] = 0; return XXWIDGETS_BUFFER_TOO_SMALL; }
-    for (size_t i = 0, pos = 0; i < v->count; ++i)
-        pos += (size_t)snprintf(buffer + pos, capacity - pos, "%s: %s\n", v->entries[i].algorithm, v->entries[i].value);
+    if (capacity <= length) {
+        if (capacity) buffer[0] = 0;
+        return XXWIDGETS_BUFFER_TOO_SMALL;
+    }
+    for (size_t i = 0, pos = 0; i < v->count; ++i) pos += (size_t)snprintf(buffer + pos, capacity - pos, "%s: %s\n", v->entries[i].algorithm, v->entries[i].value);
     if (!v->count) buffer[0] = 0;
     return XXWIDGETS_OK;
 }
@@ -185,8 +209,7 @@ xxwidgets_status xxwidgets_hash_handle_event(xxwidgets_hash *v, const xxwidgets_
             if (status == XXWIDGETS_OK) status = xxwidgets_clipboard_set_text(v->owner, text);
             free(text);
         }
-        return xxwidgets_widget_set_text(CONTROL(v, STATUS),
-            status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
+        return xxwidgets_widget_set_text(CONTROL(v, STATUS), status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
     }
     return XXWIDGETS_OK;
 }

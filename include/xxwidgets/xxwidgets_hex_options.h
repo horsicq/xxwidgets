@@ -61,25 +61,20 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_init(xxwidgets_hex_options 
  * Bounds use text cells and require at least 44 x 5.
  * Children belong to the owner WINDOW and use its app callback. Destroy the
  * form before its owner/app; borrowed controls must not be destroyed alone. */
-XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-                                                                   xxwidgets_hex_options_widget **out_widget);
+XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_hex_options_widget **out_widget);
 XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_destroy(xxwidgets_hex_options_widget *widget);
-XXWIDGETS_API xxwidgets_widget *xxwidgets_hex_options_widget_control(const xxwidgets_hex_options_widget *widget,
-                                                                     xxwidgets_hex_options_control_id control);
-XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_get(const xxwidgets_hex_options_widget *widget,
-                                                                 xxwidgets_hex_options *options);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_hex_options_widget_control(const xxwidgets_hex_options_widget *widget, xxwidgets_hex_options_control_id control);
+XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_get(const xxwidgets_hex_options_widget *widget, xxwidgets_hex_options *options);
 /* bytes_per_row must be 8, 16, 24, 32, 48 or 64; checkbox values must be 0 or 1.
  * Font descriptors follow xxwidgets_font validation; 0 selects automatic size.
  * Programmatic updates are transactional and emit no input events. */
-XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_set(xxwidgets_hex_options_widget *widget,
-                                                                 const xxwidgets_hex_options *options);
+XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_set(xxwidgets_hex_options_widget *widget, const xxwidgets_hex_options *options);
 XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_widget_set_rect(xxwidgets_hex_options_widget *widget, xxwidgets_rect bounds);
 
 /* Shared native/TUI modal. show_editable must be zero or one; zero hides the
  * Editable control and preserves its input value. OK commits all options only
  * after successful cleanup. Cancel/Escape/close, quit and errors preserve them. */
-XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const char *title,
-    xxwidgets_hex_options *options, int show_editable, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_hex_options_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_hex_options *options, int show_editable, int *accepted);
 
 #ifdef __cplusplus
 }

@@ -61,8 +61,8 @@ typedef enum xxwidgets_entropy_control_id {
  * 4096 ordered, non-overlapping samples. No file bytes are retained. Empty
  * NULL/0 clears the plot. Invalid input or backend errors preserve its model.
  * Plot SELECT events carry the zero-based sample index. */
-XXWIDGETS_API xxwidgets_status xxwidgets_entropy_plot_set_samples(xxwidgets_widget *plot,
-    const xxwidgets_entropy_sample *samples, size_t count, uint64_t base, uint64_t size);
+XXWIDGETS_API xxwidgets_status xxwidgets_entropy_plot_set_samples(xxwidgets_widget *plot, const xxwidgets_entropy_sample *samples, size_t count, uint64_t base,
+                                                                  uint64_t size);
 
 /* XEntropyWidget-style composite, native desktop and TUI. Bounds >= 88 x 27
  * cells. Owns its child controls; destroy before the owner window/app. Forward
@@ -78,16 +78,15 @@ XXWIDGETS_API xxwidgets_status xxwidgets_entropy_handle_event(xxwidgets_entropy 
  * supplies format-aware regions from its parser, keeping the widget independent
  * of a particular file-format engine. Auto count = clamp(size/512, 1, 100).
  * Invalid data and allocation failures preserve the preceding model. */
-XXWIDGETS_API xxwidgets_status xxwidgets_entropy_set_data(xxwidgets_entropy *view, const void *data, size_t size, uint64_t base,
-                                                          const char *file_type, const xxwidgets_entropy_region *regions, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_entropy_set_data(xxwidgets_entropy *view, const void *data, size_t size, uint64_t base, const char *file_type,
+                                                          const xxwidgets_entropy_region *regions, size_t count);
 /* Installs a snapshot transactionally, up to 1024 regions and 4096 samples.
  * Count/Reload are disabled: recomputing requires new source data. Export,
  * filtering, map selection, byte distribution and plot tracking remain active. */
 XXWIDGETS_API xxwidgets_status xxwidgets_entropy_set_statistics(xxwidgets_entropy *view, const xxwidgets_entropy_statistics *statistics);
 /* Resizable modal using the same composite. Close/Esc dismisses it. Export
  * buttons are hidden; hosts embedding the composite use the export APIs. */
-XXWIDGETS_API xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *title,
-    const xxwidgets_entropy_statistics *statistics);
+XXWIDGETS_API xxwidgets_status xxwidgets_entropy_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_entropy_statistics *statistics);
 /* Reload the copied data with 1..1000 blocks (clamped to size for small inputs).
  * The final block includes the remainder. Empty inputs have zero samples.
  * Shannon entropy uses [0,8] bits/byte; packed means >= 6.5, as in XBinary. */
@@ -96,15 +95,13 @@ XXWIDGETS_API double xxwidgets_entropy_total(const xxwidgets_entropy *view);
 XXWIDGETS_API uint64_t xxwidgets_entropy_byte_count(const xxwidgets_entropy *view, unsigned int byte);
 XXWIDGETS_API size_t xxwidgets_entropy_sample_count(const xxwidgets_entropy *view);
 XXWIDGETS_API xxwidgets_status xxwidgets_entropy_get_sample(const xxwidgets_entropy *view, size_t index, xxwidgets_entropy_sample *sample);
-XXWIDGETS_API xxwidgets_status xxwidgets_entropy_get_region(const xxwidgets_entropy *view, size_t index, xxwidgets_entropy_region *region,
-                                                            double *entropy);
+XXWIDGETS_API xxwidgets_status xxwidgets_entropy_get_region(const xxwidgets_entropy *view, size_t index, xxwidgets_entropy_region *region, double *entropy);
 XXWIDGETS_API size_t xxwidgets_entropy_region_count(const xxwidgets_entropy *view);
 /* Current tab's visible table as CSV, or its diagram as standalone SVG.
  * required includes NUL; NULL/0 queries length, a short buffer is terminated.
  * SVG dimensions must be 160..16384 by 100..16384. No file is written here. */
 XXWIDGETS_API xxwidgets_status xxwidgets_entropy_export_csv(const xxwidgets_entropy *view, char *buffer, size_t capacity, size_t *required);
-XXWIDGETS_API xxwidgets_status xxwidgets_entropy_export_svg(const xxwidgets_entropy *view, int width, int height, char *buffer, size_t capacity,
-                                                            size_t *required);
+XXWIDGETS_API xxwidgets_status xxwidgets_entropy_export_svg(const xxwidgets_entropy *view, int width, int height, char *buffer, size_t capacity, size_t *required);
 #ifdef __cplusplus
 }
 #endif

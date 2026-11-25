@@ -62,8 +62,7 @@ static xxwidgets_status apply_texts(xxwidgets_value_field *field)
     xxwidgets_status status = xxwidgets_app_get_metrics(app, &metrics);
     if (status != XXWIDGETS_OK) return status;
     status = xxwidgets_widget_set_text(field->controls[XXWIDGETS_VALUE_FIELD_CAPTION], XXW_TR(app, field->caption));
-    if (status == XXWIDGETS_OK && value)
-        status = xxwidgets_widget_set_tooltip(value, field->tooltip ? XXW_TR(app, field->tooltip) : NULL);
+    if (status == XXWIDGETS_OK && value) status = xxwidgets_widget_set_tooltip(value, field->tooltip ? XXW_TR(app, field->tooltip) : NULL);
     if (status == XXWIDGETS_OK && arrow) status = xxwidgets_widget_set_text(arrow, arrow_text(field, &metrics));
     if (status == XXWIDGETS_OK && arrow) status = xxwidgets_widget_set_tooltip(arrow, XXW_TR(app, field->caption));
     return status;
@@ -105,8 +104,7 @@ xxwidgets_status xxwidgets_value_field_create(xxwidgets_widget *owner, const cha
     }
     if (status == XXWIDGETS_OK && (flags & XXWIDGETS_VALUE_FIELD_WITH_ARROW)) {
         status = xxwidgets_widget_create(app, owner, XXWIDGETS_BUTTON, XXW_TR(app, caption), start, &field->controls[XXWIDGETS_VALUE_FIELD_ARROW]);
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_button_set_icon_id(field->controls[XXWIDGETS_VALUE_FIELD_ARROW], XXWIDGETS_ICON_ENTRY, XXWIDGETS_ICON_ONLY);
+        if (status == XXWIDGETS_OK) status = xxwidgets_button_set_icon_id(field->controls[XXWIDGETS_VALUE_FIELD_ARROW], XXWIDGETS_ICON_ENTRY, XXWIDGETS_ICON_ONLY);
     }
     if (status == XXWIDGETS_OK) status = apply_texts(field);
     if (status != XXWIDGETS_OK) {
@@ -170,8 +168,8 @@ xxwidgets_status xxwidgets_value_field_set_bounds(xxwidgets_value_field *field, 
     value_width = box.control.width - (arrow ? arrow + metrics.spacing : 0);
     if (value_width < 1) value_width = 1;
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_layout_place(field->controls[XXWIDGETS_VALUE_FIELD_VALUE],
-                                        xxwidgets_layout_rect(box.control.x, box.control.y, value_width, box.control.height));
+        status =
+            xxwidgets_layout_place(field->controls[XXWIDGETS_VALUE_FIELD_VALUE], xxwidgets_layout_rect(box.control.x, box.control.y, value_width, box.control.height));
     if (status == XXWIDGETS_OK && arrow)
         status = xxwidgets_layout_place(field->controls[XXWIDGETS_VALUE_FIELD_ARROW],
                                         xxwidgets_layout_rect(box.control.x + value_width + metrics.spacing, box.control.y, arrow, box.control.height));
@@ -213,8 +211,7 @@ xxwidgets_status xxwidgets_value_field_get_preferred_size(xxwidgets_value_field 
                 xxwidgets_status restore = xxwidgets_widget_set_bold(value, 0);
                 if (status == XXWIDGETS_OK) status = restore;
             }
-        } else
-            status = xxwidgets_widget_get_preferred_size(value, &w, &h);
+        } else status = xxwidgets_widget_get_preferred_size(value, &w, &h);
         if (status != XXWIDGETS_OK) return status;
         content = w;
     }
@@ -362,8 +359,7 @@ int xxwidgets_value_field_handle_event(xxwidgets_value_field *field, const xxwid
         if (control) *control = XXWIDGETS_VALUE_FIELD_ARROW;
         return 1;
     }
-    if (value && event->widget == value && (field->flags & XXWIDGETS_VALUE_FIELD_COMBO) && event->type == XXWIDGETS_EVENT_SELECT &&
-        xxwidgets_component_live(value)) {
+    if (value && event->widget == value && (field->flags & XXWIDGETS_VALUE_FIELD_COMBO) && event->type == XXWIDGETS_EVENT_SELECT && xxwidgets_component_live(value)) {
         if (control) *control = XXWIDGETS_VALUE_FIELD_VALUE;
         return 1;
     }

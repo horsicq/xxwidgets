@@ -62,9 +62,7 @@ static optimization_layout target_layout(const xxwidgets_optimization_capabiliti
     (void)capabilities;
     return OPTIMIZATION_LAYOUT_X86;
 #else
-    if (capabilities &&
-        !(capabilities->sse2 || capabilities->avx2 || capabilities->sse42 || capabilities->aes ||
-          capabilities->sha || capabilities->vpclmulqdq) &&
+    if (capabilities && !(capabilities->sse2 || capabilities->avx2 || capabilities->sse42 || capabilities->aes || capabilities->sha || capabilities->vpclmulqdq) &&
         (capabilities->neon || capabilities->arm_crc32 || capabilities->arm_crypto || capabilities->arm_dotprod || capabilities->arm_pmull))
         return OPTIMIZATION_LAYOUT_ARM;
     return OPTIMIZATION_LAYOUT_MIXED;
@@ -73,14 +71,12 @@ static optimization_layout target_layout(const xxwidgets_optimization_capabiliti
 
 static int x86_control(xxwidgets_optimization_options_control_id control)
 {
-    return control >= XXWIDGETS_OPTIMIZATION_OPTIONS_SSE2 &&
-        control <= XXWIDGETS_OPTIMIZATION_OPTIONS_VPCLMULQDQ;
+    return control >= XXWIDGETS_OPTIMIZATION_OPTIONS_SSE2 && control <= XXWIDGETS_OPTIMIZATION_OPTIONS_VPCLMULQDQ;
 }
 
 static int arm_control(xxwidgets_optimization_options_control_id control)
 {
-    return control >= XXWIDGETS_OPTIMIZATION_OPTIONS_NEON &&
-        control <= XXWIDGETS_OPTIMIZATION_OPTIONS_ARM_PMULL;
+    return control >= XXWIDGETS_OPTIMIZATION_OPTIONS_NEON && control <= XXWIDGETS_OPTIMIZATION_OPTIONS_ARM_PMULL;
 }
 
 static int boolean(int value)
@@ -89,19 +85,15 @@ static int boolean(int value)
 }
 static int valid_capabilities(const xxwidgets_optimization_capabilities *capabilities)
 {
-    return capabilities && boolean(capabilities->sse2) && boolean(capabilities->avx2) &&
-        boolean(capabilities->sse42) && boolean(capabilities->aes) && boolean(capabilities->sha) &&
-        boolean(capabilities->vpclmulqdq) && boolean(capabilities->neon) &&
-        boolean(capabilities->arm_crc32) && boolean(capabilities->arm_crypto) &&
-        boolean(capabilities->arm_dotprod) && boolean(capabilities->arm_pmull);
+    return capabilities && boolean(capabilities->sse2) && boolean(capabilities->avx2) && boolean(capabilities->sse42) && boolean(capabilities->aes) &&
+           boolean(capabilities->sha) && boolean(capabilities->vpclmulqdq) && boolean(capabilities->neon) && boolean(capabilities->arm_crc32) &&
+           boolean(capabilities->arm_crypto) && boolean(capabilities->arm_dotprod) && boolean(capabilities->arm_pmull);
 }
 static int valid_options(const xxwidgets_optimization_options *options)
 {
-    return options && boolean(options->use_sse2) && boolean(options->use_avx2) &&
-        boolean(options->use_sse42) && boolean(options->use_aes) && boolean(options->use_sha) &&
-        boolean(options->use_vpclmulqdq) && boolean(options->use_neon) &&
-        boolean(options->use_arm_crc32) && boolean(options->use_arm_crypto) &&
-        boolean(options->use_arm_dotprod) && boolean(options->use_arm_pmull);
+    return options && boolean(options->use_sse2) && boolean(options->use_avx2) && boolean(options->use_sse42) && boolean(options->use_aes) && boolean(options->use_sha) &&
+           boolean(options->use_vpclmulqdq) && boolean(options->use_neon) && boolean(options->use_arm_crc32) && boolean(options->use_arm_crypto) &&
+           boolean(options->use_arm_dotprod) && boolean(options->use_arm_pmull);
 }
 static int layout_height(optimization_layout layout)
 {
@@ -110,8 +102,8 @@ static int layout_height(optimization_layout layout)
 
 static int valid_bounds(xxwidgets_rect bounds, optimization_layout layout)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 60 && bounds.height >= layout_height(layout) &&
-        bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 60 && bounds.height >= layout_height(layout) && bounds.x <= INT_MAX - bounds.width &&
+           bounds.y <= INT_MAX - bounds.height;
 }
 
 static void option_rects(xxwidgets_rect bounds, optimization_layout layout, xxwidgets_rect *rects)
@@ -147,10 +139,9 @@ xxwidgets_status xxwidgets_optimization_options_init(xxwidgets_optimization_opti
     if (!options) return XXWIDGETS_INVALID_ARGUMENT;
     options->buffer_size = 64u * 1024u;
     options->file_buffer_size = 64u * 1024u;
-    options->use_sse2 = options->use_avx2 = options->use_sse42 = options->use_aes = options->use_sha =
-        options->use_vpclmulqdq = options->use_neon = options->use_arm_crc32 = options->use_arm_crypto =
-        options->use_arm_dotprod = 1;
-        options->use_arm_pmull = 1;
+    options->use_sse2 = options->use_avx2 = options->use_sse42 = options->use_aes = options->use_sha = options->use_vpclmulqdq = options->use_neon =
+        options->use_arm_crc32 = options->use_arm_crypto = options->use_arm_dotprod = 1;
+    options->use_arm_pmull = 1;
     return XXWIDGETS_OK;
 }
 
@@ -342,9 +333,10 @@ xxwidgets_status xxwidgets_optimization_options_widget_create(xxwidgets_widget *
                                                               xxwidgets_optimization_options_widget **out_widget)
 {
     static const char *const labels[XXWIDGETS_OPTIMIZATION_OPTIONS_CONTROL_COUNT] = {
-        XXW_N_("Buffer size"), XXW_N_("File buffer size"), XXW_N_("Use SSE2"), XXW_N_("Use AVX2"), XXW_N_("Use SSE4.2"), XXW_N_("Use AES"), XXW_N_("Use SHA"), XXW_N_("Use VPCLMULQDQ"),
-        XXW_N_("Use Arm NEON"), XXW_N_("Use Arm CRC32"), XXW_N_("Use Arm AES/SHA"), XXW_N_("Use Arm Dot Product"), XXW_N_("Use Arm PMULL"),
-        XXW_N_("Buffer size"), XXW_N_("File buffer size"), XXW_N_("CPU acceleration")};
+        XXW_N_("Buffer size"),   XXW_N_("File buffer size"), XXW_N_("Use SSE2"),         XXW_N_("Use AVX2"),
+        XXW_N_("Use SSE4.2"),    XXW_N_("Use AES"),          XXW_N_("Use SHA"),          XXW_N_("Use VPCLMULQDQ"),
+        XXW_N_("Use Arm NEON"),  XXW_N_("Use Arm CRC32"),    XXW_N_("Use Arm AES/SHA"),  XXW_N_("Use Arm Dot Product"),
+        XXW_N_("Use Arm PMULL"), XXW_N_("Buffer size"),      XXW_N_("File buffer size"), XXW_N_("CPU acceleration")};
     xxwidgets_optimization_options_widget *widget;
     xxwidgets_optimization_options defaults;
     xxwidgets_rect rects[XXWIDGETS_OPTIMIZATION_OPTIONS_CONTROL_COUNT];
@@ -352,8 +344,8 @@ xxwidgets_status xxwidgets_optimization_options_widget_create(xxwidgets_widget *
     size_t i;
     if (!out_widget) return XXWIDGETS_INVALID_ARGUMENT;
     *out_widget = NULL;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_capabilities(capabilities) ||
-        !valid_bounds(bounds, target_layout(capabilities))) return XXWIDGETS_INVALID_ARGUMENT;
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_capabilities(capabilities) || !valid_bounds(bounds, target_layout(capabilities)))
+        return XXWIDGETS_INVALID_ARGUMENT;
     if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing) return XXWIDGETS_BUSY;
     widget = (xxwidgets_optimization_options_widget *)calloc(1, sizeof(*widget));
     if (!widget) return XXWIDGETS_OUT_OF_MEMORY;
@@ -471,8 +463,7 @@ xxwidgets_status xxwidgets_optimization_options_dialog(xxwidgets_widget *owner, 
         }
     app->on_event = optimization_event;
     app->user_data = &state;
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 64, dialog_height}, &state.window);
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 2, 64, dialog_height}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
     status = xxwidgets_optimization_options_widget_create(state.window, (xxwidgets_rect){2, 1, 60, form_height}, capabilities, &form);

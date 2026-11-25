@@ -43,8 +43,7 @@ void xxwidgets_debugger_xxdebug_destroy(xxwidgets_debugger_xxdebug *adapter);
  * and an explanatory message. Unknown regular files retain native debugging
  * when available (for example, a script executed by the host loader).
  * user_data is unused and may be NULL. */
-xxwidgets_status xxwidgets_debugger_xxdebug_probe_project(const char *program,
-    xxwidgets_debugger_project_info *info, void *user_data);
+xxwidgets_status xxwidgets_debugger_xxdebug_probe_project(const char *program, xxwidgets_debugger_project_info *info, void *user_data);
 
 /* Compatibility wrapper over xxwidgets_debugger_refresh_session; a temporary
  * provider is borrowed only for this call. NULL options use all defaults.
@@ -75,8 +74,8 @@ xxwidgets_status xxwidgets_debugger_xxdebug_probe_project(const char *program,
  * to xxwidgets_status (state -> BUSY, access/unsupported -> UNAVAILABLE).
  * No debugger callbacks are changed. All target addresses are linear.
  */
-xxwidgets_status xxwidgets_debugger_refresh(xxwidgets_debugger *view, xxdebug *debugger, uint64_t tid,
-    const xxwidgets_debugger_refresh_options *options, xxdebug_status *debug_status);
+xxwidgets_status xxwidgets_debugger_refresh(xxwidgets_debugger *view, xxdebug *debugger, uint64_t tid, const xxwidgets_debugger_refresh_options *options,
+                                            xxdebug_status *debug_status);
 
 #ifdef __cplusplus
 }

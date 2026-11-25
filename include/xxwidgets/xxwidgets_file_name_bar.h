@@ -76,8 +76,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_file_name_bar_retranslate(xxwidgets_fil
 XXWIDGETS_API xxwidgets_widget *xxwidgets_file_name_bar_control(const xxwidgets_file_name_bar *bar, xxwidgets_file_name_bar_control_id control);
 /* 1 when event belongs to the bar; *action says what happened (NONE for an
  * event of the bar that needs nothing). */
-XXWIDGETS_API int xxwidgets_file_name_bar_handle_event(xxwidgets_file_name_bar *bar, const xxwidgets_event *event,
-                                                     xxwidgets_file_name_bar_action *action);
+XXWIDGETS_API int xxwidgets_file_name_bar_handle_event(xxwidgets_file_name_bar *bar, const xxwidgets_event *event, xxwidgets_file_name_bar_action *action);
 
 #ifdef __cplusplus
 }

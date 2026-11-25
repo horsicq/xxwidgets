@@ -38,7 +38,7 @@ typedef struct xxwidgets_debugger_project_settings {
 #define XXWIDGETS_DEBUGGER_PROJECT_EMULATOR 2u
 
 typedef struct xxwidgets_debugger_project_info {
-    unsigned backends; /* Bitwise OR of the available PROJECT_* backends. */
+    unsigned backends;                        /* Bitwise OR of the available PROJECT_* backends. */
     xxwidgets_debugger_project_format format; /* Detected emulator format. */
     wchar_t native_label[64];
     wchar_t emulator_label[64];
@@ -52,8 +52,7 @@ typedef struct xxwidgets_debugger_project_info {
  * or unsupported targets. All strings must be terminated; target/message are
  * UTF-8. A known format fixes the emulator format; AUTO allows manual choice.
  * This is a compatibility probe, not a guarantee that launching will succeed. */
-typedef xxwidgets_status (*xxwidgets_debugger_project_probe_fn)(
-    const char *program, xxwidgets_debugger_project_info *info, void *user_data);
+typedef xxwidgets_status (*xxwidgets_debugger_project_probe_fn)(const char *program, xxwidgets_debugger_project_info *info, void *user_data);
 
 typedef struct xxwidgets_debugger_project_options {
     xxwidgets_debugger_project_probe_fn probe;
@@ -66,8 +65,7 @@ typedef struct xxwidgets_debugger_project_options {
  * On Start, validated settings replace the caller's object and accepted is 1.
  * Cancellation/close leaves settings unchanged and reports accepted == 0.
  * Call on the UI thread outside an input callback, as other modal APIs do. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_project_dialog(
-    xxwidgets_widget *owner, xxwidgets_debugger_project_settings *settings, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_project_dialog(xxwidgets_widget *owner, xxwidgets_debugger_project_settings *settings, int *accepted);
 
 /* Optional file-aware chooser. The callback supplies available backend labels
  * and target details; xxwidgets itself has no required debugger dependency.
@@ -75,15 +73,13 @@ XXWIDGETS_API xxwidgets_status xxwidgets_debugger_project_dialog(
  * No available backend disables Start. If rechecking on Start changes the
  * selected backend or format, the user must accept the updated settings again.
  * NULL options/probe has the same behavior as project_dialog(). */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_project_dialog_ex(
-    xxwidgets_widget *owner, xxwidgets_debugger_project_settings *settings,
-    const xxwidgets_debugger_project_options *options, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_project_dialog_ex(xxwidgets_widget *owner, xxwidgets_debugger_project_settings *settings,
+                                                                    const xxwidgets_debugger_project_options *options, int *accepted);
 
 /* Displays running processes plus an editable decimal PID. Refresh never
  * attaches to, suspends, or modifies any process. Only accepting changes pid.
  * The caller performs the attachment after this dialog returns. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_attach_dialog(
-    xxwidgets_widget *owner, uint64_t *pid, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_attach_dialog(xxwidgets_widget *owner, uint64_t *pid, int *accepted);
 
 #ifdef __cplusplus
 }

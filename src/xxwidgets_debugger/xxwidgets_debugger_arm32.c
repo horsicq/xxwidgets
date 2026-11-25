@@ -5,9 +5,7 @@
 
 #include <stdio.h>
 
-xxwidgets_status xxwidgets_debugger_format_arm32(
-    const xxwidgets_debugger_arm32_state *state,
-    xxwidgets_debugger_register_rows *rows)
+xxwidgets_status xxwidgets_debugger_format_arm32(const xxwidgets_debugger_arm32_state *state, xxwidgets_debugger_register_rows *rows)
 {
     static const char *const aliases[] = {"SP", "LR", "PC"};
     xxwidgets_status status;

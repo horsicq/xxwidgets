@@ -35,14 +35,12 @@ static char *copy_text(const char *text)
 
 static int valid_bounds(xxwidgets_rect bounds)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 72 && bounds.height >= 22 &&
-        bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 72 && bounds.height >= 22 && bounds.x <= INT_MAX - bounds.width && bounds.y <= INT_MAX - bounds.height;
 }
 
 static int outside_dispatch(const xxwidgets_die_signature_editor *editor)
 {
-    return !editor->executing && !editor->owner->app->dispatch_depth &&
-        !editor->owner->app->polling && !editor->owner->app->syncing;
+    return !editor->executing && !editor->owner->app->dispatch_depth && !editor->owner->app->polling && !editor->owner->app->syncing;
 }
 
 static const char *const editor_labels[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT] = {
@@ -102,10 +100,8 @@ static xxwidgets_status describe(xxwidgets_die_signature_editor *editor, const c
         snprintf(editor->notice, sizeof(editor->notice), "%s", notice);
     }
     (void)xxwidgets_die_signature_edit_position(editor->controls[XXWIDGETS_DIE_EDITOR_SOURCE], &line, &column);
-    snprintf(text, sizeof(text), "%s | %s | Line %zu, column %zu%s%s",
-        xxwidgets_die_signature_editor_read_only(editor) ? "Read-only" : "Editable",
-        modified ? "Modified" : "Saved", line, column,
-        editor->notice[0] ? " | " : "", editor->notice);
+    snprintf(text, sizeof(text), "%s | %s | Line %zu, column %zu%s%s", xxwidgets_die_signature_editor_read_only(editor) ? "Read-only" : "Editable",
+             modified ? "Modified" : "Saved", line, column, editor->notice[0] ? " | " : "", editor->notice);
     status = xxwidgets_widget_set_text(editor->controls[XXWIDGETS_DIE_EDITOR_STATUS], text);
     next = xxwidgets_widget_set_enabled(editor->controls[XXWIDGETS_DIE_EDITOR_SAVE], !editor->executing && modified);
     if (status == XXWIDGETS_OK) status = next;
@@ -114,19 +110,16 @@ static xxwidgets_status describe(xxwidgets_die_signature_editor *editor, const c
     return status;
 }
 
-xxwidgets_widget *xxwidgets_die_signature_editor_control(const xxwidgets_die_signature_editor *editor,
-    xxwidgets_die_signature_editor_control_id control)
+xxwidgets_widget *xxwidgets_die_signature_editor_control(const xxwidgets_die_signature_editor *editor, xxwidgets_die_signature_editor_control_id control)
 {
     return editor && control >= 0 && control < XXWIDGETS_DIE_EDITOR_CONTROL_COUNT ? editor->controls[control] : NULL;
 }
 
-xxwidgets_status xxwidgets_die_signature_editor_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-    xxwidgets_die_signature_editor **out_editor)
+xxwidgets_status xxwidgets_die_signature_editor_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_die_signature_editor **out_editor)
 {
     static const xxwidgets_kind kinds[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT] = {
-        XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_CHECKBOX,
-        XXWIDGETS_EDIT, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_EDIT, XXWIDGETS_BUTTON,
-        XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_LABEL};
+        XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_CHECKBOX,           XXWIDGETS_EDIT, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_EDIT,
+        XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_BUTTON, XXWIDGETS_DIE_SIGNATURE_EDIT, XXWIDGETS_LABEL};
     xxwidgets_die_signature_editor *editor;
     xxwidgets_rect rects[XXWIDGETS_DIE_EDITOR_CONTROL_COUNT];
     xxwidgets_status status;
@@ -139,7 +132,10 @@ xxwidgets_status xxwidgets_die_signature_editor_create(xxwidgets_widget *owner, 
     if (!editor) return XXWIDGETS_OUT_OF_MEMORY;
     editor->owner = owner;
     editor->path = copy_text("");
-    if (!editor->path) { free(editor); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!editor->path) {
+        free(editor);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     rectangles(owner->app, bounds, rects);
     for (i = 0; i < XXWIDGETS_DIE_EDITOR_CONTROL_COUNT; ++i) {
         status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, editor_labels[i]), rects[i], &editor->controls[i]);
@@ -242,8 +238,7 @@ static void restore_path_display(xxwidgets_die_signature_editor *editor, char *p
     --control->app->syncing;
 }
 
-xxwidgets_status xxwidgets_die_signature_editor_set_source(xxwidgets_die_signature_editor *editor,
-    const char *source, const char *path, int discard_modified)
+xxwidgets_status xxwidgets_die_signature_editor_set_source(xxwidgets_die_signature_editor *editor, const char *source, const char *path, int discard_modified)
 {
     char *new_path, *previous, *source_copy;
     xxwidgets_status status;
@@ -253,9 +248,19 @@ xxwidgets_status xxwidgets_die_signature_editor_set_source(xxwidgets_die_signatu
     new_path = copy_text(path ? path : "");
     previous = copy_text(editor->controls[XXWIDGETS_DIE_EDITOR_PATH]->text);
     source_copy = copy_text(source);
-    if (!new_path || !previous || !source_copy) { free(new_path); free(previous); free(source_copy); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!new_path || !previous || !source_copy) {
+        free(new_path);
+        free(previous);
+        free(source_copy);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     status = xxwidgets_widget_set_text(editor->controls[XXWIDGETS_DIE_EDITOR_PATH], new_path);
-    if (status != XXWIDGETS_OK) { free(new_path); free(previous); free(source_copy); return status; }
+    if (status != XXWIDGETS_OK) {
+        free(new_path);
+        free(previous);
+        free(source_copy);
+        return status;
+    }
     status = xxwidgets_die_signature_edit_set_source(editor->controls[XXWIDGETS_DIE_EDITOR_SOURCE], source_copy);
     free(source_copy);
     if (status != XXWIDGETS_OK) {
@@ -287,10 +292,16 @@ xxwidgets_status xxwidgets_die_signature_editor_open(xxwidgets_die_signature_edi
         return size < 0 ? XXWIDGETS_PLATFORM_ERROR : XXWIDGETS_INVALID_ARGUMENT;
     }
     source = (char *)malloc((size_t)size + 1);
-    if (!source) { (void)xx_io_close(device); return XXWIDGETS_OUT_OF_MEMORY; }
+    if (!source) {
+        (void)xx_io_close(device);
+        return XXWIDGETS_OUT_OF_MEMORY;
+    }
     while (position < (size_t)size) {
         ssize_t count = xx_io_read(device, source + position, (size_t)size - position);
-        if (count <= 0 || (size_t)count > (size_t)size - position) { status = XXWIDGETS_PLATFORM_ERROR; break; }
+        if (count <= 0 || (size_t)count > (size_t)size - position) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            break;
+        }
         position += (size_t)count;
     }
     if (status == XXWIDGETS_OK) {
@@ -312,8 +323,8 @@ typedef struct signature_save_job {
 
 /* Only immutable snapshots enter the worker. The UI path/savepoint and the
  * editable source belong to the UI thread throughout the disk operation. */
-xxwidgets_status xxwidgets_signature_save_snapshot(const char *destination, const char *source, uint64_t sequence,
-    xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter)
+xxwidgets_status xxwidgets_signature_save_snapshot(const char *destination, const char *source, uint64_t sequence, xx_pd_struct *progress,
+                                                   xxwidgets_disk_write_reporter *reporter)
 {
     xx_io_device *device = NULL;
     char *temporary;
@@ -322,9 +333,13 @@ xxwidgets_status xxwidgets_signature_save_snapshot(const char *destination, cons
     int level = -1, created = 0;
     xxwidgets_status status = XXWIDGETS_OK;
     if (!destination || !*destination || !source) return XXWIDGETS_INVALID_ARGUMENT;
-    path_size = strlen(destination); length = strlen(source);
+    path_size = strlen(destination);
+    length = strlen(source);
     if (path_size > SIZE_MAX - 100) return XXWIDGETS_INVALID_ARGUMENT;
-    if (xx_pd_is_stopped(progress)) { xx_pd_stop(progress); return XXWIDGETS_UNAVAILABLE; }
+    if (xx_pd_is_stopped(progress)) {
+        xx_pd_stop(progress);
+        return XXWIDGETS_UNAVAILABLE;
+    }
     temporary = malloc(path_size + 100);
     if (!temporary) return XXWIDGETS_OUT_OF_MEMORY;
     if (reporter) {
@@ -334,29 +349,54 @@ xxwidgets_status xxwidgets_signature_save_snapshot(const char *destination, cons
     level = xx_pd_enter_level(progress, length, "Saving DIE signature");
     if (reporter) (void)xxwidgets_disk_write_bind_levels(reporter, -1, level);
     for (attempt = 0; attempt < 100; ++attempt) {
-        if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; goto finish; }
-        snprintf(temporary, path_size + 100, "%s.xxwidgets-signature-%" PRIxPTR "-%" PRIu64 "-%u.tmp",
-            destination, (uintptr_t)source, sequence, attempt);
+        if (xx_pd_is_stopped(progress)) {
+            status = XXWIDGETS_UNAVAILABLE;
+            goto finish;
+        }
+        snprintf(temporary, path_size + 100, "%s.xxwidgets-signature-%" PRIxPTR "-%" PRIu64 "-%u.tmp", destination, (uintptr_t)source, sequence, attempt);
         device = xx_io_file_open(temporary, "wbx");
-        if (device) { created = 1; break; }
+        if (device) {
+            created = 1;
+            break;
+        }
     }
-    if (!device) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+    if (!device) {
+        status = XXWIDGETS_PLATFORM_ERROR;
+        goto finish;
+    }
     while (position < length) {
         size_t chunk = length - position;
         ssize_t written;
         if (chunk > 65536) chunk = 65536;
-        if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; goto finish; }
+        if (xx_pd_is_stopped(progress)) {
+            status = XXWIDGETS_UNAVAILABLE;
+            goto finish;
+        }
         written = xx_io_write(device, source + position, chunk);
-        if (written <= 0 || (size_t)written > chunk) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+        if (written <= 0 || (size_t)written > chunk) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto finish;
+        }
         position += (size_t)written;
         if (reporter) (void)xxwidgets_disk_write_set_bytes(reporter, position, length, 1);
         xx_pd_set_current(progress, level, position);
     }
-    if (xx_io_close(device) != 0) { device = NULL; status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+    if (xx_io_close(device) != 0) {
+        device = NULL;
+        status = XXWIDGETS_PLATFORM_ERROR;
+        goto finish;
+    }
     device = NULL;
-    xx_pd_leave_level(progress, level); level = -1;
-    if (xx_pd_is_stopped(progress)) { status = XXWIDGETS_UNAVAILABLE; goto finish; }
-    if (!xx_io_file_replace_a(temporary, destination, true)) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+    xx_pd_leave_level(progress, level);
+    level = -1;
+    if (xx_pd_is_stopped(progress)) {
+        status = XXWIDGETS_UNAVAILABLE;
+        goto finish;
+    }
+    if (!xx_io_file_replace_a(temporary, destination, true)) {
+        status = XXWIDGETS_PLATFORM_ERROR;
+        goto finish;
+    }
     created = 0;
     if (reporter) (void)xxwidgets_disk_write_set_file(reporter, destination, 1, 1, 1);
 finish:
@@ -365,8 +405,7 @@ finish:
     if (created) (void)xx_io_file_remove_a(temporary);
     free(temporary);
     if (status == XXWIDGETS_UNAVAILABLE) xx_pd_stop(progress);
-    if (status != XXWIDGETS_OK && status != XXWIDGETS_UNAVAILABLE)
-        xx_pd_set_error(progress, (int)status, "Cannot write or replace DIE signature; source retained");
+    if (status != XXWIDGETS_OK && status != XXWIDGETS_UNAVAILABLE) xx_pd_set_error(progress, (int)status, "Cannot write or replace DIE signature; source retained");
     return status;
 }
 static xxwidgets_status save_signature(void *user, xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter)
@@ -392,7 +431,10 @@ xxwidgets_status xxwidgets_die_signature_editor_save(xxwidgets_die_signature_edi
     previous = copy_text(editor->controls[XXWIDGETS_DIE_EDITOR_PATH]->text);
     source = copy_text(xxwidgets_die_signature_editor_source(editor));
     if (!destination || !source || !previous) {
-        free(destination); free(source); free(previous); return XXWIDGETS_OUT_OF_MEMORY;
+        free(destination);
+        free(source);
+        free(previous);
+        return XXWIDGETS_OUT_OF_MEMORY;
     }
     /* Stage the visible destination before any filesystem mutation. */
     status = xxwidgets_widget_set_text(editor->controls[XXWIDGETS_DIE_EDITOR_PATH], destination);
@@ -400,8 +442,7 @@ xxwidgets_status xxwidgets_die_signature_editor_save(xxwidgets_die_signature_edi
     job = (signature_save_job){source, destination, ++editor->temp_sequence};
     editor->executing = 1;
     memset(&result, 0, sizeof(result));
-    status = xxwidgets_disk_write_run(editor->owner, XXW_TR(editor->owner->app, "Saving DIE signature"),
-        destination, save_signature, &job, &result);
+    status = xxwidgets_disk_write_run(editor->owner, XXW_TR(editor->owner->app, "Saving DIE signature"), destination, save_signature, &job, &result);
     editor->executing = 0;
     if (status == XXWIDGETS_OK && result.cancelled) status = XXWIDGETS_UNAVAILABLE;
     if (status != XXWIDGETS_OK) goto restore;
@@ -416,12 +457,13 @@ restore:
     previous = NULL;
     (void)describe(editor, status == XXWIDGETS_UNAVAILABLE ? "Save cancelled; source retained" : "Save failed; source retained");
 finish:
-    free(previous); free(destination); free(source);
+    free(previous);
+    free(destination);
+    free(source);
     return status;
 }
 
-xxwidgets_status xxwidgets_die_signature_editor_find(xxwidgets_die_signature_editor *editor,
-    const char *text, int match_case, int backwards)
+xxwidgets_status xxwidgets_die_signature_editor_find(xxwidgets_die_signature_editor *editor, const char *text, int match_case, int backwards)
 {
     xxwidgets_status status;
     if (!editor || !text || !*text) return XXWIDGETS_INVALID_ARGUMENT;
@@ -462,8 +504,7 @@ static void editor_dialog_event(xxwidgets_app *app, const xxwidgets_event *event
 {
     editor_dialog *state = (editor_dialog *)user;
     (void)app;
-    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == state->window) ||
-        (event->type == XXWIDGETS_EVENT_CLICK && event->widget == state->close) ||
+    if ((event->type == XXWIDGETS_EVENT_CLOSE && event->widget == state->window) || (event->type == XXWIDGETS_EVENT_CLICK && event->widget == state->close) ||
         (event->type == XXWIDGETS_EVENT_SHORTCUT && event->value == 1)) {
         state->close_requested = 1;
         return;
@@ -513,8 +554,8 @@ static xxwidgets_status catalog_show(editor_dialog *state, catalog *entries, siz
     return state->list ? xxwidgets_widget_set_value(state->list, (int)index) : XXWIDGETS_OK;
 }
 
-static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *title, const char *source, const char *path,
-    catalog *entries, xxwidgets_die_signature_editor_run_fn run, void *user_data)
+static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *title, const char *source, const char *path, catalog *entries,
+                                          xxwidgets_die_signature_editor_run_fn run, void *user_data)
 {
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}, {"Ctrl+F", 2}, {"Meta+F", 2}, {"F3", 3}, {"Ctrl+S", 4}, {"Meta+S", 4}};
     editor_dialog state = {0};
@@ -555,8 +596,7 @@ static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *t
     app->on_event = editor_dialog_event;
     app->user_data = &state;
     app->modal_default = NULL;
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 1, width, height}, &state.window);
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x + 2, owner->rect.y + 1, width, height}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
     status = xxwidgets_window_set_minimum_size(state.window, left + 73, 25);
@@ -564,10 +604,8 @@ static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *t
         status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LISTBOX, "", (xxwidgets_rect){1, 1, state.list_width, height - 4}, &state.list);
     for (i = 0; status == XXWIDGETS_OK && state.list && i < entries->count; ++i) status = xxwidgets_listbox_add(state.list, entries->names[i]);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"),
-            (xxwidgets_rect){width - 13, height - 3, 12, 2}, &state.close);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_die_signature_editor_create(state.window, (xxwidgets_rect){left, 1, width - left - 1, height - 4}, &state.editor);
+        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){width - 13, height - 3, 12, 2}, &state.close);
+    if (status == XXWIDGETS_OK) status = xxwidgets_die_signature_editor_create(state.window, (xxwidgets_rect){left, 1, width - left - 1, height - 4}, &state.editor);
     if (status == XXWIDGETS_OK)
         status = entries ? catalog_show(&state, entries, entries->current) : xxwidgets_die_signature_editor_set_source(state.editor, source, path, 1);
     if (status == XXWIDGETS_OK && run) status = xxwidgets_die_signature_editor_set_run_callback(state.editor, run, user_data);
@@ -595,8 +633,7 @@ static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *t
                 break;
             }
             state.warned = 1;
-            (void)xxwidgets_widget_set_text(state.editor->controls[XXWIDGETS_DIE_EDITOR_STATUS],
-                XXW_TR(app, "Unsaved changes. Close again to discard them."));
+            (void)xxwidgets_widget_set_text(state.editor->controls[XXWIDGETS_DIE_EDITOR_STATUS], XXW_TR(app, "Unsaved changes. Close again to discard them."));
         }
         if (state.pending_select >= 0) {
             size_t chosen = (size_t)state.pending_select;
@@ -606,10 +643,8 @@ static xxwidgets_status editor_dialog_run(xxwidgets_widget *owner, const char *t
                     /* Keep the draft once: the list goes back to it. */
                     state.warned = 1;
                     (void)xxwidgets_widget_set_value(state.list, (int)entries->current);
-                    (void)xxwidgets_widget_set_text(state.editor->controls[XXWIDGETS_DIE_EDITOR_STATUS],
-                        XXW_TR(app, "Unsaved changes. Choose again to discard them."));
-                } else if (catalog_show(&state, entries, chosen) != XXWIDGETS_OK)
-                    (void)xxwidgets_widget_set_value(state.list, (int)entries->current);
+                    (void)xxwidgets_widget_set_text(state.editor->controls[XXWIDGETS_DIE_EDITOR_STATUS], XXW_TR(app, "Unsaved changes. Choose again to discard them."));
+                } else if (catalog_show(&state, entries, chosen) != XXWIDGETS_OK) (void)xxwidgets_widget_set_value(state.list, (int)entries->current);
             }
         }
         (void)xxwidgets_die_signature_editor_process_pending(state.editor);
@@ -639,27 +674,29 @@ finish:
     return status;
 }
 
-xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, const char *title,
-    const char *source, const char *path, xxwidgets_die_signature_editor_run_fn run, void *user_data)
+xxwidgets_status xxwidgets_die_signature_editor_dialog(xxwidgets_widget *owner, const char *title, const char *source, const char *path,
+                                                       xxwidgets_die_signature_editor_run_fn run, void *user_data)
 {
     return editor_dialog_run(owner, title, source, path, NULL, run, user_data);
 }
 
-xxwidgets_status xxwidgets_die_signatures_dialog(xxwidgets_widget *owner, const char *title,
-    const char *const *names, size_t count, size_t selected, xxwidgets_die_signature_load_fn load,
-    xxwidgets_die_signature_editor_run_fn run, void *user_data)
+xxwidgets_status xxwidgets_die_signatures_dialog(xxwidgets_widget *owner, const char *title, const char *const *names, size_t count, size_t selected,
+                                                 xxwidgets_die_signature_load_fn load, xxwidgets_die_signature_editor_run_fn run, void *user_data)
 {
     catalog entries;
     size_t i;
     if (!names || !count || count > INT_MAX || selected >= count || !load) return XXWIDGETS_INVALID_ARGUMENT;
-    for (i = 0; i < count; ++i) if (!names[i] || !xxwidgets_valid_utf8(names[i])) return XXWIDGETS_INVALID_ARGUMENT;
-    entries.names = names; entries.count = count; entries.current = selected;
-    entries.load = load; entries.user = user_data;
+    for (i = 0; i < count; ++i)
+        if (!names[i] || !xxwidgets_valid_utf8(names[i])) return XXWIDGETS_INVALID_ARGUMENT;
+    entries.names = names;
+    entries.count = count;
+    entries.current = selected;
+    entries.load = load;
+    entries.user = user_data;
     return editor_dialog_run(owner, title, NULL, NULL, &entries, run, user_data);
 }
 
-xxwidgets_status xxwidgets_die_signature_editor_set_run_callback(xxwidgets_die_signature_editor *editor,
-    xxwidgets_die_signature_editor_run_fn callback, void *user_data)
+xxwidgets_status xxwidgets_die_signature_editor_set_run_callback(xxwidgets_die_signature_editor *editor, xxwidgets_die_signature_editor_run_fn callback, void *user_data)
 {
     if (!editor) return XXWIDGETS_INVALID_ARGUMENT;
     if (editor->executing) return XXWIDGETS_BUSY;
@@ -693,10 +730,9 @@ xxwidgets_status xxwidgets_die_signature_editor_handle_event(xxwidgets_die_signa
     int value;
     if (!editor || !event) return XXWIDGETS_INVALID_ARGUMENT;
     if (editor->executing) return XXWIDGETS_BUSY;
-    if (event->widget == editor->controls[XXWIDGETS_DIE_EDITOR_SOURCE] &&
-        (event->type == XXWIDGETS_EVENT_CHANGE || event->type == XXWIDGETS_EVENT_SELECT)) return describe(editor, "");
-    if (event->widget == editor->controls[XXWIDGETS_DIE_EDITOR_READ_ONLY] &&
-        (event->type == XXWIDGETS_EVENT_CLICK || event->type == XXWIDGETS_EVENT_CHANGE)) {
+    if (event->widget == editor->controls[XXWIDGETS_DIE_EDITOR_SOURCE] && (event->type == XXWIDGETS_EVENT_CHANGE || event->type == XXWIDGETS_EVENT_SELECT))
+        return describe(editor, "");
+    if (event->widget == editor->controls[XXWIDGETS_DIE_EDITOR_READ_ONLY] && (event->type == XXWIDGETS_EVENT_CLICK || event->type == XXWIDGETS_EVENT_CHANGE)) {
         xxwidgets_status status = xxwidgets_widget_get_value(event->widget, &value);
         return status == XXWIDGETS_OK ? xxwidgets_die_signature_editor_set_read_only(editor, value) : status;
     }
@@ -721,8 +757,7 @@ xxwidgets_status xxwidgets_die_signature_editor_process_pending(xxwidgets_die_si
     action = editor->pending - 1;
     editor->pending = 0;
     if (action < 0) return XXWIDGETS_OK;
-    if (action == XXWIDGETS_DIE_EDITOR_OPEN || action == XXWIDGETS_DIE_EDITOR_SAVE_AS ||
-        (action == XXWIDGETS_DIE_EDITOR_SAVE && !editor->path[0])) {
+    if (action == XXWIDGETS_DIE_EDITOR_OPEN || action == XXWIDGETS_DIE_EDITOR_SAVE_AS || (action == XXWIDGETS_DIE_EDITOR_SAVE && !editor->path[0])) {
         if (action == XXWIDGETS_DIE_EDITOR_OPEN && xxwidgets_die_signature_editor_modified(editor)) {
             /* Owned by the editor's window, which may be the modal one. */
             xxwidgets_option discard = {XXW_TR(editor->owner->app, "Discard the unsaved signature changes"), 0};
@@ -732,8 +767,8 @@ xxwidgets_status xxwidgets_die_signature_editor_process_pending(xxwidgets_die_si
             accepted = 0;
         }
         if (xxwidgets_file_dialog_available(editor->owner->app)) {
-            status = xxwidgets_file_dialog(editor->owner,
-                action == XXWIDGETS_DIE_EDITOR_OPEN ? XXWIDGETS_FILE_DIALOG_OPEN : XXWIDGETS_FILE_DIALOG_SAVE,
+            status = xxwidgets_file_dialog(
+                editor->owner, action == XXWIDGETS_DIE_EDITOR_OPEN ? XXWIDGETS_FILE_DIALOG_OPEN : XXWIDGETS_FILE_DIALOG_SAVE,
                 action == XXWIDGETS_DIE_EDITOR_OPEN ? XXW_TR(editor->owner->app, "Open DIE signature") : XXW_TR(editor->owner->app, "Save DIE signature"),
                 editor->controls[XXWIDGETS_DIE_EDITOR_PATH]->text, &path, &accepted);
             if (status != XXWIDGETS_OK || !accepted) {
@@ -749,19 +784,25 @@ xxwidgets_status xxwidgets_die_signature_editor_process_pending(xxwidgets_die_si
         } else {
             path = copy_text(editor->controls[XXWIDGETS_DIE_EDITOR_PATH]->text);
             if (!path) return XXWIDGETS_OUT_OF_MEMORY;
-            if (!*path) { free(path); (void)describe(editor, "Enter a file path above first"); return XXWIDGETS_INVALID_ARGUMENT; }
+            if (!*path) {
+                free(path);
+                (void)describe(editor, "Enter a file path above first");
+                return XXWIDGETS_INVALID_ARGUMENT;
+            }
             if (action != XXWIDGETS_DIE_EDITOR_OPEN && xx_io_file_exists_a(path)) {
                 xxwidgets_option replace = {XXW_TR(editor->owner->app, "Replace the existing file"), 0};
                 status = xxwidgets_options_dialog(editor->owner, XXW_TR(editor->owner->app, "Confirm signature replacement"), &replace, 1, &accepted);
-                if (status != XXWIDGETS_OK || !accepted || !replace.value) { free(path); return status; }
+                if (status != XXWIDGETS_OK || !accepted || !replace.value) {
+                    free(path);
+                    return status;
+                }
             }
         }
-        status = action == XXWIDGETS_DIE_EDITOR_OPEN ? xxwidgets_die_signature_editor_open(editor, path, discard_modified) :
-            xxwidgets_die_signature_editor_save(editor, path);
+        status =
+            action == XXWIDGETS_DIE_EDITOR_OPEN ? xxwidgets_die_signature_editor_open(editor, path, discard_modified) : xxwidgets_die_signature_editor_save(editor, path);
         free(path);
     } else if (action == XXWIDGETS_DIE_EDITOR_SAVE) status = xxwidgets_die_signature_editor_save(editor, NULL);
-    else if (action == XXWIDGETS_DIE_EDITOR_FIND_NEXT) status = xxwidgets_die_signature_editor_find(editor,
-        editor->controls[XXWIDGETS_DIE_EDITOR_FIND_TEXT]->text, 0, 0);
+    else if (action == XXWIDGETS_DIE_EDITOR_FIND_NEXT) status = xxwidgets_die_signature_editor_find(editor, editor->controls[XXWIDGETS_DIE_EDITOR_FIND_TEXT]->text, 0, 0);
     else if (action == XXWIDGETS_DIE_EDITOR_RUN) status = xxwidgets_die_signature_editor_run(editor);
     else if (action == XXWIDGETS_DIE_EDITOR_CLEAR_RESULT) status = xxwidgets_die_signature_editor_clear_result(editor);
     if (status != XXWIDGETS_OK && !(action == XXWIDGETS_DIE_EDITOR_FIND_NEXT && status == XXWIDGETS_UNAVAILABLE)) {

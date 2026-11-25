@@ -61,8 +61,8 @@ XXWIDGETS_API xxwidgets_status xxwidgets_strings_handle_event(xxwidgets_strings 
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_set_records(xxwidgets_strings *view, const xxwidgets_string_record *records, size_t count);
 /* As set_records, with copied 64-bit display numbers for the # column.
  * Record getter indexes still refer to this page's input order. */
-XXWIDGETS_API xxwidgets_status xxwidgets_strings_set_records_numbered(xxwidgets_strings *view,
-    const xxwidgets_string_record *records, const uint64_t *numbers, size_t count);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_set_records_numbered(xxwidgets_strings *view, const xxwidgets_string_record *records, const uint64_t *numbers,
+                                                                      size_t count);
 /* Programmatic substring search over text/encoding, ASCII case-insensitive; other UTF-8
  * bytes compare exactly. Keeps selection if that record remains visible.
  * Visible records pass this filter and the column filters of RESULTS. */
@@ -73,8 +73,7 @@ XXWIDGETS_API size_t xxwidgets_strings_visible_count(const xxwidgets_strings *vi
  * Original indexes always refer to set_records input order. An empty selection
  * succeeds with index SIZE_MAX and a zeroed record. */
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_get_record(const xxwidgets_strings *view, size_t index, xxwidgets_string_record *record);
-XXWIDGETS_API xxwidgets_status xxwidgets_strings_get_visible_record(const xxwidgets_strings *view, size_t row, size_t *index,
-                                                                 xxwidgets_string_record *record);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_get_visible_record(const xxwidgets_strings *view, size_t row, size_t *index, xxwidgets_string_record *record);
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_get_selection(xxwidgets_strings *view, size_t *index, xxwidgets_string_record *record);
 /* Copies complete decoded text. POSIX terminals return UNAVAILABLE. */
 XXWIDGETS_API xxwidgets_status xxwidgets_strings_copy_selection(xxwidgets_strings *view);
@@ -88,10 +87,10 @@ XXWIDGETS_API xxwidgets_status xxwidgets_strings_export_csv(const xxwidgets_stri
  * 64-bit; no native table or heap allocation is proportional to count. */
 #define XXWIDGETS_STRINGS_PAGE_SIZE 128
 #define XXWIDGETS_STRINGS_COLUMN_COUNT 7
-typedef xxwidgets_status (*xxwidgets_strings_read_fn)(void *user, uint64_t first, size_t capacity,
-    xxwidgets_string_record *records, uint64_t *original_indices, size_t *received);
-typedef xxwidgets_status (*xxwidgets_strings_search_fn)(void *user, const char *filter,
-    const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT], xx_pd_struct *progress, uint64_t *matched_count);
+typedef xxwidgets_status (*xxwidgets_strings_read_fn)(void *user, uint64_t first, size_t capacity, xxwidgets_string_record *records, uint64_t *original_indices,
+                                                      size_t *received);
+typedef xxwidgets_status (*xxwidgets_strings_search_fn)(void *user, const char *filter, const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT],
+                                                        xx_pd_struct *progress, uint64_t *matched_count);
 typedef xxwidgets_status (*xxwidgets_strings_source_save_fn)(void *user, const char *path, xx_pd_struct *progress);
 /* Extraction controls are staged by the browser until Search. format and
  * map_mode are indices into the source's label arrays. minimum_length
@@ -105,9 +104,9 @@ typedef struct xxwidgets_strings_search_options {
     size_t format, map_mode;
 } xxwidgets_strings_search_options;
 XXWIDGETS_API void xxwidgets_strings_search_options_init(xxwidgets_strings_search_options *options);
-typedef xxwidgets_status (*xxwidgets_strings_search_ex_fn)(void *user,
-    xxwidgets_strings_search_options *options, const char *filter,
-    const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT], xx_pd_struct *progress, uint64_t *matched_count);
+typedef xxwidgets_status (*xxwidgets_strings_search_ex_fn)(void *user, xxwidgets_strings_search_options *options, const char *filter,
+                                                           const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT], xx_pd_struct *progress,
+                                                           uint64_t *matched_count);
 typedef struct xxwidgets_strings_source {
     uint64_t count, total_count;
     xxwidgets_strings_read_fn read;
@@ -147,30 +146,27 @@ typedef struct xxwidgets_strings_source {
  * A successful search may replace format/map labels and counts with the newly
  * detected source description; the browser reloads both selectors afterward.
  * Arrays/labels and source/user remain owned by the caller for the dialog. */
-XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_set_page(xxwidgets_strings *view,
-    const xxwidgets_strings_source *source, uint64_t first);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_set_page(xxwidgets_strings *view, const xxwidgets_strings_source *source, uint64_t first);
 /* Starts the worker and keeps the UI polling with a cancellable progress
  * dialog for long searches. Call outside event dispatch. A cancelled search
  * returns OK with cancelled=1, preserves count and leaves its source intact. */
-XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_search(xxwidgets_widget *owner,
-    xxwidgets_strings_source *source, const char *filter,
-    const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT], int *cancelled);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_search(xxwidgets_widget *owner, xxwidgets_strings_source *source, const char *filter,
+                                                               const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT], int *cancelled);
 /* Search with staged extraction options. Invalid options never start a worker.
  * Errors/cancellation preserve source options, count and total_count. */
-XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_search_ex(xxwidgets_widget *owner,
-    xxwidgets_strings_source *source, const xxwidgets_strings_search_options *options, const char *filter,
-    const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT], int *cancelled);
-XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_dialog(xxwidgets_widget *owner,
-    const char *title, const char *path, uint64_t size, xxwidgets_strings_source *source);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_search_ex(xxwidgets_widget *owner, xxwidgets_strings_source *source,
+                                                                  const xxwidgets_strings_search_options *options, const char *filter,
+                                                                  const char *const column_filters[XXWIDGETS_STRINGS_COLUMN_COUNT], int *cancelled);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_source_dialog(xxwidgets_widget *owner, const char *title, const char *path, uint64_t size,
+                                                               xxwidgets_strings_source *source);
 
 /* Shared modal browser: copied metadata, filtering, Copy and full-text View.
  * Save CSV invokes the host callback only after native destination acceptance,
  * outside event dispatch. NULL callback or absent chooser hides Save CSV.
  * The callback borrows UTF-8 path/CSV and writes exactly length bytes. */
 typedef xxwidgets_status (*xxwidgets_strings_save_fn)(const char *path, const char *csv, size_t length, void *user);
-XXWIDGETS_API xxwidgets_status xxwidgets_strings_dialog(xxwidgets_widget *owner, const char *title,
-    const char *path, uint64_t size, const xxwidgets_string_record *records, size_t count,
-    xxwidgets_strings_save_fn save, void *user);
+XXWIDGETS_API xxwidgets_status xxwidgets_strings_dialog(xxwidgets_widget *owner, const char *title, const char *path, uint64_t size,
+                                                        const xxwidgets_string_record *records, size_t count, xxwidgets_strings_save_fn save, void *user);
 #ifdef __cplusplus
 }
 #endif

@@ -62,8 +62,7 @@ enum {
 };
 
 /* caption is untranslated (an XXW_N_ string); it is copied. */
-XXWIDGETS_API xxwidgets_status xxwidgets_value_field_create(xxwidgets_widget *owner, const char *caption, unsigned int flags,
-                                                          xxwidgets_value_field **out);
+XXWIDGETS_API xxwidgets_status xxwidgets_value_field_create(xxwidgets_widget *owner, const char *caption, unsigned int flags, xxwidgets_value_field **out);
 XXWIDGETS_API xxwidgets_status xxwidgets_value_field_destroy(xxwidgets_value_field *field);
 /* The whole box: caption, frame and (WITH_ARROW) the arrow inside the frame. */
 XXWIDGETS_API xxwidgets_status xxwidgets_value_field_set_bounds(xxwidgets_value_field *field, xxwidgets_rect units);
@@ -71,8 +70,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_value_field_set_bounds(xxwidgets_value_
  * must show in full (e.g. "0000000000000000", measured bold); NULL: the
  * current value (combo boxes: their widest record). Height is the captioned
  * box height (xxwidgets_metrics: L + caption_gap + 2 * frame_inset + H). */
-XXWIDGETS_API xxwidgets_status xxwidgets_value_field_get_preferred_size(xxwidgets_value_field *field, const char *value_sample, int *width,
-                                                                      int *height);
+XXWIDGETS_API xxwidgets_status xxwidgets_value_field_get_preferred_size(xxwidgets_value_field *field, const char *value_sample, int *width, int *height);
 /* The value as plain text, not bold. */
 XXWIDGETS_API xxwidgets_status xxwidgets_value_field_set_text(xxwidgets_value_field *field, const char *utf8);
 /* Lower-case hexadecimal (as Qt DIE) zero-padded to digits (1..16: 2, 4, 8 or 16 for 8,
@@ -98,8 +96,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_value_field_retranslate(xxwidgets_value
 XXWIDGETS_API xxwidgets_widget *xxwidgets_value_field_control(const xxwidgets_value_field *field, xxwidgets_value_field_control_id control);
 /* 1 when event belongs to the field: CLICK on ARROW, SELECT on a COMBO value
  * (event->value is the record index). *control receives the part. */
-XXWIDGETS_API int xxwidgets_value_field_handle_event(xxwidgets_value_field *field, const xxwidgets_event *event,
-                                                   xxwidgets_value_field_control_id *control);
+XXWIDGETS_API int xxwidgets_value_field_handle_event(xxwidgets_value_field *field, const xxwidgets_event *event, xxwidgets_value_field_control_id *control);
 
 #ifdef __cplusplus
 }

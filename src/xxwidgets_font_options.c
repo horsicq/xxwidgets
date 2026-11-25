@@ -109,8 +109,9 @@ xxwidgets_status xxwidgets_hexview_set_font(xxwidgets_widget *view, const xxwidg
     if (!view || view->kind != XXWIDGETS_HEXVIEW || !xxwidgets_font_valid(font)) return XXWIDGETS_INVALID_ARGUMENT;
     copied = *font;
     if (!copied.family[0]) memcpy(copied.family, "monospace", sizeof("monospace"));
-    if (view->hex_has_font && !strcmp(view->hex_font.family, copied.family) && view->hex_font.point_size == copied.point_size &&
-        view->hex_font.bold == copied.bold && view->hex_font.italic == copied.italic) return XXWIDGETS_OK;
+    if (view->hex_has_font && !strcmp(view->hex_font.family, copied.family) && view->hex_font.point_size == copied.point_size && view->hex_font.bold == copied.bold &&
+        view->hex_font.italic == copied.italic)
+        return XXWIDGETS_OK;
     if (!view->app->ops->hexview_font && view->app->backend != XXWIDGETS_BACKEND_TUI) return XXWIDGETS_UNAVAILABLE;
     ++view->app->syncing;
     if (view->app->ops->hexview_font) status = view->app->ops->hexview_font(view, &copied);
@@ -154,8 +155,7 @@ int xxwidgets_font_choose_available(const xxwidgets_app *app)
  * failure of the dialog that holds the form. */
 static const char *font_choose_failure(const xxwidgets_app *app, xxwidgets_status status)
 {
-    if (status == XXWIDGETS_INVALID_ARGUMENT || status == XXWIDGETS_PLATFORM_ERROR)
-        return XXW_TR(app, "That font cannot be used. Pick 4..96 pt or edit above.");
+    if (status == XXWIDGETS_INVALID_ARGUMENT || status == XXWIDGETS_PLATFORM_ERROR) return XXW_TR(app, "That font cannot be used. Pick 4..96 pt or edit above.");
     return XXW_TR(app, "No font chooser now. Edit the family and size above.");
 }
 
@@ -197,8 +197,7 @@ static xxwidgets_status preview_font_row(const font_row *row, size_t role, const
     snprintf(text, sizeof(text), "AaBb 0123 - %s, %u pt%s%s", font->family[0] ? font->family : "Default family", font->point_size, font->bold ? ", bold" : "",
              font->italic ? ", italic" : "");
     status = xxwidgets_widget_set_text(row->preview, text);
-    if (status == XXWIDGETS_OK && row->preview->app->ops->preview_font)
-        status = row->preview->app->ops->preview_font(row->preview, (xxwidgets_font_role)role, font);
+    if (status == XXWIDGETS_OK && row->preview->app->ops->preview_font) status = row->preview->app->ops->preview_font(row->preview, (xxwidgets_font_role)role, font);
     return status;
 }
 
@@ -322,10 +321,10 @@ xxwidgets_status xxwidgets_font_options_dialog(xxwidgets_widget *owner, const ch
         (xxwidgets_rect){owner->rect.x < 32765 ? owner->rect.x + 2 : owner->rect.x, owner->rect.y < 32765 ? owner->rect.y + 2 : owner->rect.y, 100, 31}, &state.window);
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
-#define FONT_CONTROL(slot, kind, text, x, y, width)                                                              \
-    do {                                                                                                         \
+#define FONT_CONTROL(slot, kind, text, x, y, width)                                                                           \
+    do {                                                                                                                      \
         status = xxwidgets_widget_create(app, state.window, kind, XXW_TR(app, text), (xxwidgets_rect){x, y, width, 1}, slot); \
-        if (status != XXWIDGETS_OK) goto finish;                                                                 \
+        if (status != XXWIDGETS_OK) goto finish;                                                                              \
     } while (0)
     for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
         xxwidgets_widget *label;
@@ -413,8 +412,8 @@ finish:
 struct xxwidgets_font_options_widget {
     xxwidgets_widget *owner;
     xxwidgets_widget *controls[XXWIDGETS_FONT_ROLE_COUNT][XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT];
-    int pending_choose;        /* Role, or -1. */
-    unsigned int dirty_rows;   /* One bit per role whose preview needs refreshing. */
+    int pending_choose;      /* Role, or -1. */
+    unsigned int dirty_rows; /* One bit per role whose preview needs refreshing. */
 };
 
 static font_row widget_row(const xxwidgets_font_options_widget *widget, size_t role)
@@ -431,8 +430,8 @@ static font_row widget_row(const xxwidgets_font_options_widget *widget, size_t r
 
 static int font_widget_bounds_valid(xxwidgets_rect bounds)
 {
-    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 56 && bounds.height >= (int)XXWIDGETS_FONT_ROLE_COUNT * 4 - 1 &&
-        bounds.x <= 32767 - bounds.width && bounds.y <= 32767 - bounds.height;
+    return bounds.x >= 0 && bounds.y >= 0 && bounds.width >= 56 && bounds.height >= (int)XXWIDGETS_FONT_ROLE_COUNT * 4 - 1 && bounds.x <= 32767 - bounds.width &&
+           bounds.y <= 32767 - bounds.height;
 }
 
 static void font_widget_rects(xxwidgets_rect bounds, size_t role, xxwidgets_rect *rects)
@@ -447,12 +446,12 @@ static void font_widget_rects(xxwidgets_rect bounds, size_t role, xxwidgets_rect
     rects[XXWIDGETS_FONT_OPTIONS_PREVIEW] = (xxwidgets_rect){x, y + 2, w, 1};
 }
 
-xxwidgets_status xxwidgets_font_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds,
-                                                      xxwidgets_font_options_widget **out_widget)
+xxwidgets_status xxwidgets_font_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_font_options_widget **out_widget)
 {
-    static const char *const roles[XXWIDGETS_FONT_ROLE_COUNT] = {XXW_N_("Controls"), XXW_N_("Table views"), XXW_N_("Tree views"), XXW_N_("Text edits"), XXW_N_("Hex"), XXW_N_("Disasm")};
-    static const xxwidgets_kind kinds[XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT] = {
-        XXWIDGETS_LABEL, XXWIDGETS_EDIT, XXWIDGETS_EDIT, XXWIDGETS_CHECKBOX, XXWIDGETS_CHECKBOX, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
+    static const char *const roles[XXWIDGETS_FONT_ROLE_COUNT] = {XXW_N_("Controls"),   XXW_N_("Table views"), XXW_N_("Tree views"),
+                                                                 XXW_N_("Text edits"), XXW_N_("Hex"),         XXW_N_("Disasm")};
+    static const xxwidgets_kind kinds[XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT] = {XXWIDGETS_LABEL,    XXWIDGETS_EDIT,   XXWIDGETS_EDIT, XXWIDGETS_CHECKBOX,
+                                                                               XXWIDGETS_CHECKBOX, XXWIDGETS_BUTTON, XXWIDGETS_LABEL};
     static const char *const texts[XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT] = {"", "", "0", XXW_N_("Bold"), XXW_N_("Italic"), XXW_N_("Choose"), ""};
     xxwidgets_font_options_widget *widget;
     xxwidgets_font_options defaults;
@@ -505,8 +504,7 @@ xxwidgets_status xxwidgets_font_options_widget_destroy(xxwidgets_font_options_wi
     return XXWIDGETS_OK;
 }
 
-xxwidgets_widget *xxwidgets_font_options_widget_control(const xxwidgets_font_options_widget *widget, xxwidgets_font_role role,
-                                                        xxwidgets_font_options_control_id control)
+xxwidgets_widget *xxwidgets_font_options_widget_control(const xxwidgets_font_options_widget *widget, xxwidgets_font_role role, xxwidgets_font_options_control_id control)
 {
     if (!widget || role < 0 || role >= XXWIDGETS_FONT_ROLE_COUNT || control < 0 || control >= XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT) return NULL;
     return widget->controls[role][control];
@@ -554,8 +552,7 @@ xxwidgets_status xxwidgets_font_options_widget_set_rect(xxwidgets_font_options_w
             if (status != XXWIDGETS_OK) {
                 size_t r, j;
                 for (r = 0; r < XXWIDGETS_FONT_ROLE_COUNT; ++r)
-                    for (j = 0; j < XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT; ++j)
-                        (void)xxwidgets_widget_set_rect(widget->controls[r][j], previous[r][j]);
+                    for (j = 0; j < XXWIDGETS_FONT_OPTIONS_CONTROL_COUNT; ++j) (void)xxwidgets_widget_set_rect(widget->controls[r][j], previous[r][j]);
                 return status;
             }
         }
@@ -570,9 +567,8 @@ xxwidgets_status xxwidgets_font_options_widget_handle_event(xxwidgets_font_optio
     for (role = 0; role < XXWIDGETS_FONT_ROLE_COUNT; ++role) {
         xxwidgets_widget *const *row = widget->controls[role];
         if (event->type == XXWIDGETS_EVENT_CLICK && event->widget == row[XXWIDGETS_FONT_OPTIONS_CHOOSE]) widget->pending_choose = (int)role;
-        else if (event->type == XXWIDGETS_EVENT_CHANGE &&
-                 (event->widget == row[XXWIDGETS_FONT_OPTIONS_FAMILY] || event->widget == row[XXWIDGETS_FONT_OPTIONS_SIZE] ||
-                  event->widget == row[XXWIDGETS_FONT_OPTIONS_BOLD] || event->widget == row[XXWIDGETS_FONT_OPTIONS_ITALIC]))
+        else if (event->type == XXWIDGETS_EVENT_CHANGE && (event->widget == row[XXWIDGETS_FONT_OPTIONS_FAMILY] || event->widget == row[XXWIDGETS_FONT_OPTIONS_SIZE] ||
+                                                           event->widget == row[XXWIDGETS_FONT_OPTIONS_BOLD] || event->widget == row[XXWIDGETS_FONT_OPTIONS_ITALIC]))
             widget->dirty_rows |= 1u << role;
     }
     return XXWIDGETS_OK;

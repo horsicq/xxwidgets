@@ -81,8 +81,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_search_widget_set_rect(xxwidgets_search
 /* Native/TUI modal form. Start after returning from callbacks/polling. On Find
  * or Find All, copies accepted settings and reports the action; Cancel, Escape,
  * close, app quit, and every failure preserve options and report CANCEL. */
-XXWIDGETS_API xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *title,
-    xxwidgets_search_options *options, xxwidgets_search_action *action);
+XXWIDGETS_API xxwidgets_status xxwidgets_search_dialog(xxwidgets_widget *owner, const char *title, xxwidgets_search_options *options, xxwidgets_search_action *action);
 
 #ifdef __cplusplus
 }

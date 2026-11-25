@@ -51,9 +51,11 @@ typedef enum xxwidgets_disasm_color_id {
 
 /* RGB 0xRRGGBB; UINT32_MAX selects the control's normal foreground or leaves
  * the background transparent. Values outside these ranges are invalid. */
-typedef struct xxwidgets_disasm_color { uint32_t foreground, background; } xxwidgets_disasm_color;
+typedef struct xxwidgets_disasm_color {
+    uint32_t foreground, background;
+} xxwidgets_disasm_color;
 typedef struct xxwidgets_disasm_options {
-    int syntax; /* xxwidgets_disasm_syntax; ARM retains its native syntax. */
+    int syntax;                               /* xxwidgets_disasm_syntax; ARM retains its native syntax. */
     int uppercase, location_colon, highlight; /* Each 0 or 1. */
     xxwidgets_font font;
     xxwidgets_disasm_color colors[XXWIDGETS_DISASM_COLOR_COUNT];

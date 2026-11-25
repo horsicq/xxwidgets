@@ -26,8 +26,7 @@ typedef struct xxwidgets_debugger_trace_settings {
  * On Start, validated settings replace the caller's object and accepted is 1.
  * Cancellation/close leaves settings unchanged and reports accepted == 0.
  * Call on the UI thread outside an input callback, as other modal APIs do. */
-XXWIDGETS_API xxwidgets_status xxwidgets_debugger_trace_dialog(
-    xxwidgets_widget *owner, xxwidgets_debugger_trace_settings *settings, int *accepted);
+XXWIDGETS_API xxwidgets_status xxwidgets_debugger_trace_dialog(xxwidgets_widget *owner, xxwidgets_debugger_trace_settings *settings, int *accepted);
 
 #ifdef __cplusplus
 }

@@ -18,7 +18,14 @@ struct xxwidgets_disasm_browser {
     int pending;
 };
 #define C(v, id) ((v)->controls[XXWIDGETS_DISASM_##id])
-enum { GO = 1, BACK, NEXT, REFRESH, MODE, COPY };
+enum {
+    GO = 1,
+    BACK,
+    NEXT,
+    REFRESH,
+    MODE,
+    COPY
+};
 static int valid_bounds(xxwidgets_rect b)
 {
     return b.x >= 0 && b.y >= 0 && b.width >= 96 && b.height >= 20 && b.x <= 32767 - b.width && b.y <= 32767 - b.height;
@@ -26,9 +33,12 @@ static int valid_bounds(xxwidgets_rect b)
 xxwidgets_status xxwidgets_disasm_browser_set_rect(xxwidgets_disasm_browser *v, xxwidgets_rect b)
 {
     xxwidgets_rect r[XXWIDGETS_DISASM_CONTROL_COUNT], old[XXWIDGETS_DISASM_CONTROL_COUNT];
-    if (!v || !valid_bounds(b))
-        return XXWIDGETS_INVALID_ARGUMENT;
-#define R(id, dx, dy, w, h) r[XXWIDGETS_DISASM_##id] = (xxwidgets_rect){b.x + (dx), b.y + (dy), w, h}
+    if (!v || !valid_bounds(b)) return XXWIDGETS_INVALID_ARGUMENT;
+#define R(id, dx, dy, w, h)                     \
+    r[XXWIDGETS_DISASM_##id] = (xxwidgets_rect) \
+    {                                           \
+        b.x + (dx), b.y + (dy), w, h            \
+    }
     R(PATH, 0, 0, b.width, 1);
     R(SUMMARY, 0, 2, b.width, 1);
     R(OFFSET_LABEL, 0, 4, 8, 2);
@@ -43,13 +53,11 @@ xxwidgets_status xxwidgets_disasm_browser_set_rect(xxwidgets_disasm_browser *v, 
     R(TABLE, 0, 9, b.width, b.height - 12);
     R(STATUS, 0, b.height - 2, b.width, 2);
 #undef R
-    for (size_t i = 0; i < XXWIDGETS_DISASM_CONTROL_COUNT; ++i)
-        old[i] = v->controls[i]->rect;
+    for (size_t i = 0; i < XXWIDGETS_DISASM_CONTROL_COUNT; ++i) old[i] = v->controls[i]->rect;
     for (size_t i = 0; i < XXWIDGETS_DISASM_CONTROL_COUNT; ++i) {
         xxwidgets_status status = xxwidgets_widget_set_rect(v->controls[i], r[i]);
         if (status != XXWIDGETS_OK) {
-            for (size_t j = 0; j < i; ++j)
-                (void)xxwidgets_widget_set_rect(v->controls[j], old[j]);
+            for (size_t j = 0; j < i; ++j) (void)xxwidgets_widget_set_rect(v->controls[j], old[j]);
             return status;
         }
     }
@@ -62,8 +70,7 @@ static xxwidgets_status set_modes(xxwidgets_widget *widget, const xxwidgets_disa
     wchar_t text[16][32] = {{0}};
     for (size_t i = 0; i < s->mode_count; ++i) {
         size_t n = strlen(s->mode_names[i]);
-        for (size_t j = 0; j < n; ++j)
-            text[i][j] = (unsigned char)s->mode_names[i][j];
+        for (size_t j = 0; j < n; ++j) text[i][j] = (unsigned char)s->mode_names[i][j];
         labels[i].data = text[i];
         labels[i].length = n;
         labels[i].capacity = 32;
@@ -89,27 +96,24 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
         return XXWIDGETS_INVALID_ARGUMENT;
     for (size_t i = 0; i < p->count; ++i) {
         const xxwidgets_disasm_record *r = p->records + i;
-        if (r->offset != end || !r->size || r->size > 15 || r->size > p->file_size - end || !xxwidgets_valid_utf8(r->bytes) ||
-            !xxwidgets_valid_utf8(r->instruction) || !xxwidgets_valid_utf8(r->comment) || strlen(r->bytes) > 512 ||
-            strlen(r->instruction) > 512 || strlen(r->comment) > 512)
+        if (r->offset != end || !r->size || r->size > 15 || r->size > p->file_size - end || !xxwidgets_valid_utf8(r->bytes) || !xxwidgets_valid_utf8(r->instruction) ||
+            !xxwidgets_valid_utf8(r->comment) || strlen(r->bytes) > 512 || strlen(r->instruction) > 512 || strlen(r->comment) > 512)
             return XXWIDGETS_INVALID_ARGUMENT;
         rows[i] = (xxwidgets_debugger_instruction){r->address, r->bytes, r->instruction, r->comment, 0};
         end += r->size;
     }
     if (p->arm != 0 && p->arm != 1) return XXWIDGETS_INVALID_ARGUMENT;
-    if (end != p->next_offset)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (end != p->next_offset) return XXWIDGETS_INVALID_ARGUMENT;
     snprintf(offset_text, sizeof(offset_text), "0x%" PRIX64, p->offset);
     snprintf(summary, sizeof(summary), "%s | %" PRIu64 " %s", v->description, p->file_size, XXW_TR(v->owner->app, "bytes"));
     snprintf(status_text, sizeof(status_text), "%s | %s 0x%" PRIX64 " | %zu %s",
-             p->count ? XXW_TR(v->owner->app, "Linear disassembly") : XXW_TR(v->owner->app, "End of file"), XXW_TR(v->owner->app, "File offset"),
-             p->offset, p->count, xxwidgets_app_ngettext(v->owner->app, "row", "rows", p->count));
+             p->count ? XXW_TR(v->owner->app, "Linear disassembly") : XXW_TR(v->owner->app, "End of file"), XXW_TR(v->owner->app, "File offset"), p->offset, p->count,
+             xxwidgets_app_ngettext(v->owner->app, "row", "rows", p->count));
     texts[0] = xxwidgets_strdup(offset_text);
     texts[1] = xxwidgets_strdup(summary);
     texts[2] = xxwidgets_strdup(status_text);
     for (size_t i = 0; i < 3; ++i)
-        if (!texts[i])
-            goto done;
+        if (!texts[i]) goto done;
     wanted[0] = action == NEXT ? 1 : action == BACK ? v->history_count > 1 : action == GO || action == MODE ? 0 : v->history_count != 0;
     wanted[1] = p->next_offset < p->file_size;
     wanted[2] = p->count != 0;
@@ -121,10 +125,8 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
     }
     status = XXWIDGETS_OK;
     ++v->owner->app->syncing;
-    for (size_t i = 0; i < 3 && status == XXWIDGETS_OK; ++i)
-        status = v->owner->app->ops->sync(labels[i]);
-    for (size_t i = 0; i < 3 && status == XXWIDGETS_OK; ++i)
-        status = v->owner->app->ops->sync(buttons[i]);
+    for (size_t i = 0; i < 3 && status == XXWIDGETS_OK; ++i) status = v->owner->app->ops->sync(labels[i]);
+    for (size_t i = 0; i < 3 && status == XXWIDGETS_OK; ++i) status = v->owner->app->ops->sync(buttons[i]);
     --v->owner->app->syncing;
     if (status == XXWIDGETS_OK) {
         int previous_arm = C(v, TABLE)->disasm_arm;
@@ -155,10 +157,8 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
             --v->history_count;
         }
         v->history[v->history_count++] = v->offset;
-    } else if (action == BACK && v->history_count)
-        --v->history_count;
-    else if (action == GO || action == MODE)
-        v->history_count = 0;
+    } else if (action == BACK && v->history_count) --v->history_count;
+    else if (action == GO || action == MODE) v->history_count = 0;
     v->size = p->file_size;
     v->offset = p->offset;
     v->next = p->next_offset;
@@ -170,30 +170,24 @@ static xxwidgets_status apply_page(xxwidgets_disasm_browser *v, const xxwidgets_
     }
     status = XXWIDGETS_OK;
 done:
-    for (size_t i = 0; i < 3; ++i)
-        free(texts[i]);
+    for (size_t i = 0; i < 3; ++i) free(texts[i]);
     return status;
 }
 static xxwidgets_status load_page(xxwidgets_disasm_browser *v, uint64_t offset, size_t mode, int action)
 {
     xxwidgets_disasm_page page = {0};
     xxwidgets_status status;
-    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
-        return XXWIDGETS_BUSY;
-    if (mode >= v->mode_count)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
+    if (mode >= v->mode_count) return XXWIDGETS_INVALID_ARGUMENT;
     status = v->load(v->user, offset, mode, &page);
-    if (status == XXWIDGETS_OK && page.offset != offset)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (status == XXWIDGETS_OK && page.offset != offset) return XXWIDGETS_INVALID_ARGUMENT;
     return status == XXWIDGETS_OK ? apply_page(v, &page, mode, action) : status;
 }
-xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidgets_disasm_source *s,
-                                                 xxwidgets_disasm_browser **out)
+xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidgets_rect bounds, const xxwidgets_disasm_source *s, xxwidgets_disasm_browser **out)
 {
-    static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL,  XXWIDGETS_LABEL,    XXWIDGETS_LABEL,  XXWIDGETS_EDIT,
-                                           XXWIDGETS_BUTTON, XXWIDGETS_BUTTON,   XXWIDGETS_BUTTON, XXWIDGETS_BUTTON,
-                                           XXWIDGETS_LABEL,  XXWIDGETS_COMBOBOX, XXWIDGETS_BUTTON, XXWIDGETS_DEBUGGER_DISASM,
-                                           XXWIDGETS_LABEL};
+    static const xxwidgets_kind kinds[] = {XXWIDGETS_LABEL,  XXWIDGETS_LABEL,           XXWIDGETS_LABEL,  XXWIDGETS_EDIT,  XXWIDGETS_BUTTON,
+                                           XXWIDGETS_BUTTON, XXWIDGETS_BUTTON,          XXWIDGETS_BUTTON, XXWIDGETS_LABEL, XXWIDGETS_COMBOBOX,
+                                           XXWIDGETS_BUTTON, XXWIDGETS_DEBUGGER_DISASM, XXWIDGETS_LABEL};
     static const char *const names[] = {"",
                                         "",
                                         XXW_N_("Offset"),
@@ -209,26 +203,21 @@ xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidg
                                         XXW_N_("Select a mode")};
     xxwidgets_disasm_browser *v;
     xxwidgets_status status;
-    if (!out)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!out) return XXWIDGETS_INVALID_ARGUMENT;
     *out = NULL;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds) || !s || !s->load || !s->mode_names || !s->mode_count ||
-        s->mode_count > 16 || s->initial_mode >= s->mode_count || s->initial_offset > s->file_size || !xxwidgets_valid_utf8(s->path) ||
-        !xxwidgets_valid_utf8(s->description) || strlen(s->description) > 256)
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !valid_bounds(bounds) || !s || !s->load || !s->mode_names || !s->mode_count || s->mode_count > 16 ||
+        s->initial_mode >= s->mode_count || s->initial_offset > s->file_size || !xxwidgets_valid_utf8(s->path) || !xxwidgets_valid_utf8(s->description) ||
+        strlen(s->description) > 256)
         return XXWIDGETS_INVALID_ARGUMENT;
-    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (owner->app->dispatch_depth || owner->app->polling || owner->app->syncing) return XXWIDGETS_BUSY;
     for (size_t i = 0; i < s->mode_count; ++i) {
         const unsigned char *p = (const unsigned char *)s->mode_names[i];
-        if (!p || !*p || strlen((const char *)p) > 31)
-            return XXWIDGETS_INVALID_ARGUMENT;
+        if (!p || !*p || strlen((const char *)p) > 31) return XXWIDGETS_INVALID_ARGUMENT;
         for (; *p; ++p)
-            if (*p < 32 || *p >= 127)
-                return XXWIDGETS_INVALID_ARGUMENT;
+            if (*p < 32 || *p >= 127) return XXWIDGETS_INVALID_ARGUMENT;
     }
     v = calloc(1, sizeof(*v));
-    if (!v)
-        return XXWIDGETS_OUT_OF_MEMORY;
+    if (!v) return XXWIDGETS_OUT_OF_MEMORY;
     v->owner = owner;
     v->load = s->load;
     v->user = s->user;
@@ -243,30 +232,23 @@ xxwidgets_status xxwidgets_disasm_browser_create(xxwidgets_widget *owner, xxwidg
     }
     for (size_t i = 0; i < XXWIDGETS_DISASM_CONTROL_COUNT; ++i) {
         status = xxwidgets_widget_create(owner->app, owner, kinds[i], XXW_TR(owner->app, names[i]), (xxwidgets_rect){0, 0, 1, 1}, &v->controls[i]);
-        if (status != XXWIDGETS_OK)
-            goto fail;
+        if (status != XXWIDGETS_OK) goto fail;
     }
     /* One row: a long path keeps its file name, and '&' is shown as is. */
     C(v, PATH)->keep_end = 1;
     status = xxwidgets_disasm_browser_set_rect(v, bounds);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_text(C(v, PATH), s->path);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_text(C(v, SUMMARY), s->description);
-    if (status == XXWIDGETS_OK)
-        status = set_modes(C(v, MODE), s);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_set_value(C(v, MODE), (int)s->initial_mode);
-    if (status == XXWIDGETS_OK)
-        status = load_page(v, v->offset, v->mode, GO);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(C(v, PATH), s->path);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_text(C(v, SUMMARY), s->description);
+    if (status == XXWIDGETS_OK) status = set_modes(C(v, MODE), s);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_set_value(C(v, MODE), (int)s->initial_mode);
+    if (status == XXWIDGETS_OK) status = load_page(v, v->offset, v->mode, GO);
     if (status == XXWIDGETS_UNAVAILABLE) {
         status = xxwidgets_widget_set_text(C(v, STATUS), XXW_TR(owner->app, "Choose an instruction mode for this file."));
         (void)xxwidgets_widget_set_enabled(C(v, NEXT), 0);
         (void)xxwidgets_widget_set_enabled(C(v, BACK), 0);
         (void)xxwidgets_widget_set_enabled(C(v, COPY), 0);
     }
-    if (status != XXWIDGETS_OK)
-        goto fail;
+    if (status != XXWIDGETS_OK) goto fail;
     *out = v;
     return XXWIDGETS_OK;
 fail:
@@ -275,13 +257,10 @@ fail:
 }
 xxwidgets_status xxwidgets_disasm_browser_destroy(xxwidgets_disasm_browser *v)
 {
-    if (!v)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (!v) return XXWIDGETS_INVALID_ARGUMENT;
+    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
     for (size_t i = 0; i < XXWIDGETS_DISASM_CONTROL_COUNT; ++i)
-        if (v->controls[i])
-            (void)xxwidgets_widget_destroy(v->controls[i]);
+        if (v->controls[i]) (void)xxwidgets_widget_destroy(v->controls[i]);
     free(v->description);
     free(v);
     return XXWIDGETS_OK;
@@ -298,11 +277,9 @@ xxwidgets_status xxwidgets_disasm_browser_get_record(const xxwidgets_disasm_brow
 {
     xxwidgets_debugger_instruction row;
     xxwidgets_status status;
-    if (!v || !r || index >= v->count)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!v || !r || index >= v->count) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_debugger_disasm_get_row(C(v, TABLE), index, &row);
-    if (status == XXWIDGETS_OK)
-        *r = (xxwidgets_disasm_record){v->offsets[index], row.address, v->sizes[index], row.bytes, row.instruction, row.comment};
+    if (status == XXWIDGETS_OK) *r = (xxwidgets_disasm_record){v->offsets[index], row.address, v->sizes[index], row.bytes, row.instruction, row.comment};
     return status;
 }
 static int parse_offset(const char *text, uint64_t *offset)
@@ -311,96 +288,68 @@ static int parse_offset(const char *text, uint64_t *offset)
     uint64_t value = 0;
     unsigned base = 10, digit;
     int any = 0;
-    if (!p)
-        return 0;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
-        ++p;
+    if (!p) return 0;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') ++p;
     if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
         base = 16;
         p += 2;
     }
     for (; *p; ++p) {
-        if (*p >= '0' && *p <= '9')
-            digit = *p - '0';
-        else if (*p >= 'a' && *p <= 'f')
-            digit = *p - 'a' + 10;
-        else if (*p >= 'A' && *p <= 'F')
-            digit = *p - 'A' + 10;
-        else
-            break;
-        if (digit >= base || value > (UINT64_MAX - digit) / base)
-            return 0;
+        if (*p >= '0' && *p <= '9') digit = *p - '0';
+        else if (*p >= 'a' && *p <= 'f') digit = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F') digit = *p - 'A' + 10;
+        else break;
+        if (digit >= base || value > (UINT64_MAX - digit) / base) return 0;
         value = value * base + digit;
         any = 1;
     }
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
-        ++p;
-    if (!any || *p)
-        return 0;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') ++p;
+    if (!any || *p) return 0;
     *offset = value;
     return 1;
 }
 xxwidgets_status xxwidgets_disasm_browser_go_to(xxwidgets_disasm_browser *v, const char *text)
 {
     uint64_t offset;
-    if (!v || !parse_offset(text, &offset))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!v || !parse_offset(text, &offset)) return XXWIDGETS_INVALID_ARGUMENT;
     return load_page(v, offset, v->mode, GO);
 }
 xxwidgets_status xxwidgets_disasm_browser_handle_event(xxwidgets_disasm_browser *v, const xxwidgets_event *e)
 {
-    if (!v || !e)
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!v || !e) return XXWIDGETS_INVALID_ARGUMENT;
     if (e->type == XXWIDGETS_EVENT_CLICK) {
-        if (e->widget == C(v, GO))
-            v->pending = GO;
-        else if (e->widget == C(v, BACK))
-            v->pending = BACK;
-        else if (e->widget == C(v, NEXT))
-            v->pending = NEXT;
-        else if (e->widget == C(v, REFRESH))
-            v->pending = REFRESH;
-        else if (e->widget == C(v, COPY))
-            v->pending = COPY;
-    } else if (e->type == XXWIDGETS_EVENT_ACTIVATE && e->widget == C(v, OFFSET))
-        v->pending = GO;
-    else if (e->type == XXWIDGETS_EVENT_SELECT && e->widget == C(v, MODE))
-        v->pending = MODE;
+        if (e->widget == C(v, GO)) v->pending = GO;
+        else if (e->widget == C(v, BACK)) v->pending = BACK;
+        else if (e->widget == C(v, NEXT)) v->pending = NEXT;
+        else if (e->widget == C(v, REFRESH)) v->pending = REFRESH;
+        else if (e->widget == C(v, COPY)) v->pending = COPY;
+    } else if (e->type == XXWIDGETS_EVENT_ACTIVATE && e->widget == C(v, OFFSET)) v->pending = GO;
+    else if (e->type == XXWIDGETS_EVENT_SELECT && e->widget == C(v, MODE)) v->pending = MODE;
     return XXWIDGETS_OK;
 }
 xxwidgets_status xxwidgets_disasm_browser_process(xxwidgets_disasm_browser *v)
 {
     int action, value;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!v)
-        return XXWIDGETS_INVALID_ARGUMENT;
-    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing)
-        return XXWIDGETS_BUSY;
+    if (!v) return XXWIDGETS_INVALID_ARGUMENT;
+    if (v->owner->app->dispatch_depth || v->owner->app->polling || v->owner->app->syncing) return XXWIDGETS_BUSY;
     action = v->pending;
     v->pending = 0;
-    if (!action)
-        return XXWIDGETS_OK;
+    if (!action) return XXWIDGETS_OK;
     if (action == GO) {
         char text[128];
         status = xxwidgets_widget_get_text(C(v, OFFSET), text, sizeof(text), NULL);
-        if (status == XXWIDGETS_OK)
-            status = xxwidgets_disasm_browser_go_to(v, text);
+        if (status == XXWIDGETS_OK) status = xxwidgets_disasm_browser_go_to(v, text);
     } else if (action == BACK) {
-        if (v->history_count)
-            status = load_page(v, v->history[v->history_count - 1], v->mode, BACK);
+        if (v->history_count) status = load_page(v, v->history[v->history_count - 1], v->mode, BACK);
     } else if (action == NEXT) {
-        if (v->next < v->size)
-            status = load_page(v, v->next, v->mode, NEXT);
-    } else if (action == REFRESH)
-        status = load_page(v, v->offset, v->mode, REFRESH);
+        if (v->next < v->size) status = load_page(v, v->next, v->mode, NEXT);
+    } else if (action == REFRESH) status = load_page(v, v->offset, v->mode, REFRESH);
     else if (action == MODE) {
         status = xxwidgets_widget_get_value(C(v, MODE), &value);
-        if (status == XXWIDGETS_OK && value >= 0)
-            status = load_page(v, v->offset, (size_t)value, MODE);
-        else
-            status = XXWIDGETS_INVALID_ARGUMENT;
-        if (status != XXWIDGETS_OK)
-            (void)xxwidgets_widget_set_value(C(v, MODE), (int)v->mode);
+        if (status == XXWIDGETS_OK && value >= 0) status = load_page(v, v->offset, (size_t)value, MODE);
+        else status = XXWIDGETS_INVALID_ARGUMENT;
+        if (status != XXWIDGETS_OK) (void)xxwidgets_widget_set_value(C(v, MODE), (int)v->mode);
     } else if (action == COPY) {
         size_t index;
         xxwidgets_debugger_instruction row;
@@ -409,8 +358,7 @@ xxwidgets_status xxwidgets_disasm_browser_process(xxwidgets_disasm_browser *v)
         if (status == XXWIDGETS_OK && index != SIZE_MAX) {
             snprintf(text, sizeof(text), "0x%" PRIX64 "\t%s\t%s\t%s", row.address, row.bytes, row.instruction, row.comment);
             status = xxwidgets_clipboard_set_text(v->owner, text);
-            return xxwidgets_widget_set_text(C(v, STATUS),
-                                             status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
+            return xxwidgets_widget_set_text(C(v, STATUS), status == XXWIDGETS_OK ? XXW_TR(v->owner->app, "Copied") : XXW_TR(v->owner->app, "Clipboard unavailable"));
         }
     }
     if (status != XXWIDGETS_OK)

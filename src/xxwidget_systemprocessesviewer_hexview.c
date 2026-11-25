@@ -42,9 +42,11 @@ static void process_hex_event(xxwidgets_app *app, const xxwidgets_event *event, 
     }
     if (event->widget == state->address && event->type == XXWIDGETS_EVENT_ACTIVATE) state->pending = 1;
     if (event->widget == state->hex && event->type == XXWIDGETS_EVENT_SELECT) {
-        state->selected = 1; state->read_error = 0;
+        state->selected = 1;
+        state->read_error = 0;
     } else if (event->widget == state->hex && event->type == XXWIDGETS_EVENT_READ_ERROR) {
-        state->read_error = 1; state->selected = 0;
+        state->read_error = 1;
+        state->selected = 0;
     }
 }
 
@@ -104,8 +106,7 @@ static xxwidgets_status process_hex_navigate(process_hex_dialog *state, int acti
         status = xxwidgets_hexview_seek_device(state->hex, (uint64_t)address);
     } else status = xxwidgets_hexview_refresh_device(state->hex);
     if (status == XXWIDGETS_OK) return process_hex_location(state, 1);
-    return xxwidgets_widget_set_text(state->status,
-        "Cannot read this window. Check the address or process access; previous bytes retained.");
+    return xxwidgets_widget_set_text(state->status, "Cannot read this window. Check the address or process access; previous bytes retained.");
 invalid:
     return xxwidgets_widget_set_text(state->status, "Enter a decimal address or hexadecimal with 0x (for example 0x1000).");
 }
@@ -125,29 +126,35 @@ xxwidgets_status xxwidget_systemprocessesviewer_show_hexview(xxwidgets_widget *v
     xxwidgets_status status, cleanup;
     static const xxwidgets_shortcut shortcuts[] = {{"F5", 1}, {"Esc", 2}};
     if (!viewer || viewer->kind != XXWIDGET_SYSTEMPROCESSESVIEWER || !viewer->parent) return XXWIDGETS_INVALID_ARGUMENT;
-    app = viewer->app; owner = viewer->parent;
+    app = viewer->app;
+    owner = viewer->parent;
     if (app->dispatch_depth || app->polling || app->syncing || app->modal_window || app->quit) return XXWIDGETS_BUSY;
     status = xxwidget_systemprocessesviewer_get_selection(viewer, &index, &process);
     if (status != XXWIDGETS_OK) return status;
     if (index == SIZE_MAX) return XXWIDGETS_INVALID_ARGUMENT;
     status = xxwidgets_process_memory_open(&process, &memory);
     if (status != XXWIDGETS_OK) {
-        (void)xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Hex view unavailable"), "Cannot open process memory. The selected process must still exist and allow read access.");
+        (void)xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Hex view unavailable"),
+                                    "Cannot open process memory. The selected process must still exist and allow read access.");
         return status;
     }
     enabled = owner->enabled;
-    previous_event = app->on_event; previous_user = app->user_data; previous_default = app->modal_default;
-    app->on_event = process_hex_event; app->user_data = &state;
+    previous_event = app->on_event;
+    previous_user = app->user_data;
+    previous_default = app->modal_default;
+    app->on_event = process_hex_event;
+    app->user_data = &state;
     snprintf(title, sizeof(title), "Hex view - PID %" PRIu64, process.pid);
-    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title,
-        (xxwidgets_rect){owner->rect.x, owner->rect.y, 78, 22}, &state.window);
+    status = xxwidgets_widget_create(app, NULL, XXWIDGETS_WINDOW, title, (xxwidgets_rect){owner->rect.x, owner->rect.y, 78, 22}, &state.window);
     if (status != XXWIDGETS_OK) goto done;
     app->modal_window = state.window;
     status = xxwidgets_window_set_minimum_size(state.window, 78, 18);
     if (status != XXWIDGETS_OK) goto done;
-#define PROCESS_HEX_CONTROL(field, kind, text, x, y, w, h) \
-    do { status = xxwidgets_widget_create(app, state.window, kind, text, (xxwidgets_rect){x, y, w, h}, &(field)); \
-         if (status != XXWIDGETS_OK) goto done; } while (0)
+#define PROCESS_HEX_CONTROL(field, kind, text, x, y, w, h)                                                       \
+    do {                                                                                                         \
+        status = xxwidgets_widget_create(app, state.window, kind, text, (xxwidgets_rect){x, y, w, h}, &(field)); \
+        if (status != XXWIDGETS_OK) goto done;                                                                   \
+    } while (0)
     PROCESS_HEX_CONTROL(label, XXWIDGETS_LABEL, "Address:", 2, 1, 9, 1);
     PROCESS_HEX_CONTROL(state.address, XXWIDGETS_EDIT, "", 12, 1, 28, 1);
     PROCESS_HEX_CONTROL(state.go, XXWIDGETS_BUTTON, "Go", 42, 1, 8, 1);
@@ -160,8 +167,7 @@ xxwidgets_status xxwidget_systemprocessesviewer_show_hexview(xxwidgets_widget *v
 #undef PROCESS_HEX_CONTROL
     status = xxwidgets_hexview_set_layout(state.hex, 0, 8);
     if (status == XXWIDGETS_OK) {
-        status = xxwidgets_hexview_set_device(state.hex, memory.device, memory.base,
-            memory.size < 4096 ? (size_t)memory.size : 4096, 0);
+        status = xxwidgets_hexview_set_device(state.hex, memory.device, memory.base, memory.size < 4096 ? (size_t)memory.size : 4096, 0);
         initial_read_failed = status != XXWIDGETS_OK;
     }
     if (status == XXWIDGETS_OK) status = xxwidgets_hexview_set_dump_handler(state.hex, process_hex_dump, &state);
@@ -179,13 +185,18 @@ xxwidgets_status xxwidget_systemprocessesviewer_show_hexview(xxwidgets_widget *v
     while (status == XXWIDGETS_OK && !state.done && !app->quit) {
         status = xxwidgets_app_poll(app, 30);
         if (status != XXWIDGETS_OK || state.done || app->quit) break;
-        if (state.resized) { state.resized = 0; status = process_hex_layout(&state); }
+        if (state.resized) {
+            state.resized = 0;
+            status = process_hex_layout(&state);
+        }
         if (status == XXWIDGETS_OK && state.read_error) {
             state.read_error = 0;
             status = xxwidgets_widget_set_text(state.status, "Cannot read this address; previous bytes retained. Enter a readable address or refresh.");
         }
         if (status == XXWIDGETS_OK && state.pending) {
-            int action = state.pending; state.pending = 0; state.selected = 0;
+            int action = state.pending;
+            state.pending = 0;
+            state.selected = 0;
             status = process_hex_navigate(&state, action);
         } else if (status == XXWIDGETS_OK && state.selected) {
             state.selected = 0;
@@ -193,22 +204,33 @@ xxwidgets_status xxwidget_systemprocessesviewer_show_hexview(xxwidgets_widget *v
         }
     }
 done:
-    if (attached) { cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (attached) {
+        cleanup = xxwidgets_window_set_modality(state.window, NULL, XXWIDGETS_MODELESS);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
     if (disabled) {
         cleanup = xxwidgets_widget_set_enabled(owner, enabled);
         if (cleanup != XXWIDGETS_OK) {
             owner->enabled = enabled;
-            ++app->syncing; (void)app->ops->sync(owner); --app->syncing;
+            ++app->syncing;
+            (void)app->ops->sync(owner);
+            --app->syncing;
         }
         if (status == XXWIDGETS_OK) status = cleanup;
     }
-    if (state.window) { cleanup = xxwidgets_widget_destroy(state.window); if (status == XXWIDGETS_OK) status = cleanup; }
+    if (state.window) {
+        cleanup = xxwidgets_widget_destroy(state.window);
+        if (status == XXWIDGETS_OK) status = cleanup;
+    }
     /* HexView borrows the wrapper; destroy its UI before native handle cleanup. */
     xxwidgets_process_memory_close(&memory);
-    app->modal_window = NULL; app->modal_default = previous_default;
-    app->on_event = previous_event; app->user_data = previous_user;
+    app->modal_window = NULL;
+    app->modal_default = previous_default;
+    app->on_event = previous_event;
+    app->user_data = previous_user;
     if (initial_read_failed && !app->quit)
-        (void)xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Hex view unavailable"), "The initial memory region could not be read. Process mappings or read permissions may have changed.");
+        (void)xxwidgets_text_dialog(owner, XXW_TR((owner)->app, "Hex view unavailable"),
+                                    "The initial memory region could not be read. Process mappings or read permissions may have changed.");
     if (enabled && !app->quit) (void)xxwidgets_widget_focus(viewer);
     return status;
 }

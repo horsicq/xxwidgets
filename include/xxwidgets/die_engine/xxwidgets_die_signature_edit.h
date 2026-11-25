@@ -12,10 +12,14 @@ extern "C" {
  * Tab inserts spaces to the next four-column stop; Enter preserves indentation.
  * No wrapping: vertical and horizontal scrolling retain source line numbers. */
 typedef enum xxwidgets_die_signature_style {
-    XXWIDGETS_DIE_STYLE_TEXT = 0, XXWIDGETS_DIE_STYLE_KEYWORD,
-    XXWIDGETS_DIE_STYLE_BUILTIN, XXWIDGETS_DIE_STYLE_STRING,
-    XXWIDGETS_DIE_STYLE_COMMENT, XXWIDGETS_DIE_STYLE_NUMBER,
-    XXWIDGETS_DIE_STYLE_FUNCTION, XXWIDGETS_DIE_STYLE_REGEX
+    XXWIDGETS_DIE_STYLE_TEXT = 0,
+    XXWIDGETS_DIE_STYLE_KEYWORD,
+    XXWIDGETS_DIE_STYLE_BUILTIN,
+    XXWIDGETS_DIE_STYLE_STRING,
+    XXWIDGETS_DIE_STYLE_COMMENT,
+    XXWIDGETS_DIE_STYLE_NUMBER,
+    XXWIDGETS_DIE_STYLE_FUNCTION,
+    XXWIDGETS_DIE_STYLE_REGEX
 } xxwidgets_die_signature_style;
 /* Loading source resets the savepoint, caret and bounded undo/redo history. */
 XXWIDGETS_API xxwidgets_status xxwidgets_die_signature_edit_set_source(xxwidgets_widget *, const char *source);

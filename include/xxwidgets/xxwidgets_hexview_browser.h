@@ -10,13 +10,24 @@ extern "C" {
 #define XXWIDGETS_HEXVIEW_BROWSER_COPY_LIMIT 1048576U
 typedef struct xxwidgets_hexview_browser xxwidgets_hexview_browser;
 typedef enum xxwidgets_hexview_browser_control_id {
-    XXWIDGETS_HEX_BROWSER_PATH, XXWIDGETS_HEX_BROWSER_SUMMARY,
-    XXWIDGETS_HEX_BROWSER_OFFSET_LABEL, XXWIDGETS_HEX_BROWSER_OFFSET,
-    XXWIDGETS_HEX_BROWSER_GO, XXWIDGETS_HEX_BROWSER_PREVIOUS, XXWIDGETS_HEX_BROWSER_NEXT,
-    XXWIDGETS_HEX_BROWSER_REFRESH, XXWIDGETS_HEX_BROWSER_ENCODING_LABEL, XXWIDGETS_HEX_BROWSER_ENCODING,
-    XXWIDGETS_HEX_BROWSER_ROWS_LABEL, XXWIDGETS_HEX_BROWSER_ROWS,
-    XXWIDGETS_HEX_BROWSER_COPY_HEX, XXWIDGETS_HEX_BROWSER_COPY_TEXT, XXWIDGETS_HEX_BROWSER_DUMP,
-    XXWIDGETS_HEX_BROWSER_HEX, XXWIDGETS_HEX_BROWSER_STATUS, XXWIDGETS_HEX_BROWSER_CONTROL_COUNT
+    XXWIDGETS_HEX_BROWSER_PATH,
+    XXWIDGETS_HEX_BROWSER_SUMMARY,
+    XXWIDGETS_HEX_BROWSER_OFFSET_LABEL,
+    XXWIDGETS_HEX_BROWSER_OFFSET,
+    XXWIDGETS_HEX_BROWSER_GO,
+    XXWIDGETS_HEX_BROWSER_PREVIOUS,
+    XXWIDGETS_HEX_BROWSER_NEXT,
+    XXWIDGETS_HEX_BROWSER_REFRESH,
+    XXWIDGETS_HEX_BROWSER_ENCODING_LABEL,
+    XXWIDGETS_HEX_BROWSER_ENCODING,
+    XXWIDGETS_HEX_BROWSER_ROWS_LABEL,
+    XXWIDGETS_HEX_BROWSER_ROWS,
+    XXWIDGETS_HEX_BROWSER_COPY_HEX,
+    XXWIDGETS_HEX_BROWSER_COPY_TEXT,
+    XXWIDGETS_HEX_BROWSER_DUMP,
+    XXWIDGETS_HEX_BROWSER_HEX,
+    XXWIDGETS_HEX_BROWSER_STATUS,
+    XXWIDGETS_HEX_BROWSER_CONTROL_COUNT
 } xxwidgets_hexview_browser_control_id;
 /* Read-only browser composed around the existing windowed HEXVIEW. Bounds
  * >=96x20 cells. Destroy before owner, and before closing a borrowed device.
@@ -48,17 +59,16 @@ XXWIDGETS_API xxwidgets_status xxwidgets_hexview_dialog(xxwidgets_widget *owner,
  * the browser stays read-only. Emits no input events. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_browser_set_options(xxwidgets_hexview_browser *browser, const xxwidgets_hex_options *options);
 /* As xxwidgets_hexview_dialog, opening with options; NULL uses the defaults. */
-XXWIDGETS_API xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, const char *title, const char *path,
-                                                                     xx_io_device *device, const xxwidgets_hex_options *options);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_dialog_with_options(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device,
+                                                                     const xxwidgets_hex_options *options);
 /* Shows the absolute range [offset, offset + length) selected, paging there,
  * and updates the offset box and status; length 0 only moves to offset (EOF
  * included). A range past EOF fails without changing anything. No events. */
 XXWIDGETS_API xxwidgets_status xxwidgets_hexview_browser_select(xxwidgets_hexview_browser *browser, uint64_t offset, uint64_t length);
 /* As xxwidgets_hexview_dialog_with_options, opened at offset with length
  * bytes selected (xxwidgets_hexview_browser_select); e.g. an overlay. */
-XXWIDGETS_API xxwidgets_status xxwidgets_hexview_dialog_at(xxwidgets_widget *owner, const char *title, const char *path,
-                                                           xx_io_device *device, const xxwidgets_hex_options *options,
-                                                           uint64_t offset, uint64_t length);
+XXWIDGETS_API xxwidgets_status xxwidgets_hexview_dialog_at(xxwidgets_widget *owner, const char *title, const char *path, xx_io_device *device,
+                                                           const xxwidgets_hex_options *options, uint64_t offset, uint64_t length);
 #ifdef __cplusplus
 }
 #endif

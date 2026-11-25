@@ -48,8 +48,8 @@ typedef struct options_state {
 
 static int page_valid(const xxwidgets_options_page *page)
 {
-    return page->title && xxwidgets_valid_utf8(page->title) && page->create && page->reset && page->apply && page->destroy &&
-        page->width >= 1 && page->width <= 200 && page->height >= 1 && page->height <= 60;
+    return page->title && xxwidgets_valid_utf8(page->title) && page->create && page->reset && page->apply && page->destroy && page->width >= 1 && page->width <= 200 &&
+           page->height >= 1 && page->height <= 60;
 }
 
 static size_t utf8_length(const char *text)
@@ -225,8 +225,8 @@ rejected:
     return select_page(state, i);
 }
 
-xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_options_page *pages,
-                                                size_t count, size_t *page, int *accepted)
+xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const char *title, const xxwidgets_options_page *pages, size_t count, size_t *page,
+                                                int *accepted)
 {
     const xxwidgets_shortcut shortcuts[] = {{"Esc", 1}};
     options_state state = {0};
@@ -238,8 +238,8 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     int list_width = 14, page_width = 1, page_height = 10, width, height, button_y, create_hidden;
     size_t i, first = page ? *page : 0;
     if (accepted) *accepted = 0;
-    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !pages || !count ||
-        count > XXWIDGETS_OPTIONS_PAGES_MAX || first >= count || !accepted)
+    if (!owner || owner->kind != XXWIDGETS_WINDOW || !title || !xxwidgets_valid_utf8(title) || !pages || !count || count > XXWIDGETS_OPTIONS_PAGES_MAX ||
+        first >= count || !accepted)
         return XXWIDGETS_INVALID_ARGUMENT;
     for (i = 0; i < count; ++i) {
         size_t length;
@@ -258,8 +258,7 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     height = button_y + 3;
     if (owner->rect.x > INT_MAX - width - 2 || owner->rect.y > INT_MAX - height - 2) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (app->dispatch_depth || app->polling || app->syncing || app->quit ||
-        (app->modal_window && app->modal_window != owner)) return XXWIDGETS_BUSY;
+    if (app->dispatch_depth || app->polling || app->syncing || app->quit || (app->modal_window && app->modal_window != owner)) return XXWIDGETS_BUSY;
     state.count = count;
     state.current = first;
     state.pending_select = -1;
@@ -283,11 +282,9 @@ xxwidgets_status xxwidgets_options_pages_dialog(xxwidgets_widget *owner, const c
     if (status != XXWIDGETS_OK) goto finish;
     app->modal_window = state.window;
     status = xxwidgets_window_set_minimum_size(state.window, width, height);
-    if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LISTBOX, "", (xxwidgets_rect){2, 1, list_width, page_height}, &state.list);
+    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, state.window, XXWIDGETS_LISTBOX, "", (xxwidgets_rect){2, 1, list_width, page_height}, &state.list);
     for (i = 0; i < count && status == XXWIDGETS_OK; ++i) status = xxwidgets_listbox_add(state.list, pages[i].title);
-    for (i = 0; i < count && status == XXWIDGETS_OK; ++i)
-        status = create_slot(&state, &state.slots[i], (xxwidgets_rect){list_width + 4, 1, page_width, page_height});
+    for (i = 0; i < count && status == XXWIDGETS_OK; ++i) status = create_slot(&state, &state.slots[i], (xxwidgets_rect){list_width + 4, 1, page_width, page_height});
     /* Two rows, up to the buttons: a message that names a path wraps on Win32
      * (GTK and Cocoa keep one ellipsized line; GTK's tooltip shows it all). */
     if (status == XXWIDGETS_OK)
@@ -544,13 +541,11 @@ static xxwidgets_status hex_page_create(xxwidgets_widget *dialog, xxwidgets_rect
     if (status == XXWIDGETS_OK && !page->values->show_editable)
         status = xxwidgets_widget_set_visible(xxwidgets_hex_options_widget_control(page->form, XXWIDGETS_HEX_OPTIONS_EDITABLE), 0);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, dialog, XXWIDGETS_BUTTON, XXW_TR(app, "Choose font"), (xxwidgets_rect){bounds.x + 15, bounds.y + 6, 16, 1},
-                                         &page->choose);
+        status = xxwidgets_widget_create(app, dialog, XXWIDGETS_BUTTON, XXW_TR(app, "Choose font"), (xxwidgets_rect){bounds.x + 15, bounds.y + 6, 16, 1}, &page->choose);
     /* No chooser (Cocoa, terminal): the family and size edits are the way. */
     if (status == XXWIDGETS_OK && !xxwidgets_font_choose_available(app)) status = xxwidgets_widget_set_enabled(page->choose, 0);
     if (status == XXWIDGETS_OK)
-        status = xxwidgets_widget_create(app, dialog, XXWIDGETS_LABEL, hex_page_note(app), (xxwidgets_rect){bounds.x, bounds.y + 8, bounds.width, 1},
-                                         &page->note);
+        status = xxwidgets_widget_create(app, dialog, XXWIDGETS_LABEL, hex_page_note(app), (xxwidgets_rect){bounds.x, bounds.y + 8, bounds.width, 1}, &page->note);
     if (status != XXWIDGETS_OK) {
         if (page->note) (void)xxwidgets_widget_destroy(page->note);
         if (page->choose) (void)xxwidgets_widget_destroy(page->choose);
@@ -665,8 +660,8 @@ static xxwidgets_status database_page_create(xxwidgets_widget *dialog, xxwidgets
     if (!page) return XXWIDGETS_OUT_OF_MEMORY;
     page->values = (xxwidgets_database_paths_page_values *)user;
     page->app = dialog->app;
-    status = xxwidgets_database_paths_widget_create(dialog, (xxwidgets_rect){bounds.x, bounds.y, bounds.width, 10}, &page->values->callbacks,
-                                                    page->values->user, &page->form);
+    status =
+        xxwidgets_database_paths_widget_create(dialog, (xxwidgets_rect){bounds.x, bounds.y, bounds.width, 10}, &page->values->callbacks, page->values->user, &page->form);
     if (status == XXWIDGETS_OK) status = xxwidgets_database_paths_widget_set(page->form, page->values->paths);
     if (status != XXWIDGETS_OK) {
         if (page->form) (void)xxwidgets_database_paths_widget_destroy(page->form);
@@ -722,8 +717,7 @@ static int database_page_apply(void *state, char *error, size_t capacity)
         const char *const borrowed[3] = {paths[0], "", paths[2]};
         if (error && capacity) error[0] = 0;
         applied = page->values->callbacks.apply ? page->values->callbacks.apply(borrowed, error, capacity, page->values->user) : 1;
-        if (!applied && error && capacity && !error[0])
-            copy_error(error, capacity, XXW_TR(page->app, "Cannot load databases. Check the main folder and try again."));
+        if (!applied && error && capacity && !error[0]) copy_error(error, capacity, XXW_TR(page->app, "Cannot load databases. Check the main folder and try again."));
     } else copy_error(error, capacity, XXW_TR(page->app, "Enter a valid UTF-8 path shorter than 16384 bytes."));
     for (i = 0; i < 3; ++i) free(paths[i]);
     return applied;

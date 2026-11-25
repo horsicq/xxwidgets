@@ -101,7 +101,8 @@ xxwidgets_status xxwidgets_memory_map_dialog_with_device(xxwidgets_widget *owner
     if (status == XXWIDGETS_OK) status = xxwidgets_memory_map_set_data(modal.view, data);
     if (status == XXWIDGETS_OK && device) status = xxwidgets_memory_map_set_device(modal.view, device);
     if (status == XXWIDGETS_OK) status = xxwidgets_memory_map_set_reload_handler(modal.view, reload, user);
-    if (status == XXWIDGETS_OK) status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){171, 29, 12, 2}, &modal.close);
+    if (status == XXWIDGETS_OK)
+        status = xxwidgets_widget_create(app, modal.window, XXWIDGETS_BUTTON, XXW_TR(app, "Close"), (xxwidgets_rect){171, 29, 12, 2}, &modal.close);
     if (status == XXWIDGETS_OK) status = xxwidgets_window_set_shortcuts(modal.window, shortcuts, sizeof(shortcuts) / sizeof(shortcuts[0]));
     if (status != XXWIDGETS_OK) goto finish;
     status = xxwidgets_widget_set_enabled(owner, 0);

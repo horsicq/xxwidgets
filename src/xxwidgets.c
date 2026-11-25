@@ -86,8 +86,9 @@ xxwidgets_status xxwidgets_store_text(xxwidgets_widget *widget, const char *text
 int xxwidgets_focusable(const xxwidgets_widget *widget)
 {
     return widget && widget->visible && widget->enabled && widget->parent && widget->parent->visible && widget->parent->enabled &&
-           (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER || widget->kind == XXWIDGETS_BUTTON || widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_list_kind(widget) ||
-            xxwidgets_combo_kind(widget) || widget->kind == XXWIDGETS_VALUE);
+           (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER || widget->kind == XXWIDGETS_BUTTON ||
+            widget->kind == XXWIDGETS_EDIT || widget->kind == XXWIDGETS_CHECKBOX || xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget) ||
+            widget->kind == XXWIDGETS_VALUE);
 }
 
 xxwidgets_font_role xxwidgets_widget_font_role(const xxwidgets_widget *widget)
@@ -123,7 +124,16 @@ void xxwidgets_emit(xxwidgets_widget *widget, xxwidgets_event_type type, int val
     dispatch_event(widget, &event);
 }
 
-void xxwidgets_emit_point(xxwidgets_widget *widget,xxwidgets_event_type type,int value,int x,int y){xxwidgets_event event={0};event.type=type;event.widget=widget;event.value=value;event.x=x;event.y=y;dispatch_event(widget,&event);}
+void xxwidgets_emit_point(xxwidgets_widget *widget, xxwidgets_event_type type, int value, int x, int y)
+{
+    xxwidgets_event event = {0};
+    event.type = type;
+    event.widget = widget;
+    event.value = value;
+    event.x = x;
+    event.y = y;
+    dispatch_event(widget, &event);
+}
 
 void xxwidgets_emit_context(xxwidgets_widget *widget, int value, int x, int y)
 {
@@ -138,9 +148,8 @@ void xxwidgets_emit_context(xxwidgets_widget *widget, int value, int x, int y)
 
 int xxwidgets_can_drop_files(const xxwidgets_widget *window)
 {
-    return window && window->kind == XXWIDGETS_WINDOW && window->accept_file_drops && window->visible && window->enabled &&
-           !window->app->syncing && !window->app->quit && window->app->on_event &&
-           (!window->app->modal_window || window->app->modal_window == window);
+    return window && window->kind == XXWIDGETS_WINDOW && window->accept_file_drops && window->visible && window->enabled && !window->app->syncing && !window->app->quit &&
+           window->app->on_event && (!window->app->modal_window || window->app->modal_window == window);
 }
 
 int xxwidgets_emit_drop_files(xxwidgets_widget *window, const char *const *paths, size_t count)
@@ -271,9 +280,9 @@ void xxwidgets_app_quit(xxwidgets_app *app, int exit_code)
     }
 }
 
-void xxwidgets_app_set_create_hidden(xxwidgets_app* app, int hidden)
+void xxwidgets_app_set_create_hidden(xxwidgets_app *app, int hidden)
 {
-  if (app) app->create_hidden = hidden != 0;
+    if (app) app->create_hidden = hidden != 0;
 }
 
 const char *xxwidgets_status_string(xxwidgets_status status)
@@ -323,11 +332,19 @@ xxwidgets_status xxwidgets_widget_create(xxwidgets_app *app, xxwidgets_widget *p
     if (kind == XXWIDGETS_DATA_STRUCT_TABLE) xxwidgets_data_struct_table_init(widget);
     if (kind == XXWIDGETS_DIE_SIGNATURE_EDIT) {
         status = xxwidgets_die_edit_init(widget);
-        if (status != XXWIDGETS_OK) { free(widget->text); free(widget); return status; }
+        if (status != XXWIDGETS_OK) {
+            free(widget->text);
+            free(widget);
+            return status;
+        }
     }
     if (kind == XXWIDGETS_TABLE) {
         status = xxwidgets_text_table_init(widget);
-        if (status != XXWIDGETS_OK) { free(widget->text); free(widget); return status; }
+        if (status != XXWIDGETS_OK) {
+            free(widget->text);
+            free(widget);
+            return status;
+        }
     }
     tail = &app->widgets;
     while (*tail) tail = &(*tail)->next;
@@ -536,8 +553,7 @@ xxwidgets_status xxwidgets_widget_set_tooltip(xxwidgets_widget *widget, const ch
 }
 xxwidgets_status xxwidgets_checkbox_set_radio(xxwidgets_widget *widget, int radio)
 {
-    if (!widget || widget->kind != XXWIDGETS_CHECKBOX || (radio != 0 && radio != 1))
-        return XXWIDGETS_INVALID_ARGUMENT;
+    if (!widget || widget->kind != XXWIDGETS_CHECKBOX || (radio != 0 && radio != 1)) return XXWIDGETS_INVALID_ARGUMENT;
     return set_flag(widget, &widget->checkbox_radio, radio);
 }
 xxwidgets_status xxwidgets_widget_focus(xxwidgets_widget *widget)

@@ -89,18 +89,18 @@ typedef enum xxwidgets_die_action_id {
     XXWIDGETS_DIE_ACTION_NONE = 0,
     XXWIDGETS_DIE_ACTION_RECENT,
     XXWIDGETS_DIE_ACTION_BROWSE,
-    XXWIDGETS_DIE_ACTION_OPEN_PATH,        /* Return in the path field */
+    XXWIDGETS_DIE_ACTION_OPEN_PATH, /* Return in the path field */
     XXWIDGETS_DIE_ACTION_PATH_EDITED,
     XXWIDGETS_DIE_ACTION_FILE_TYPE,        /* value: record index; type_id: the UINT64 type id */
     XXWIDGETS_DIE_ACTION_ENGINE,           /* value: engine record index */
     XXWIDGETS_DIE_ACTION_ADVANCED_CHANGED, /* value: 0 or 1; the view is already applied */
     XXWIDGETS_DIE_ACTION_ENTRY_POINT,
-    XXWIDGETS_DIE_ACTION_TOOL,             /* value: xxwidgets_die_tool */
-    XXWIDGETS_DIE_ACTION_FORMAT,           /* value: xxwidgets_format_item (Phase 2) */
-    XXWIDGETS_DIE_ACTION_FORMAT_ARROW,     /* value: xxwidgets_format_item (Phase 2) */
+    XXWIDGETS_DIE_ACTION_TOOL,         /* value: xxwidgets_die_tool */
+    XXWIDGETS_DIE_ACTION_FORMAT,       /* value: xxwidgets_format_item (Phase 2) */
+    XXWIDGETS_DIE_ACTION_FORMAT_ARROW, /* value: xxwidgets_format_item (Phase 2) */
     XXWIDGETS_DIE_ACTION_SCAN,
     XXWIDGETS_DIE_ACTION_REPORT,
-    XXWIDGETS_DIE_ACTION_SIGNATURES,       /* the scan bar's DiE script editor */
+    XXWIDGETS_DIE_ACTION_SIGNATURES, /* the scan bar's DiE script editor */
     XXWIDGETS_DIE_ACTION_DIRECTORY,
     XXWIDGETS_DIE_ACTION_LOG,
     XXWIDGETS_DIE_ACTION_DEMANGLE,
@@ -151,11 +151,9 @@ XXWIDGETS_API int xxwidgets_die_main_panel_get_advanced(const xxwidgets_die_main
  * set_loaded(0) again after it. */
 XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_set_loaded(xxwidgets_die_main_panel *panel, int loaded);
 /* Client size in units for a view (advanced 0 or 1). */
-XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_get_minimum_size(const xxwidgets_die_main_panel *panel, int advanced, int *width,
-                                                                       int *height);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_get_minimum_size(const xxwidgets_die_main_panel *panel, int advanced, int *width, int *height);
 /* Qt's 720 x 500 at 96 DPI (in units), or the minimum when that is larger. */
-XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_get_default_size(const xxwidgets_die_main_panel *panel, int advanced, int *width,
-                                                                       int *height);
+XXWIDGETS_API xxwidgets_status xxwidgets_die_main_panel_get_default_size(const xxwidgets_die_main_panel *panel, int advanced, int *width, int *height);
 /* 1 when event belongs to the panel; *out receives the action (NONE when the
  * panel handled it completely, or the control is hidden or disabled). The
  * window's RESIZE lays the panel out again and returns 1 with NONE (the

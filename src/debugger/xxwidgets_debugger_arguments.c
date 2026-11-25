@@ -47,9 +47,7 @@ static int argument_append(char ***values, int *count, size_t *capacity, const c
     return 1;
 }
 
-xxwidgets_status xxwidgets_debugger_arguments_parse(
-    const char *program, const char *arguments, int *argc, char ***argv,
-    char *error, size_t error_capacity)
+xxwidgets_status xxwidgets_debugger_arguments_parse(const char *program, const char *arguments, int *argc, char ***argv, char *error, size_t error_capacity)
 {
     const unsigned char *cursor;
     char **values = NULL, *word = NULL;
@@ -81,8 +79,7 @@ xxwidgets_status xxwidgets_debugger_arguments_parse(
                     status = argument_error(XXWIDGETS_INVALID_ARGUMENT, error, error_capacity, "Arguments end with an incomplete backslash escape.");
                     goto finish;
                 }
-                if (next == '\\' || (quote && next == quote) ||
-                    (!quote && (next == '\'' || next == '"' || argument_space(next)))) {
+                if (next == '\\' || (quote && next == quote) || (!quote && (next == '\'' || next == '"' || argument_space(next)))) {
                     word[length++] = (char)next;
                     cursor += 2;
                 } else {

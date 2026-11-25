@@ -541,8 +541,9 @@ static void win32_apply_widget_font(xxwidgets_widget *widget)
 {
     xxwidgets_win32_app *app = (xxwidgets_win32_app *)widget->app->platform;
     xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
-    HFONT font = native && native->preview_font ? native->preview_font :
-        widget->kind == XXWIDGETS_HEXVIEW && native && native->hex_font ? native->hex_font : app->role_fonts[xxwidgets_widget_font_role(widget)];
+    HFONT font = native && native->preview_font                                    ? native->preview_font
+                 : widget->kind == XXWIDGETS_HEXVIEW && native && native->hex_font ? native->hex_font
+                                                                                   : app->role_fonts[xxwidgets_widget_font_role(widget)];
     if (native && !native->preview_font) font = win32_text_font(widget, font);
     if (widget->native) SendMessageW((HWND)widget->native, WM_SETFONT, (WPARAM)font, TRUE);
     if (!native) return;
@@ -561,12 +562,14 @@ static void win32_apply_widget_font(xxwidgets_widget *widget)
     if (xxwidgets_tabular_kind(widget) || native->browser_list) {
         HWND list = native->browser_list ? native->browser_list : (HWND)widget->native;
         HWND header = (HWND)SendMessageW(list, LVM_GETHEADER, 0, 0);
-        if (header) SendMessageW(header, WM_SETFONT, (WPARAM)(widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_DEBUGGER_DISASM ? font : app->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS]), TRUE);
+        if (header)
+            SendMessageW(header, WM_SETFONT,
+                         (WPARAM)(widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGETS_DEBUGGER_DISASM ? font : app->role_fonts[XXWIDGETS_FONT_TABLE_VIEWS]),
+                         TRUE);
     }
     if (widget->kind == XXWIDGETS_HEXVIEW) {
         int width = win32_hex_cell_width(widget);
-        for (size_t i = 0; i < 3; ++i)
-            ListView_SetColumnWidth((HWND)widget->native, (int)i, (int)xxwidgets_hexview_column_width(widget, i) * width);
+        for (size_t i = 0; i < 3; ++i) ListView_SetColumnWidth((HWND)widget->native, (int)i, (int)xxwidgets_hexview_column_width(widget, i) * width);
     }
 }
 
@@ -869,7 +872,12 @@ static xxwidgets_status win32_font_options_layout(xxwidgets_widget *dialog, int 
     if (first || refresh) {
         /* xxwidgets_font_options_dialog: role r has its row at y 1 + 4r and its
          * preview (and Default) at 3 + 4r; then the error line and the buttons. */
-        enum { ROLES = XXWIDGETS_FONT_ROLE_COUNT, LAST_ROW = 1 + 4 * (ROLES - 1), LAST_PREVIEW = 3 + 4 * (ROLES - 1), ERROR_ROW = 2 + 4 * ROLES };
+        enum {
+            ROLES = XXWIDGETS_FONT_ROLE_COUNT,
+            LAST_ROW = 1 + 4 * (ROLES - 1),
+            LAST_PREVIEW = 3 + 4 * (ROLES - 1),
+            ERROR_ROW = 2 + 4 * ROLES
+        };
         TEXTMETRICW controls, edits;
         int row_y[ROLES], preview_y[ROLES], preview_height[ROLES], role, y;
         int cw = app->cell_width, height = app->cell_height, gap = app->cell_height / 2;
@@ -1051,8 +1059,7 @@ static xxwidgets_status win32_optimization_options_layout(xxwidgets_widget *dial
         button_y = check_y + check_rows * row + (check_rows + 1) * gap;
         second_x = margin + columns[0] + gap;
         layout->width = second_x + columns[1] + margin;
-        if (layout->width < buttons[0] + buttons[1] + buttons[2] + 2 * gap + 2 * margin)
-            layout->width = buttons[0] + buttons[1] + buttons[2] + 2 * gap + 2 * margin;
+        if (layout->width < buttons[0] + buttons[1] + buttons[2] + 2 * gap + 2 * margin) layout->width = buttons[0] + buttons[1] + buttons[2] + 2 * gap + 2 * margin;
         if (layout->width < cpu_width + 2 * margin) layout->width = cpu_width + 2 * margin;
         layout->height = button_y + row + margin;
         layout->step_x = cw;
@@ -1206,17 +1213,24 @@ static void win32_drop_files(xxwidgets_widget *window, HDROP drop)
         if (!length || length >= INT_MAX || (size_t)length + 1 > SIZE_MAX / sizeof(*wide)) goto done;
         wide = malloc(((size_t)length + 1) * sizeof(*wide));
         if (!wide) goto done;
-        if (DragQueryFileW(drop, i, wide, length + 1) != length) { free(wide); goto done; }
+        if (DragQueryFileW(drop, i, wide, length + 1) != length) {
+            free(wide);
+            goto done;
+        }
         bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, NULL, 0, NULL, NULL);
         if (bytes) paths[i] = malloc((size_t)bytes);
         if (!paths[i] || !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, paths[i], bytes, NULL, NULL)) {
-            free(wide); goto done;
+            free(wide);
+            goto done;
         }
         free(wide);
     }
     xxwidgets_emit_drop_files(window, (const char *const *)paths, count);
 done:
-    if (paths) { for (i = 0; i < count; ++i) free(paths[i]); free(paths); }
+    if (paths) {
+        for (i = 0; i < count; ++i) free(paths[i]);
+        free(paths);
+    }
     DragFinish(drop);
 }
 
@@ -1309,13 +1323,21 @@ static xxwidgets_status win32_choose_file(xxwidgets_widget *owner, xxwidgets_fil
     xxwidgets_status status = XXWIDGETS_OK;
     BOOL chosen;
     if (!buffer) return XXWIDGETS_OUT_OF_MEMORY;
-    if (title) { status = win32_wide(title, &caption); if (status != XXWIDGETS_OK) goto done; }
+    if (title) {
+        status = win32_wide(title, &caption);
+        if (status != XXWIDGETS_OK) goto done;
+    }
     if (initial && *initial) {
         wchar_t *slash;
-        status = win32_wide(initial, &name); if (status != XXWIDGETS_OK) goto done;
-        if (wcslen(name) >= 32768) { status = XXWIDGETS_INVALID_ARGUMENT; goto done; }
+        status = win32_wide(initial, &name);
+        if (status != XXWIDGETS_OK) goto done;
+        if (wcslen(name) >= 32768) {
+            status = XXWIDGETS_INVALID_ARGUMENT;
+            goto done;
+        }
         /* The dialog refuses a start name with '/' (FNERR_INVALIDFILENAME) and shows nothing. */
-        for (slash = name; *slash; ++slash) if (*slash == L'/') *slash = L'\\';
+        for (slash = name; *slash; ++slash)
+            if (*slash == L'/') *slash = L'\\';
         DWORD attributes = GetFileAttributesW(name);
         if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) dialog.lpstrInitialDir = name;
         else wcscpy(buffer, name);
@@ -1324,10 +1346,12 @@ static xxwidgets_status win32_choose_file(xxwidgets_widget *owner, xxwidgets_fil
         status = win32_choose_folder((HWND)owner->native, caption, name, path, accepted);
         goto done;
     }
-    dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = (HWND)owner->native;
-    dialog.lpstrTitle = caption; dialog.lpstrFile = buffer; dialog.nMaxFile = 32768;
-    dialog.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST |
-        (mode == XXWIDGETS_FILE_DIALOG_OPEN ? OFN_FILEMUSTEXIST : OFN_OVERWRITEPROMPT);
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = (HWND)owner->native;
+    dialog.lpstrTitle = caption;
+    dialog.lpstrFile = buffer;
+    dialog.nMaxFile = 32768;
+    dialog.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | (mode == XXWIDGETS_FILE_DIALOG_OPEN ? OFN_FILEMUSTEXIST : OFN_OVERWRITEPROMPT);
     chosen = mode == XXWIDGETS_FILE_DIALOG_OPEN ? GetOpenFileNameW(&dialog) : GetSaveFileNameW(&dialog);
     if (!chosen && buffer[0] && CommDlgExtendedError()) {
         /* A start name the dialog still refuses (a reserved device name, say): open it without one. */
@@ -1336,14 +1360,26 @@ static xxwidgets_status win32_choose_file(xxwidgets_widget *owner, xxwidgets_fil
     }
     if (chosen) {
         int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buffer, -1, NULL, 0, NULL, NULL);
-        if (!bytes) { status = XXWIDGETS_PLATFORM_ERROR; goto done; }
+        if (!bytes) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto done;
+        }
         *path = malloc((size_t)bytes);
-        if (!*path) { status = XXWIDGETS_OUT_OF_MEMORY; goto done; }
-        if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buffer, -1, *path, bytes, NULL, NULL)) { status = XXWIDGETS_PLATFORM_ERROR; goto done; }
+        if (!*path) {
+            status = XXWIDGETS_OUT_OF_MEMORY;
+            goto done;
+        }
+        if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buffer, -1, *path, bytes, NULL, NULL)) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto done;
+        }
         *accepted = 1;
     } else if (CommDlgExtendedError()) status = XXWIDGETS_PLATFORM_ERROR;
 done:
-    free(caption); free(name); free(buffer); return status;
+    free(caption);
+    free(name);
+    free(buffer);
+    return status;
 }
 
 static xxwidgets_status win32_accept_file_drops(xxwidgets_widget *window, int accept)
@@ -1356,8 +1392,7 @@ static RECT win32_hex_rect(HWND handle, int row, int column)
 {
     RECT rect = {0};
     ListView_GetSubItemRect(handle, row, column, LVIR_BOUNDS, &rect);
-    if (!column)
-        rect.right = rect.left + ListView_GetColumnWidth(handle, 0);
+    if (!column) rect.right = rect.left + ListView_GetColumnWidth(handle, 0);
     return rect;
 }
 static void win32_hex_draw_symbol(HDC dc, const wchar_t *text, int length, int x, int y, int width)
@@ -1368,8 +1403,7 @@ static void win32_hex_draw_symbol(HDC dc, const wchar_t *text, int length, int x
         int saved = SaveDC(dc);
         int drawn = 0;
         XFORM transform = {(FLOAT)width / glyph.cx, 0, 0, 1, (FLOAT)x, (FLOAT)y};
-        if (SetGraphicsMode(dc, GM_ADVANCED) && SetWorldTransform(dc, &transform))
-            drawn = TextOutW(dc, 0, 0, text, length);
+        if (SetGraphicsMode(dc, GM_ADVANCED) && SetWorldTransform(dc, &transform)) drawn = TextOutW(dc, 0, 0, text, length);
         RestoreDC(dc, saved);
         if (!drawn) {
             int original_height = glyph.cy;
@@ -1379,13 +1413,11 @@ static void win32_hex_draw_symbol(HDC dc, const wchar_t *text, int length, int x
                 TEXTMETRICW metrics;
                 GetTextMetricsW(dc, &metrics);
                 description.lfHeight = -MulDiv(metrics.tmHeight, width, glyph.cx);
-                if (!description.lfHeight)
-                    description.lfHeight = -1;
+                if (!description.lfHeight) description.lfHeight = -1;
                 description.lfWidth = 0;
                 fitted = CreateFontIndirectW(&description);
             }
-            if (fitted)
-                SelectObject(dc, fitted);
+            if (fitted) SelectObject(dc, fitted);
             GetTextExtentPoint32W(dc, text, length, &glyph);
             TextOutW(dc, x + (width - glyph.cx) / 2, y + (original_height - glyph.cy) / 2, text, length);
             if (fitted) {
@@ -1427,8 +1459,8 @@ static void win32_hex_weight_fonts(xxwidgets_widget *widget, HFONT base, HFONT *
 
 /* Paint using the original font's positions, regardless of a weight variant's
  * glyph advances. Hit testing and user-resized column widths keep their grid. */
-static void win32_hex_text_part(HDC dc, HFONT base, HFONT paint, const wchar_t *text,
-    int first, int length, int x, int y, const RECT *row_rect, COLORREF foreground, COLORREF background)
+static void win32_hex_text_part(HDC dc, HFONT base, HFONT paint, const wchar_t *text, int first, int length, int x, int y, const RECT *row_rect, COLORREF foreground,
+                                COLORREF background)
 {
     SIZE prefix = {0}, extent = {0};
     int *advances = length ? (int *)malloc((size_t)length * sizeof(*advances)) : NULL;
@@ -1437,7 +1469,8 @@ static void win32_hex_text_part(HDC dc, HFONT base, HFONT paint, const wchar_t *
     if (length && advances && GetTextExtentExPointW(dc, text + first, length, INT_MAX, NULL, advances, &extent)) {
         for (int i = length - 1; i > 0; --i) advances[i] -= advances[i - 1];
     } else {
-        free(advances); advances = NULL;
+        free(advances);
+        advances = NULL;
         GetTextExtentPoint32W(dc, text + first, length, &extent);
     }
     RECT area = {x + prefix.cx, row_rect->top, x + prefix.cx + extent.cx, row_rect->bottom};
@@ -1471,7 +1504,8 @@ static LRESULT win32_disasm_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
     int selected = !!(ListView_GetItemState(handle, (int)row, LVIS_SELECTED) & LVIS_SELECTED);
     COLORREF foreground = GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT);
     COLORREF background = GetSysColor(selected ? COLOR_HIGHLIGHT : COLOR_WINDOW);
-    SetTextColor(dc, foreground); SetBkColor(dc, background);
+    SetTextColor(dc, foreground);
+    SetBkColor(dc, background);
     ExtTextOutW(dc, x, y, ETO_OPAQUE | ETO_CLIPPED, &rect, wide, (UINT)wcslen(wide), NULL);
     xxwidgets_disasm_span spans[128];
     size_t count = xxwidgets_disasm_spans(w, row, column, selected, spans, 128);
@@ -1482,26 +1516,22 @@ static LRESULT win32_disasm_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
         COLORREF bg = spans[i].background == UINT32_MAX ? background : win32_rgb(spans[i].background);
         if (length > 0) win32_hex_text_part(dc, font, font, wide, first, length, x, y, &rect, fg, bg);
     }
-    RestoreDC(dc, saved); free(wide);
+    RestoreDC(dc, saved);
+    free(wide);
     return CDRF_SKIPDEFAULT;
 }
 
 static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
 {
-    if (draw->nmcd.dwDrawStage == CDDS_PREPAINT)
-        return CDRF_NOTIFYITEMDRAW;
-    if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT)
-        return CDRF_NOTIFYSUBITEMDRAW;
-    if (draw->nmcd.dwDrawStage != (CDDS_ITEMPREPAINT | CDDS_SUBITEM))
-        return CDRF_DODEFAULT;
+    if (draw->nmcd.dwDrawStage == CDDS_PREPAINT) return CDRF_NOTIFYITEMDRAW;
+    if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) return CDRF_NOTIFYSUBITEMDRAW;
+    if (draw->nmcd.dwDrawStage != (CDDS_ITEMPREPAINT | CDDS_SUBITEM)) return CDRF_DODEFAULT;
     HWND handle = (HWND)w->native;
     size_t row = (size_t)draw->nmcd.dwItemSpec, column = (size_t)draw->iSubItem;
-    if (row >= w->item_count || column > 2)
-        return CDRF_DODEFAULT;
+    if (row >= w->item_count || column > 2) return CDRF_DODEFAULT;
     const char *text = xxwidgets_hexview_cell(w, row, column);
     wchar_t *wide = NULL;
-    if (win32_wide(text, &wide) != XXWIDGETS_OK)
-        return CDRF_DODEFAULT;
+    if (win32_wide(text, &wide) != XXWIDGETS_OK) return CDRF_DODEFAULT;
     HDC dc = draw->nmcd.hdc;
     int saved = SaveDC(dc);
     HFONT base_font = (HFONT)SendMessageW(handle, WM_GETFONT, 0, 0);
@@ -1514,8 +1544,7 @@ static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
     if (column == 2) {
         SIZE cell = {0};
         GetTextExtentPoint32W(dc, L"0", 1, &cell);
-        if (cell.cx < 1)
-            cell.cx = 1;
+        if (cell.cx < 1) cell.cx = 1;
         FillRect(dc, &rect, GetSysColorBrush(COLOR_WINDOW));
         SetBkMode(dc, TRANSPARENT);
         xxwidgets_hex_span symbols[64];
@@ -1529,10 +1558,10 @@ static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
             uint32_t tint;
             if (!highlighted && xxwidgets_hexview_highlight_span(w, symbols[i].offset, symbols[i].bytes, &tint)) {
                 HBRUSH brush = CreateSolidBrush(RGB((tint >> 16) & 255, (tint >> 8) & 255, tint & 255));
-                FillRect(dc, &slot, brush); DeleteObject(brush);
+                FillRect(dc, &slot, brush);
+                DeleteObject(brush);
             }
-            if (highlighted)
-                FillRect(dc, &slot, GetSysColorBrush(COLOR_HIGHLIGHT));
+            if (highlighted) FillRect(dc, &slot, GetSysColorBrush(COLOR_HIGHLIGHT));
             if (symbols[i].length) {
                 int start = symbols[i].start ? MultiByteToWideChar(CP_UTF8, 0, text, (int)symbols[i].start, NULL, 0) : 0;
                 int length = MultiByteToWideChar(CP_UTF8, 0, text + symbols[i].start, (int)symbols[i].length, NULL, 0);
@@ -1540,8 +1569,7 @@ static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
                 win32_hex_draw_symbol(dc, wide + start, length, slot.left, y, cell.cx);
             }
             SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
-            for (size_t byte = symbols[i].length ? 1 : 0; byte < cells; ++byte)
-                win32_hex_draw_symbol(dc, L"\x00b7", 1, slot.left + (int)byte * cell.cx, y, cell.cx);
+            for (size_t byte = symbols[i].length ? 1 : 0; byte < cells; ++byte) win32_hex_draw_symbol(dc, L"\x00b7", 1, slot.left + (int)byte * cell.cx, y, cell.cx);
         }
         RestoreDC(dc, saved);
         free(wide);
@@ -1554,23 +1582,22 @@ static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
     HFONT regular_font = base_font, bold_font = base_font;
     if (column == 1 && bold_nonzero) win32_hex_weight_fonts(w, base_font, &regular_font, &bold_font);
     FillRect(dc, &rect, GetSysColorBrush(COLOR_WINDOW));
-    win32_hex_text_part(dc, base_font, regular_font, wide, 0, (int)wcslen(wide), x, y, &rect,
-        GetSysColor(COLOR_WINDOWTEXT), GetSysColor(COLOR_WINDOW));
+    win32_hex_text_part(dc, base_font, regular_font, wide, 0, (int)wcslen(wide), x, y, &rect, GetSysColor(COLOR_WINDOWTEXT), GetSysColor(COLOR_WINDOW));
     xxwidgets_hex_span spans[64];
     size_t all_count = xxwidgets_hexview_spans(w, row, column, spans);
     for (size_t i = 0; i < all_count; ++i) {
-        uint32_t tint; if (!xxwidgets_hexview_highlight_span(w, spans[i].offset, spans[i].bytes, &tint)) continue;
+        uint32_t tint;
+        if (!xxwidgets_hexview_highlight_span(w, spans[i].offset, spans[i].bytes, &tint)) continue;
         int start = spans[i].start ? MultiByteToWideChar(CP_UTF8, 0, text, (int)spans[i].start, NULL, 0) : 0;
         int amount = MultiByteToWideChar(CP_UTF8, 0, text + spans[i].start, (int)spans[i].length, NULL, 0);
-        win32_hex_text_part(dc, base_font, regular_font, wide, start, amount, x, y, &rect,
-            GetSysColor(COLOR_WINDOWTEXT), RGB((tint >> 16) & 255, (tint >> 8) & 255, tint & 255));
+        win32_hex_text_part(dc, base_font, regular_font, wide, start, amount, x, y, &rect, GetSysColor(COLOR_WINDOWTEXT),
+                            RGB((tint >> 16) & 255, (tint >> 8) & 255, tint & 255));
     }
     size_t count = xxwidgets_hexview_selection_spans(w, row, column, spans);
     for (size_t i = 0; i < count; ++i) {
         int start = spans[i].start ? MultiByteToWideChar(CP_UTF8, 0, text, (int)spans[i].start, NULL, 0) : 0;
         int length = MultiByteToWideChar(CP_UTF8, 0, text + spans[i].start, (int)spans[i].length, NULL, 0);
-        win32_hex_text_part(dc, base_font, regular_font, wide, start, length, x, y, &rect,
-            GetSysColor(COLOR_HIGHLIGHTTEXT), GetSysColor(COLOR_HIGHLIGHT));
+        win32_hex_text_part(dc, base_font, regular_font, wide, start, length, x, y, &rect, GetSysColor(COLOR_HIGHLIGHTTEXT), GetSysColor(COLOR_HIGHLIGHT));
     }
     size_t bold_count = xxwidgets_hexview_bold_spans(w, row, column, spans);
     xxwidgets_hex_span units[64];
@@ -1585,10 +1612,9 @@ static LRESULT win32_hex_draw(xxwidgets_widget *w, NMLVCUSTOMDRAW *draw)
             int selected = xxwidgets_hexview_contains(w, units[j].offset, units[j].bytes);
             COLORREF background = GetSysColor(COLOR_WINDOW);
             if (selected) background = GetSysColor(COLOR_HIGHLIGHT);
-            else if (xxwidgets_hexview_highlight_span(w, units[j].offset, units[j].bytes, &tint))
-                background = RGB((tint >> 16) & 255, (tint >> 8) & 255, tint & 255);
+            else if (xxwidgets_hexview_highlight_span(w, units[j].offset, units[j].bytes, &tint)) background = RGB((tint >> 16) & 255, (tint >> 8) & 255, tint & 255);
             win32_hex_text_part(dc, base_font, bold_font, wide, (int)first, (int)(end - first), x, y, &rect,
-                GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT), background);
+                                GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT), background);
         }
     }
     RestoreDC(dc, saved);
@@ -1606,21 +1632,18 @@ static size_t win32_hex_hit_at(xxwidgets_widget *w, POINT point, size_t *bytes, 
     memset(&hit, 0, sizeof(hit));
     hit.pt = point;
     int row = ListView_SubItemHitTest(handle, &hit);
-    if (row < 0 || hit.iSubItem < 0 || hit.iSubItem > 2)
-        return SIZE_MAX;
+    if (row < 0 || hit.iSubItem < 0 || hit.iSubItem > 2) return SIZE_MAX;
     if (column) *column = (unsigned int)hit.iSubItem;
     RECT rect = win32_hex_rect(handle, row, hit.iSubItem);
     const char *text = xxwidgets_hexview_cell(w, (size_t)row, (size_t)hit.iSubItem);
     wchar_t *wide = NULL;
-    if (win32_wide(text, &wide) != XXWIDGETS_OK)
-        return SIZE_MAX;
+    if (win32_wide(text, &wide) != XXWIDGETS_OK) return SIZE_MAX;
     HDC dc = GetDC(handle);
     HFONT previous = (HFONT)SelectObject(dc, (HFONT)SendMessageW(handle, WM_GETFONT, 0, 0));
     if (hit.iSubItem == 2) {
         SIZE cell = {0};
         GetTextExtentPoint32W(dc, L"0", 1, &cell);
-        if (cell.cx < 1)
-            cell.cx = 1;
+        if (cell.cx < 1) cell.cx = 1;
         size_t byte = point.x > rect.left + 2 ? (size_t)((point.x - rect.left - 2) / cell.cx) : 0;
         xxwidgets_hex_span span;
         size_t offset = SIZE_MAX;
@@ -1631,19 +1654,16 @@ static size_t win32_hex_hit_at(xxwidgets_widget *w, POINT point, size_t *bytes, 
         SelectObject(dc, previous);
         ReleaseDC(handle, dc);
         free(wide);
-        if (offset != SIZE_MAX && activate)
-            xxwidgets_hexview_activate_column(w, 2);
+        if (offset != SIZE_MAX && activate) xxwidgets_hexview_activate_column(w, 2);
         return offset;
     }
     int at = 0, length = (int)wcslen(wide);
     while (at < length) {
         int next = at + 1;
-        if (wide[at] >= 0xd800 && wide[at] <= 0xdbff && next < length)
-            ++next;
+        if (wide[at] >= 0xd800 && wide[at] <= 0xdbff && next < length) ++next;
         SIZE extent;
         GetTextExtentPoint32W(dc, wide, next, &extent);
-        if (point.x - rect.left - 2 < extent.cx)
-            break;
+        if (point.x - rect.left - 2 < extent.cx) break;
         at = next;
     }
     size_t index = at ? (size_t)WideCharToMultiByte(CP_UTF8, 0, wide, at, NULL, 0, NULL, NULL) : 0;
@@ -1651,8 +1671,7 @@ static size_t win32_hex_hit_at(xxwidgets_widget *w, POINT point, size_t *bytes, 
     ReleaseDC(handle, dc);
     free(wide);
     size_t offset = xxwidgets_hexview_hit(w, (size_t)row, (size_t)hit.iSubItem, index);
-    if (offset != SIZE_MAX && activate)
-        xxwidgets_hexview_activate_column(w, (unsigned)hit.iSubItem);
+    if (offset != SIZE_MAX && activate) xxwidgets_hexview_activate_column(w, (unsigned)hit.iSubItem);
     return offset;
 }
 static size_t win32_hex_hit(xxwidgets_widget *w, POINT point, size_t *bytes)
@@ -1698,13 +1717,15 @@ static void win32_tree_colors(xxwidgets_widget *control, size_t index, uint32_t 
 {
     xxwidgets_tree_color colors = xxwidgets_treeview_node_color(control, index);
     COLORREF window = GetSysColor(COLOR_WINDOW), text = GetSysColor(COLOR_WINDOWTEXT);
-    int dark = GetRValue(window) + GetGValue(window) + GetBValue(window) <
-        GetRValue(text) + GetGValue(text) + GetBValue(text);
+    int dark = GetRValue(window) + GetGValue(window) + GetBValue(window) < GetRValue(text) + GetGValue(text) + GetBValue(text);
     *foreground = dark ? colors.dark_foreground : colors.foreground;
     *background = dark ? colors.dark_background : colors.background;
 }
 
-static COLORREF win32_rgb(uint32_t color) { return RGB((color >> 16) & 255, (color >> 8) & 255, color & 255); }
+static COLORREF win32_rgb(uint32_t color)
+{
+    return RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
+}
 
 /* As DIE draws its S and ? columns: the labels in the row's own colors. */
 static void win32_tree_draw_marks(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
@@ -1726,17 +1747,19 @@ static void win32_tree_draw_marks(xxwidgets_widget *control, NMTVCUSTOMDRAW *dra
     /* The Explorer look (XXWIDGETS_TREE_ARROWS) selects in a light tint of
      * the highlight with the row's own text color. */
     themed = selected && (control->tree_style & XXWIDGETS_TREE_ARROWS) != 0;
-    text = SetTextColor(dc, !control->enabled ? GetSysColor(COLOR_GRAYTEXT) :
-        selected && !themed ? GetSysColor(GetFocus() == handle ? COLOR_HIGHLIGHTTEXT : COLOR_BTNTEXT) :
-        foreground != UINT32_MAX ? win32_rgb(foreground) : GetSysColor(COLOR_WINDOWTEXT));
+    text = SetTextColor(dc, !control->enabled          ? GetSysColor(COLOR_GRAYTEXT)
+                            : selected && !themed      ? GetSysColor(GetFocus() == handle ? COLOR_HIGHLIGHTTEXT : COLOR_BTNTEXT)
+                            : foreground != UINT32_MAX ? win32_rgb(foreground)
+                                                       : GetSysColor(COLOR_WINDOWTEXT));
     mode = SetBkMode(dc, TRANSPARENT);
     width = win32_tree_mark_width(control, dc, height);
     left = client.right - width * (int)count;
-    row.left = left; row.right = client.right;
+    row.left = left;
+    row.right = client.right;
     if (themed) {
         COLORREF tint = GetSysColor(COLOR_HIGHLIGHT), window = GetSysColor(COLOR_WINDOW);
-        fill = CreateSolidBrush(RGB((GetRValue(tint) + 3 * GetRValue(window)) / 4, (GetGValue(tint) + 3 * GetGValue(window)) / 4,
-                                    (GetBValue(tint) + 3 * GetBValue(window)) / 4));
+        fill = CreateSolidBrush(
+            RGB((GetRValue(tint) + 3 * GetRValue(window)) / 4, (GetGValue(tint) + 3 * GetGValue(window)) / 4, (GetBValue(tint) + 3 * GetBValue(window)) / 4));
     } else fill = !selected && background != UINT32_MAX && control->enabled ? CreateSolidBrush(win32_rgb(background)) : NULL;
     FillRect(dc, &row, fill ? fill : GetSysColorBrush(selected ? (GetFocus() == handle ? COLOR_HIGHLIGHT : COLOR_BTNFACE) : COLOR_WINDOW));
     if (fill) DeleteObject(fill);
@@ -1764,8 +1787,7 @@ static LRESULT win32_tree_draw(xxwidgets_widget *control, NMTVCUSTOMDRAW *draw)
     if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
         uint32_t color, background;
         win32_tree_colors(control, (size_t)draw->nmcd.lItemlParam, &color, &background);
-        if (color != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
-            draw->clrText = RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
+        if (color != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED))) draw->clrText = RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
         if (background != UINT32_MAX && !(draw->nmcd.uItemState & (CDIS_SELECTED | CDIS_DISABLED)))
             draw->clrTextBk = RGB((background >> 16) & 255, (background >> 8) & 255, background & 255);
         if (xxwidgets_treeview_mark_count(control)) return CDRF_NOTIFYPOSTPAINT;
@@ -1785,8 +1807,7 @@ static void win32_work_area_cells(const xxwidgets_widget *widget, HWND handle, i
     int most;
     ZeroMemory(&monitor, sizeof(monitor));
     monitor.cbSize = sizeof(monitor);
-    if (!state || state->cell_width <= 0 || state->cell_height <= 0 ||
-        !GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor) ||
+    if (!state || state->cell_width <= 0 || state->cell_height <= 0 || !GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor) ||
         !AdjustWindowRectEx(&frame, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE)))
         return;
     most = (monitor.rcWork.right - monitor.rcWork.left - (frame.right - frame.left)) / state->cell_width;
@@ -1809,8 +1830,7 @@ static int win32_minimum_frame(const xxwidgets_widget *widget, HWND handle, int 
         if (columns < XXWIDGETS_WIN32_TEXT_MIN_COLUMNS) columns = XXWIDGETS_WIN32_TEXT_MIN_COLUMNS;
         if (rows < XXWIDGETS_WIN32_TEXT_MIN_ROWS) rows = XXWIDGETS_WIN32_TEXT_MIN_ROWS;
     }
-    if (!state || widget->kind != XXWIDGETS_WINDOW ||
-        (columns <= 0 && rows <= 0 && widget->min_frame_width <= 0 && widget->min_frame_height <= 0)) return 0;
+    if (!state || widget->kind != XXWIDGETS_WINDOW || (columns <= 0 && rows <= 0 && widget->min_frame_width <= 0 && widget->min_frame_height <= 0)) return 0;
     win32_work_area_cells(widget, handle, &columns, &rows);
     client_width = columns > 0 ? columns * state->cell_width : 0;
     client_height = rows > 0 ? rows * state->cell_height : 0;
@@ -1835,8 +1855,7 @@ static int win32_minimum_frame(const xxwidgets_widget *widget, HWND handle, int 
     frame.left = frame.top = 0;
     frame.right = client_width;
     frame.bottom = client_height;
-    if (!AdjustWindowRectEx(&frame, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE)))
-        return 0;
+    if (!AdjustWindowRectEx(&frame, (DWORD)GetWindowLongPtrW(handle, GWL_STYLE), widget->menu_count != 0, (DWORD)GetWindowLongPtrW(handle, GWL_EXSTYLE))) return 0;
     *width = frame.right - frame.left;
     *height = frame.bottom - frame.top;
     return 1;
@@ -1908,8 +1927,7 @@ static int win32_cell_sample_width(HDC dc, HFONT font, TEXTMETRICW *metrics)
     SIZE extent = {0, 0};
     int measured;
     if (!previous || previous == HGDI_ERROR) return 0;
-    measured = GetTextMetricsW(dc, metrics) &&
-        GetTextExtentPoint32W(dc, win32_cell_sample, (int)(sizeof(win32_cell_sample) / sizeof(win32_cell_sample[0])) - 1, &extent);
+    measured = GetTextMetricsW(dc, metrics) && GetTextExtentPoint32W(dc, win32_cell_sample, (int)(sizeof(win32_cell_sample) / sizeof(win32_cell_sample[0])) - 1, &extent);
     SelectObject(dc, previous);
     return measured && extent.cx > 0 ? extent.cx : 0;
 }
@@ -1987,8 +2005,8 @@ static void win32_cells_relayout(xxwidgets_app *app)
         if (native && handle && widget->kind == XXWIDGETS_WINDOW && native->held) {
             /* Held by an earlier relayout and neither moved nor resized since:
              * it asks for its own size again, where it was. */
-            if (GetWindowRect(handle, &frame) && EqualRect(&frame, &native->held_frame) &&
-                widget->rect.width == native->held_rect.width && widget->rect.height == native->held_rect.height) {
+            if (GetWindowRect(handle, &frame) && EqualRect(&frame, &native->held_frame) && widget->rect.width == native->held_rect.width &&
+                widget->rect.height == native->held_rect.height) {
                 widget->rect.width = native->held_width;
                 widget->rect.height = native->held_height;
                 give_back = 1;
@@ -2008,8 +2026,14 @@ static void win32_cells_relayout(xxwidgets_app *app)
         }
         on_monitor = GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor);
         if (on_monitor) {
-            if (width > monitor.rcWork.right - monitor.rcWork.left) { width = monitor.rcWork.right - monitor.rcWork.left; held = 1; }
-            if (height > monitor.rcWork.bottom - monitor.rcWork.top) { height = monitor.rcWork.bottom - monitor.rcWork.top; held = 1; }
+            if (width > monitor.rcWork.right - monitor.rcWork.left) {
+                width = monitor.rcWork.right - monitor.rcWork.left;
+                held = 1;
+            }
+            if (height > monitor.rcWork.bottom - monitor.rcWork.top) {
+                height = monitor.rcWork.bottom - monitor.rcWork.top;
+                held = 1;
+            }
         }
         if (IsIconic(handle)) {
             /* Its rect stays the size it is restored to (see win32_sync). */
@@ -2099,14 +2123,12 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                         break;
                     case XXWIDGETS_LISTBOX:
                     case XXWIDGETS_ARCHIVEVIEW:
-                        if (HIWORD(wp) == LBN_SELCHANGE && win32_read_value(control) == XXWIDGETS_OK)
-                            xxwidgets_emit(control, XXWIDGETS_EVENT_SELECT, control->value);
+                        if (HIWORD(wp) == LBN_SELCHANGE && win32_read_value(control) == XXWIDGETS_OK) xxwidgets_emit(control, XXWIDGETS_EVENT_SELECT, control->value);
                         break;
                     case XXWIDGETS_HEXVIEW:
                         if (HIWORD(wp) == LBN_SELCHANGE) {
                             int value = (int)SendMessageW(control_handle, LB_GETCURSEL, 0, 0);
-                            if (xxwidgets_hexview_selection_input(control, value) == XXWIDGETS_OK)
-                                xxwidgets_emit(control, XXWIDGETS_EVENT_SELECT, control->value);
+                            if (xxwidgets_hexview_selection_input(control, value) == XXWIDGETS_OK) xxwidgets_emit(control, XXWIDGETS_EVENT_SELECT, control->value);
                         }
                         break;
                     default: break;
@@ -2133,13 +2155,9 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
             if (lp && !widget->app->syncing) {
                 NMHDR *notification = (NMHDR *)lp;
                 xxwidgets_widget *control = win32_find_widget(widget->app, notification->hwndFrom);
-                if (control && control->kind == XXWIDGETS_HEXVIEW && notification->code == NM_CUSTOMDRAW)
-                    return win32_hex_draw(control, (NMLVCUSTOMDRAW *)lp);
-                if (control && control->kind == XXWIDGETS_DEBUGGER_DISASM && notification->code == NM_CUSTOMDRAW)
-                    return win32_disasm_draw(control, (NMLVCUSTOMDRAW *)lp);
-                if (control && control->parent == widget &&
-                    (xxwidgets_tabular_kind(control)) && control->enabled &&
-                    notification->code == LVN_ITEMCHANGED) {
+                if (control && control->kind == XXWIDGETS_HEXVIEW && notification->code == NM_CUSTOMDRAW) return win32_hex_draw(control, (NMLVCUSTOMDRAW *)lp);
+                if (control && control->kind == XXWIDGETS_DEBUGGER_DISASM && notification->code == NM_CUSTOMDRAW) return win32_disasm_draw(control, (NMLVCUSTOMDRAW *)lp);
+                if (control && control->parent == widget && (xxwidgets_tabular_kind(control)) && control->enabled && notification->code == LVN_ITEMCHANGED) {
                     const NMLISTVIEW *change = (const NMLISTVIEW *)lp;
                     if ((change->uChanged & LVIF_STATE) && ((change->uOldState ^ change->uNewState) & LVIS_SELECTED)) {
                         int previous = control->value;
@@ -2155,8 +2173,7 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                 }
                 if (control && control->parent == widget &&
                     (control->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(control) || xxwidgets_debugger_table_kind(control)) &&
-                    xxwidgets_focusable(control) && notification->code == NM_DBLCLK &&
-                    win32_read_value(control) == XXWIDGETS_OK && control->value >= 0)
+                    xxwidgets_focusable(control) && notification->code == NM_DBLCLK && win32_read_value(control) == XXWIDGETS_OK && control->value >= 0)
                     xxwidgets_emit(control, XXWIDGETS_EVENT_ACTIVATE, control->value);
                 if (control && control->parent == widget && control->kind == XXWIDGETS_TREEVIEW && control->enabled && control->platform &&
                     ((xxwidgets_win32_widget *)control->platform)->tree_initialized &&
@@ -2185,8 +2202,7 @@ static LRESULT CALLBACK win32_window_proc(HWND handle, UINT message, WPARAM wp, 
                          * its next page once this notification has returned. */
                         size_t index = (size_t)((const NMTREEVIEWW *)lp)->itemNew.lParam;
                         if (xxwidgets_treeview_is_more(control, index)) {
-                            PostMessageW((HWND)control->native, XXWIDGETS_WIN32_TREE_MORE, (WPARAM)index,
-                                         (LPARAM)(uintptr_t)control->tree_content_revision);
+                            PostMessageW((HWND)control->native, XXWIDGETS_WIN32_TREE_MORE, (WPARAM)index, (LPARAM)(uintptr_t)control->tree_content_revision);
                             return TRUE;
                         }
                         if (xxwidgets_treeview_pending(control, index)) {
@@ -2457,37 +2473,130 @@ static void win32_plot_draw(void *user, int kind, double x, double y, double x2,
     HDC dc = (HDC)user;
     COLORREF color = RGB((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
     if (kind == 0) {
-        HPEN pen = CreatePen(PS_SOLID, 1, color); HGDIOBJ old = SelectObject(dc, pen);
-        MoveToEx(dc, (int)x, (int)y, NULL); LineTo(dc, (int)x2, (int)y2); SelectObject(dc, old); DeleteObject(pen);
+        HPEN pen = CreatePen(PS_SOLID, 1, color);
+        HGDIOBJ old = SelectObject(dc, pen);
+        MoveToEx(dc, (int)x, (int)y, NULL);
+        LineTo(dc, (int)x2, (int)y2);
+        SelectObject(dc, old);
+        DeleteObject(pen);
     } else if (kind == 1) {
-        RECT rect = {(LONG)x, (LONG)y, (LONG)x2, (LONG)y2}; HBRUSH brush = CreateSolidBrush(color);
-        FillRect(dc, &rect, brush); DeleteObject(brush);
-    } else { SetTextColor(dc, color); SetBkMode(dc, TRANSPARENT); TextOutA(dc, (int)x, (int)y, text, (int)strlen(text)); }
+        RECT rect = {(LONG)x, (LONG)y, (LONG)x2, (LONG)y2};
+        HBRUSH brush = CreateSolidBrush(color);
+        FillRect(dc, &rect, brush);
+        DeleteObject(brush);
+    } else {
+        SetTextColor(dc, color);
+        SetBkMode(dc, TRANSPARENT);
+        TextOutA(dc, (int)x, (int)y, text, (int)strlen(text));
+    }
 }
-static LRESULT CALLBACK win32_canvas_proc(HWND handle,UINT message,WPARAM wp,LPARAM lp,UINT_PTR id,DWORD_PTR data){
- xxwidgets_widget *w=(xxwidgets_widget*)data;
- if(message==WM_PAINT){PAINTSTRUCT paint;RECT rect;HDC dc=BeginPaint(handle,&paint);GetClientRect(handle,&rect);FillRect(dc,&rect,GetSysColorBrush(COLOR_3DFACE));
-  if(w->kind==XXWIDGETS_CANVAS&&w->canvas_pixels&&w->canvas_width&&w->canvas_height){size_t n=(size_t)w->canvas_width*w->canvas_height;uint32_t *pixels=malloc(n*4);if(pixels){for(size_t i=0;i<n;++i)pixels[i]=w->canvas_pixels[i]>>8;BITMAPINFO info={0};info.bmiHeader.biSize=sizeof(info.bmiHeader);info.bmiHeader.biWidth=w->canvas_width;info.bmiHeader.biHeight=-(LONG)w->canvas_height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;double x,y,rw,rh;xxwidgets_canvas_fit(w,rect.right,rect.bottom,&x,&y,&rw,&rh);SetStretchBltMode(dc,COLORONCOLOR);StretchDIBits(dc,(int)x,(int)y,(int)rw,(int)rh,0,0,w->canvas_width,w->canvas_height,pixels,&info,DIB_RGB_COLORS,SRCCOPY);free(pixels);
-   SetBkMode(dc,TRANSPARENT);for(size_t i=0;i<w->canvas_label_count;++i){xxwidgets_canvas_label*l=w->canvas_labels+i;uint32_t c=l->color;SetTextColor(dc,RGB(c>>24,(c>>16)&255,(c>>8)&255));int len=MultiByteToWideChar(CP_UTF8,0,l->text,-1,NULL,0);wchar_t *text=len?malloc((size_t)len*sizeof(*text)):NULL;if(text){MultiByteToWideChar(CP_UTF8,0,l->text,-1,text,len);TextOutW(dc,(int)(x+l->x*rw/w->canvas_width),(int)(y+l->y*rh/w->canvas_height),text,len-1);free(text);}}
-   if(w->value>=0){HPEN pen=CreatePen(PS_SOLID,2,RGB(255,0,0));HGDIOBJ oldpen=SelectObject(dc,pen),oldbrush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));int px=(int)(x+(w->value%w->canvas_width)*rw/w->canvas_width),py=(int)(y+(w->value/w->canvas_width)*rh/w->canvas_height);Rectangle(dc,px,py,px+(int)fmax(2,rw/w->canvas_width),py+(int)fmax(2,rh/w->canvas_height));SelectObject(dc,oldbrush);SelectObject(dc,oldpen);DeleteObject(pen);}}}
-  EndPaint(handle,&paint);return 0;}
- if(message==WM_LBUTTONDOWN||((message==WM_MOUSEMOVE)&&(wp&MK_LBUTTON))){RECT r;GetClientRect(handle,&r);SetFocus(handle);if(message==WM_LBUTTONDOWN)SetCapture(handle);if(w->kind==XXWIDGETS_SPLITTER)xxwidgets_splitter_input(w,(short)LOWORD(lp),(short)HIWORD(lp),r.right,r.bottom);else xxwidgets_canvas_input(w,(short)LOWORD(lp),(short)HIWORD(lp),r.right,r.bottom);return 0;}
- if(message==WM_LBUTTONUP){ReleaseCapture();return 0;}
- if(message==WM_KEYDOWN){int key=0;switch(wp){case VK_LEFT:key=XXWIDGETS_KEY_LEFT;break;case VK_RIGHT:key=XXWIDGETS_KEY_RIGHT;break;case VK_UP:key=XXWIDGETS_KEY_UP;break;case VK_DOWN:key=XXWIDGETS_KEY_DOWN;break;case VK_HOME:key=XXWIDGETS_KEY_HOME;break;case VK_END:key=XXWIDGETS_KEY_END;break;case VK_PRIOR:key=XXWIDGETS_KEY_PAGEUP;break;case VK_NEXT:key=XXWIDGETS_KEY_PAGEDOWN;break;case VK_RETURN:key=13;break;default:break;}if(w->kind==XXWIDGETS_SPLITTER?xxwidgets_splitter_key(w,key):xxwidgets_canvas_key(w,key))return 0;}
- if(message==WM_GETDLGCODE)return DLGC_WANTARROWS;
- if(message==WM_NCDESTROY)RemoveWindowSubclass(handle,win32_canvas_proc,id);return DefSubclassProc(handle,message,wp,lp);
+static LRESULT CALLBACK win32_canvas_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
+{
+    xxwidgets_widget *w = (xxwidgets_widget *)data;
+    if (message == WM_PAINT) {
+        PAINTSTRUCT paint;
+        RECT rect;
+        HDC dc = BeginPaint(handle, &paint);
+        GetClientRect(handle, &rect);
+        FillRect(dc, &rect, GetSysColorBrush(COLOR_3DFACE));
+        if (w->kind == XXWIDGETS_CANVAS && w->canvas_pixels && w->canvas_width && w->canvas_height) {
+            size_t n = (size_t)w->canvas_width * w->canvas_height;
+            uint32_t *pixels = malloc(n * 4);
+            if (pixels) {
+                for (size_t i = 0; i < n; ++i) pixels[i] = w->canvas_pixels[i] >> 8;
+                BITMAPINFO info = {0};
+                info.bmiHeader.biSize = sizeof(info.bmiHeader);
+                info.bmiHeader.biWidth = w->canvas_width;
+                info.bmiHeader.biHeight = -(LONG)w->canvas_height;
+                info.bmiHeader.biPlanes = 1;
+                info.bmiHeader.biBitCount = 32;
+                info.bmiHeader.biCompression = BI_RGB;
+                double x, y, rw, rh;
+                xxwidgets_canvas_fit(w, rect.right, rect.bottom, &x, &y, &rw, &rh);
+                SetStretchBltMode(dc, COLORONCOLOR);
+                StretchDIBits(dc, (int)x, (int)y, (int)rw, (int)rh, 0, 0, w->canvas_width, w->canvas_height, pixels, &info, DIB_RGB_COLORS, SRCCOPY);
+                free(pixels);
+                SetBkMode(dc, TRANSPARENT);
+                for (size_t i = 0; i < w->canvas_label_count; ++i) {
+                    xxwidgets_canvas_label *l = w->canvas_labels + i;
+                    uint32_t c = l->color;
+                    SetTextColor(dc, RGB(c >> 24, (c >> 16) & 255, (c >> 8) & 255));
+                    int len = MultiByteToWideChar(CP_UTF8, 0, l->text, -1, NULL, 0);
+                    wchar_t *text = len ? malloc((size_t)len * sizeof(*text)) : NULL;
+                    if (text) {
+                        MultiByteToWideChar(CP_UTF8, 0, l->text, -1, text, len);
+                        TextOutW(dc, (int)(x + l->x * rw / w->canvas_width), (int)(y + l->y * rh / w->canvas_height), text, len - 1);
+                        free(text);
+                    }
+                }
+                if (w->value >= 0) {
+                    HPEN pen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+                    HGDIOBJ oldpen = SelectObject(dc, pen), oldbrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+                    int px = (int)(x + (w->value % w->canvas_width) * rw / w->canvas_width), py = (int)(y + (w->value / w->canvas_width) * rh / w->canvas_height);
+                    Rectangle(dc, px, py, px + (int)fmax(2, rw / w->canvas_width), py + (int)fmax(2, rh / w->canvas_height));
+                    SelectObject(dc, oldbrush);
+                    SelectObject(dc, oldpen);
+                    DeleteObject(pen);
+                }
+            }
+        }
+        EndPaint(handle, &paint);
+        return 0;
+    }
+    if (message == WM_LBUTTONDOWN || ((message == WM_MOUSEMOVE) && (wp & MK_LBUTTON))) {
+        RECT r;
+        GetClientRect(handle, &r);
+        SetFocus(handle);
+        if (message == WM_LBUTTONDOWN) SetCapture(handle);
+        if (w->kind == XXWIDGETS_SPLITTER) xxwidgets_splitter_input(w, (short)LOWORD(lp), (short)HIWORD(lp), r.right, r.bottom);
+        else xxwidgets_canvas_input(w, (short)LOWORD(lp), (short)HIWORD(lp), r.right, r.bottom);
+        return 0;
+    }
+    if (message == WM_LBUTTONUP) {
+        ReleaseCapture();
+        return 0;
+    }
+    if (message == WM_KEYDOWN) {
+        int key = 0;
+        switch (wp) {
+            case VK_LEFT: key = XXWIDGETS_KEY_LEFT; break;
+            case VK_RIGHT: key = XXWIDGETS_KEY_RIGHT; break;
+            case VK_UP: key = XXWIDGETS_KEY_UP; break;
+            case VK_DOWN: key = XXWIDGETS_KEY_DOWN; break;
+            case VK_HOME: key = XXWIDGETS_KEY_HOME; break;
+            case VK_END: key = XXWIDGETS_KEY_END; break;
+            case VK_PRIOR: key = XXWIDGETS_KEY_PAGEUP; break;
+            case VK_NEXT: key = XXWIDGETS_KEY_PAGEDOWN; break;
+            case VK_RETURN: key = 13; break;
+            default: break;
+        }
+        if (w->kind == XXWIDGETS_SPLITTER ? xxwidgets_splitter_key(w, key) : xxwidgets_canvas_key(w, key)) return 0;
+    }
+    if (message == WM_GETDLGCODE) return DLGC_WANTARROWS;
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_canvas_proc, id);
+    return DefSubclassProc(handle, message, wp, lp);
 }
 
 static LRESULT CALLBACK win32_plot_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)data;
     if (message == WM_PAINT) {
-        PAINTSTRUCT paint; RECT rect; HDC dc = BeginPaint(handle, &paint); GetClientRect(handle, &rect);
+        PAINTSTRUCT paint;
+        RECT rect;
+        HDC dc = BeginPaint(handle, &paint);
+        GetClientRect(handle, &rect);
         HGDIOBJ old = SelectObject(dc, GetStockObject(ANSI_FIXED_FONT));
         xxwidgets_entropy_draw(widget, rect.right, rect.bottom, 7, 14, win32_plot_draw, dc);
-        SelectObject(dc, old); EndPaint(handle, &paint); return 0;
+        SelectObject(dc, old);
+        EndPaint(handle, &paint);
+        return 0;
     }
-    if (message == WM_LBUTTONDOWN) { RECT rect; GetClientRect(handle, &rect); xxwidgets_entropy_plot_input(widget, (short)LOWORD(lp), rect.right, 7); return 0; }
+    if (message == WM_LBUTTONDOWN) {
+        RECT rect;
+        GetClientRect(handle, &rect);
+        xxwidgets_entropy_plot_input(widget, (short)LOWORD(lp), rect.right, 7);
+        return 0;
+    }
     if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_plot_proc, id);
     return DefSubclassProc(handle, message, wp, lp);
 }
@@ -2548,16 +2657,14 @@ static void win32_systemprocessesviewer_context(xxwidgets_widget *widget, LPARAM
     xxwidgets_emit_context(widget, widget->value, (int)point.x, (int)point.y);
 }
 
-static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT message, WPARAM wp,
-    LPARAM lp, UINT_PTR id, DWORD_PTR data)
+static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)data;
     xxwidgets_win32_widget *native = widget->platform;
     if (message == WM_GETDLGCODE && lp) {
         const MSG *key = (const MSG *)lp;
         if ((key->message == WM_KEYDOWN && key->wParam == VK_RETURN) ||
-            ((key->message == WM_KEYDOWN || key->message == WM_SYSKEYDOWN) &&
-             (key->wParam == VK_APPS || (key->wParam == VK_F10 && GetKeyState(VK_SHIFT) < 0))))
+            ((key->message == WM_KEYDOWN || key->message == WM_SYSKEYDOWN) && (key->wParam == VK_APPS || (key->wParam == VK_F10 && GetKeyState(VK_SHIFT) < 0))))
             return DefSubclassProc(handle, message, wp, lp) | DLGC_WANTMESSAGE;
     }
     if (message == WM_CONTEXTMENU) {
@@ -2568,16 +2675,14 @@ static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT messa
         native->browser_context_key = 0;
         return 0;
     }
-    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
-        !widget->app->syncing && xxwidgets_focusable(widget)) {
+    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && !widget->app->syncing && xxwidgets_focusable(widget)) {
         if (wp == VK_APPS || (wp == VK_F10 && GetKeyState(VK_SHIFT) < 0)) {
             if (native) native->browser_context_key = (int)wp;
             if (!(lp & ((LPARAM)1 << 30))) win32_systemprocessesviewer_context(widget, (LPARAM)-1);
             return 0;
         }
         if (message == WM_KEYDOWN && wp == VK_RETURN) {
-            if (win32_read_value(widget) == XXWIDGETS_OK && widget->value >= 0)
-                xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
+            if (win32_read_value(widget) == XXWIDGETS_OK && widget->value >= 0) xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
             return 0;
         }
     }
@@ -2585,19 +2690,15 @@ static LRESULT CALLBACK win32_systemprocessesviewer_proc(HWND handle, UINT messa
     return DefSubclassProc(handle, message, wp, lp);
 }
 
-static LRESULT CALLBACK win32_binaryviewer_proc(HWND handle, UINT message, WPARAM wp,
-    LPARAM lp, UINT_PTR id, DWORD_PTR data)
+static LRESULT CALLBACK win32_binaryviewer_proc(HWND handle, UINT message, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR data)
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)data;
     if (message == WM_GETDLGCODE && lp) {
         const MSG *key = (const MSG *)lp;
-        if (key->message == WM_KEYDOWN && key->wParam == VK_RETURN)
-            return DefSubclassProc(handle, message, wp, lp) | DLGC_WANTMESSAGE;
+        if (key->message == WM_KEYDOWN && key->wParam == VK_RETURN) return DefSubclassProc(handle, message, wp, lp) | DLGC_WANTMESSAGE;
     }
-    if (message == WM_KEYDOWN && wp == VK_RETURN && !widget->app->syncing &&
-        xxwidgets_focusable(widget)) {
-        if (win32_read_value(widget) == XXWIDGETS_OK && widget->value >= 0)
-            xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
+    if (message == WM_KEYDOWN && wp == VK_RETURN && !widget->app->syncing && xxwidgets_focusable(widget)) {
+        if (win32_read_value(widget) == XXWIDGETS_OK && widget->value >= 0) xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, widget->value);
         return 0;
     }
     if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_binaryviewer_proc, id);
@@ -2705,7 +2806,10 @@ static LRESULT CALLBACK win32_hexview_overview_proc(HWND handle, UINT message, W
             uint32_t rgb;
             if (xxwidgets_hexview_overview_color(widget, (size_t)row, (size_t)rect.bottom, &rgb)) {
                 RECT band = {rect.left + 1, row, rect.right - 1, row + 1};
-                if (band.right <= band.left) { band.left = rect.left; band.right = rect.right; }
+                if (band.right <= band.left) {
+                    band.left = rect.left;
+                    band.right = rect.right;
+                }
                 SetDCBrushColor(dc, RGB((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255));
                 FillRect(dc, &band, (HBRUSH)GetStockObject(DC_BRUSH));
             }
@@ -2713,7 +2817,8 @@ static LRESULT CALLBACK win32_hexview_overview_proc(HWND handle, UINT message, W
         if (rect.right > 1) {
             RECT edge = {rect.left, rect.top, rect.left + 1, rect.bottom};
             FillRect(dc, &edge, GetSysColorBrush(COLOR_3DSHADOW));
-            edge.left = rect.right - 1; edge.right = rect.right;
+            edge.left = rect.right - 1;
+            edge.right = rect.right;
             FillRect(dc, &edge, GetSysColorBrush(COLOR_3DSHADOW));
         }
         EndPaint(handle, &paint);
@@ -2742,19 +2847,28 @@ static LRESULT CALLBACK win32_hexview_container_proc(HWND handle, UINT message, 
 {
     xxwidgets_widget *widget = (xxwidgets_widget *)data;
     xxwidgets_win32_widget *native = widget->platform;
-    if (message == WM_SIZE) { win32_hexview_overview_layout(widget); return 0; }
-    if (message == WM_SETFOCUS) { SetFocus((HWND)widget->native); return 0; }
-    if (message == WM_NOTIFY || message == WM_COMMAND)
-        return SendMessageW(GetParent(handle), message, wp, lp);
+    if (message == WM_SIZE) {
+        win32_hexview_overview_layout(widget);
+        return 0;
+    }
+    if (message == WM_SETFOCUS) {
+        SetFocus((HWND)widget->native);
+        return 0;
+    }
+    if (message == WM_NOTIFY || message == WM_COMMAND) return SendMessageW(GetParent(handle), message, wp, lp);
     if (message == WM_VSCROLL && native && (HWND)lp == native->hex_scrollbar) {
         SCROLLINFO scroll;
         int target;
-        memset(&scroll, 0, sizeof(scroll)); scroll.cbSize = sizeof(scroll); scroll.fMask = SIF_ALL;
+        memset(&scroll, 0, sizeof(scroll));
+        scroll.cbSize = sizeof(scroll);
+        scroll.fMask = SIF_ALL;
         GetScrollInfo(native->hex_scrollbar, SB_CTL, &scroll);
         target = scroll.nPos;
         switch (LOWORD(wp)) {
             case SB_LINEUP: --target; break;
-            case SB_LINEDOWN: if (target < INT_MAX) ++target; break;
+            case SB_LINEDOWN:
+                if (target < INT_MAX) ++target;
+                break;
             case SB_PAGEUP: target = target > (int)scroll.nPage ? target - (int)scroll.nPage : 0; break;
             case SB_PAGEDOWN: target = target < INT_MAX - (int)scroll.nPage ? target + (int)scroll.nPage : INT_MAX; break;
             case SB_TOP: target = 0; break;
@@ -2776,23 +2890,21 @@ static xxwidgets_status win32_hexview_create_overview(xxwidgets_widget *widget, 
     xxwidgets_win32_app *app = widget->app->platform;
     xxwidgets_win32_widget *native = widget->platform;
     HWND table = (HWND)widget->native;
-    native->hex_container = CreateWindowExW(WS_EX_CONTROLPARENT, L"STATIC", L"", WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-                                          x, y, width, height, GetParent(table), NULL, app->instance, NULL);
-    if (!native->hex_container || !SetWindowSubclass(native->hex_container, win32_hexview_container_proc, 1, (DWORD_PTR)widget))
-        return XXWIDGETS_PLATFORM_ERROR;
+    native->hex_container = CreateWindowExW(WS_EX_CONTROLPARENT, L"STATIC", L"", WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, x, y, width, height, GetParent(table),
+                                            NULL, app->instance, NULL);
+    if (!native->hex_container || !SetWindowSubclass(native->hex_container, win32_hexview_container_proc, 1, (DWORD_PTR)widget)) return XXWIDGETS_PLATFORM_ERROR;
     if (!SetParent(table, native->hex_container)) return XXWIDGETS_PLATFORM_ERROR;
     {
         /* Its text is only its accessible name. */
         wchar_t *name = NULL;
         (void)win32_wide(XXW_TR(widget->app, "File overview"), &name);
-        native->hex_overview = CreateWindowExW(0, L"STATIC", name ? name : L"File overview", WS_CHILD | WS_VISIBLE | SS_NOTIFY,
-                                             0, 0, 0, 0, native->hex_container, NULL, app->instance, NULL);
+        native->hex_overview = CreateWindowExW(0, L"STATIC", name ? name : L"File overview", WS_CHILD | WS_VISIBLE | SS_NOTIFY, 0, 0, 0, 0, native->hex_container, NULL,
+                                               app->instance, NULL);
         free(name);
     }
-    native->hex_scrollbar = CreateWindowExW(0, L"SCROLLBAR", L"", WS_CHILD | WS_VISIBLE | SBS_VERT,
-                                          0, 0, 0, 0, native->hex_container, NULL, app->instance, NULL);
-    if (!native->hex_overview || !native->hex_scrollbar ||
-        !SetWindowSubclass(native->hex_overview, win32_hexview_overview_proc, 1, (DWORD_PTR)widget)) return XXWIDGETS_PLATFORM_ERROR;
+    native->hex_scrollbar = CreateWindowExW(0, L"SCROLLBAR", L"", WS_CHILD | WS_VISIBLE | SBS_VERT, 0, 0, 0, 0, native->hex_container, NULL, app->instance, NULL);
+    if (!native->hex_overview || !native->hex_scrollbar || !SetWindowSubclass(native->hex_overview, win32_hexview_overview_proc, 1, (DWORD_PTR)widget))
+        return XXWIDGETS_PLATFORM_ERROR;
     ShowWindow(table, SW_SHOWNA);
     win32_hexview_overview_layout(widget);
     return XXWIDGETS_OK;
@@ -2810,16 +2922,18 @@ static HFONT win32_die_font(xxwidgets_widget *widget)
     if (widget->app->font_options.fonts[role].family[0]) return app->role_fonts[role];
     /* Preserve size/weight/style from the text-editor role while using the
      * standard monospace family when the user has not chosen a family. */
-    memset(&configured, 0, sizeof(configured)); memset(&mono, 0, sizeof(mono));
-    if (!GetObjectW(app->role_fonts[role], sizeof(configured), &configured) ||
-        !GetObjectW(app->monospace_font, sizeof(mono), &mono)) return app->monospace_font;
+    memset(&configured, 0, sizeof(configured));
+    memset(&mono, 0, sizeof(mono));
+    if (!GetObjectW(app->role_fonts[role], sizeof(configured), &configured) || !GetObjectW(app->monospace_font, sizeof(mono), &mono)) return app->monospace_font;
     memcpy(configured.lfFaceName, mono.lfFaceName, sizeof(configured.lfFaceName));
     configured.lfPitchAndFamily = mono.lfPitchAndFamily;
     if (native->die_font_initialized && !memcmp(&configured, &native->die_font_description, sizeof(configured))) return native->die_font;
     next = CreateFontIndirectW(&configured);
     if (!next) return app->monospace_font;
     if (native->die_font) DeleteObject(native->die_font);
-    native->die_font = next; native->die_font_description = configured; native->die_font_initialized = 1;
+    native->die_font = next;
+    native->die_font_description = configured;
+    native->die_font_initialized = 1;
     return next;
 }
 
@@ -2848,7 +2962,10 @@ static void win32_die_sync(xxwidgets_widget *widget)
     if (!handle || !native || native->die_layouting || !GetClientRect(handle, &rect)) return;
     native->die_layouting = 1;
     dc = GetDC(handle);
-    if (dc) { win32_die_metrics(widget, dc); ReleaseDC(handle, dc); }
+    if (dc) {
+        win32_die_metrics(widget, dc);
+        ReleaseDC(handle, dc);
+    }
     if (native->die_cell_width < 1) native->die_cell_width = 8;
     if (native->die_cell_height < 1) native->die_cell_height = 16;
     xxwidgets_die_edit_view_get(widget, &view);
@@ -2858,14 +2975,19 @@ static void win32_die_sync(xxwidgets_widget *widget)
     if (!rows) rows = 1;
     if (!columns) columns = 1;
     if (rows != native->die_rows || columns != native->die_columns) {
-        native->die_rows = rows; native->die_columns = columns;
+        native->die_rows = rows;
+        native->die_columns = columns;
         xxwidgets_die_edit_page(widget, rows, columns);
         xxwidgets_die_edit_view_get(widget, &view);
     }
-    info.nMin = 0; info.nMax = view.line_count ? (int)view.line_count - 1 : 0;
-    info.nPage = (UINT)rows; info.nPos = (int)view.first_line;
+    info.nMin = 0;
+    info.nMax = view.line_count ? (int)view.line_count - 1 : 0;
+    info.nPage = (UINT)rows;
+    info.nPos = (int)view.first_line;
     SetScrollInfo(handle, SB_VERT, &info, TRUE);
-    info.nMax = (int)view.max_columns; info.nPage = (UINT)columns; info.nPos = (int)view.first_column;
+    info.nMax = (int)view.max_columns;
+    info.nPage = (UINT)columns;
+    info.nPos = (int)view.first_column;
     SetScrollInfo(handle, SB_HORZ, &info, TRUE);
     native->die_layouting = 0;
     InvalidateRect(handle, NULL, FALSE);
@@ -2892,8 +3014,7 @@ static void win32_die_markers(HDC dc, const xxwidgets_win32_widget *native, int 
         if (radius < 2) radius = 2;
         if (brush) {
             HGDIOBJ old_brush = SelectObject(dc, brush);
-            Ellipse(dc, width / 2 - radius, y + height / 2 - radius,
-                width / 2 + radius, y + height / 2 + radius);
+            Ellipse(dc, width / 2 - radius, y + height / 2 - radius, width / 2 + radius, y + height / 2 + radius);
             if (old_brush) SelectObject(dc, old_brush);
             DeleteObject(brush);
         }
@@ -2901,9 +3022,8 @@ static void win32_die_markers(HDC dc, const xxwidgets_win32_widget *native, int 
     if (execution) {
         int left = width + 1, right = width * 2 - 1, middle = y + height / 2;
         int head = right - width / 3;
-        POINT arrow[7] = {{left, middle - height / 5}, {head, middle - height / 5},
-            {head, middle - height / 3}, {right, middle}, {head, middle + height / 3},
-            {head, middle + height / 5}, {left, middle + height / 5}};
+        POINT arrow[7] = {{left, middle - height / 5}, {head, middle - height / 5}, {head, middle - height / 3}, {right, middle},
+                          {head, middle + height / 3}, {head, middle + height / 5}, {left, middle + height / 5}};
         HBRUSH brush = CreateSolidBrush(RGB(210, 110, 5));
         if (brush) {
             HGDIOBJ old_brush = SelectObject(dc, brush);
@@ -2936,44 +3056,53 @@ static void win32_die_paint(xxwidgets_widget *widget)
     current = xxwidgets_die_edit_caret_line(widget);
     count = rect.right > native->die_gutter ? (size_t)((rect.right - native->die_gutter) / native->die_cell_width + 1) : 1;
     cells = calloc(count, sizeof(*cells));
-    if (cells) for (size_t row = 0; row <= (size_t)(rect.bottom / native->die_cell_height); ++row) {
-        size_t line = view.first_line + row;
-        int y = (int)row * native->die_cell_height;
-        wchar_t number[32];
-        int breakpoint, execution;
-        RECT box = {native->die_gutter, y, rect.right, y + native->die_cell_height};
-        if (line >= view.line_count) break;
-        xxwidgets_die_edit_line_marker(widget, line, &breakpoint, &execution);
-        if (execution) win32_die_fill(dc, &box, RGB(255, 232, 163));
-        else if (!view.read_only && line == current) win32_die_fill(dc, &box, RGB(255, 255, 224));
-        box.left = 0; box.right = native->die_gutter - native->die_cell_width / 2;
-        win32_die_fill(dc, &box, RGB(238, 238, 238));
-        win32_die_markers(dc, native, y, breakpoint, execution);
-        _snwprintf(number, sizeof(number) / sizeof(*number), L"%llu", (unsigned long long)line + 1);
-        box.right = native->die_gutter - native->die_cell_width;
-        SetTextColor(dc, RGB(102, 102, 102));
-        DrawTextW(dc, number, -1, &box, DT_RIGHT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
-        xxwidgets_die_edit_render_line(widget, line, view.first_column, cells, count);
-        for (size_t column = 0; column < count; ++column) {
-            int x = native->die_gutter + (int)column * native->die_cell_width;
-            wchar_t scalar[2]; int units = 1;
-            box.left = x; box.right = x + native->die_cell_width;
-            if (cells[column].selected) win32_die_fill(dc, &box, GetSysColor(COLOR_HIGHLIGHT));
-            if (cells[column].scalar >= 32) {
-                uint32_t cp = cells[column].scalar;
-                if (cp > 0xffff) { cp -= 0x10000; scalar[0] = (wchar_t)(0xd800 + (cp >> 10)); scalar[1] = (wchar_t)(0xdc00 + (cp & 1023)); units = 2; }
-                else scalar[0] = (wchar_t)cp;
-                SetTextColor(dc, cells[column].selected ? GetSysColor(COLOR_HIGHLIGHTTEXT) :
-                    cells[column].style == XXWIDGETS_DIE_STYLE_TEXT ? RGB(0, 0, 0) : win32_die_rgb(xxwidgets_die_edit_color(cells[column].style)));
-                ExtTextOutW(dc, x, y, ETO_CLIPPED, &box, scalar, units, NULL);
-            }
-            if (cells[column].caret && GetFocus() == handle) {
-                RECT caret = {x, y, x + 1, y + native->die_cell_height};
-                win32_die_fill(dc, &caret, RGB(0, 0, 0));
-                SetCaretPos(x, y);
+    if (cells)
+        for (size_t row = 0; row <= (size_t)(rect.bottom / native->die_cell_height); ++row) {
+            size_t line = view.first_line + row;
+            int y = (int)row * native->die_cell_height;
+            wchar_t number[32];
+            int breakpoint, execution;
+            RECT box = {native->die_gutter, y, rect.right, y + native->die_cell_height};
+            if (line >= view.line_count) break;
+            xxwidgets_die_edit_line_marker(widget, line, &breakpoint, &execution);
+            if (execution) win32_die_fill(dc, &box, RGB(255, 232, 163));
+            else if (!view.read_only && line == current) win32_die_fill(dc, &box, RGB(255, 255, 224));
+            box.left = 0;
+            box.right = native->die_gutter - native->die_cell_width / 2;
+            win32_die_fill(dc, &box, RGB(238, 238, 238));
+            win32_die_markers(dc, native, y, breakpoint, execution);
+            _snwprintf(number, sizeof(number) / sizeof(*number), L"%llu", (unsigned long long)line + 1);
+            box.right = native->die_gutter - native->die_cell_width;
+            SetTextColor(dc, RGB(102, 102, 102));
+            DrawTextW(dc, number, -1, &box, DT_RIGHT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+            xxwidgets_die_edit_render_line(widget, line, view.first_column, cells, count);
+            for (size_t column = 0; column < count; ++column) {
+                int x = native->die_gutter + (int)column * native->die_cell_width;
+                wchar_t scalar[2];
+                int units = 1;
+                box.left = x;
+                box.right = x + native->die_cell_width;
+                if (cells[column].selected) win32_die_fill(dc, &box, GetSysColor(COLOR_HIGHLIGHT));
+                if (cells[column].scalar >= 32) {
+                    uint32_t cp = cells[column].scalar;
+                    if (cp > 0xffff) {
+                        cp -= 0x10000;
+                        scalar[0] = (wchar_t)(0xd800 + (cp >> 10));
+                        scalar[1] = (wchar_t)(0xdc00 + (cp & 1023));
+                        units = 2;
+                    } else scalar[0] = (wchar_t)cp;
+                    SetTextColor(dc, cells[column].selected                            ? GetSysColor(COLOR_HIGHLIGHTTEXT)
+                                     : cells[column].style == XXWIDGETS_DIE_STYLE_TEXT ? RGB(0, 0, 0)
+                                                                                       : win32_die_rgb(xxwidgets_die_edit_color(cells[column].style)));
+                    ExtTextOutW(dc, x, y, ETO_CLIPPED, &box, scalar, units, NULL);
+                }
+                if (cells[column].caret && GetFocus() == handle) {
+                    RECT caret = {x, y, x + 1, y + native->die_cell_height};
+                    win32_die_fill(dc, &caret, RGB(0, 0, 0));
+                    SetCaretPos(x, y);
+                }
             }
         }
-    }
     free(cells);
     if (previous) SelectObject(dc, previous);
     EndPaint(handle, &paint);
@@ -3003,7 +3132,8 @@ static int win32_die_key(xxwidgets_widget *widget, WPARAM vk)
                 if (next) SetFocus(next);
                 return 1;
             }
-            key = XXWIDGETS_KEY_TAB; break;
+            key = XXWIDGETS_KEY_TAB;
+            break;
         case VK_BACK: key = XXWIDGETS_KEY_BACKSPACE; break;
         case VK_DELETE: key = XXWIDGETS_KEY_DELETE; break;
         case VK_INSERT: key = XXWIDGETS_KEY_INSERT; break;
@@ -3034,8 +3164,15 @@ static void win32_die_hit(xxwidgets_widget *widget, int x, int y, int extend)
     xxwidgets_die_edit_view_get(widget, &view);
     row = y < 0 ? -1 : y / native->die_cell_height;
     column = (x - native->die_gutter + native->die_cell_width / 2) / native->die_cell_width;
-    if (row < 0) { xxwidgets_die_edit_scroll(widget, -1, 0); row = 0; xxwidgets_die_edit_view_get(widget, &view); }
-    else if ((size_t)row >= native->die_rows) { xxwidgets_die_edit_scroll(widget, 1, 0); row = (int)native->die_rows - 1; xxwidgets_die_edit_view_get(widget, &view); }
+    if (row < 0) {
+        xxwidgets_die_edit_scroll(widget, -1, 0);
+        row = 0;
+        xxwidgets_die_edit_view_get(widget, &view);
+    } else if ((size_t)row >= native->die_rows) {
+        xxwidgets_die_edit_scroll(widget, 1, 0);
+        row = (int)native->die_rows - 1;
+        xxwidgets_die_edit_view_get(widget, &view);
+    }
     if (column < 0) column = 0;
     xxwidgets_die_edit_point(widget, view.first_line + (size_t)row, view.first_column + (size_t)column, extend);
 }
@@ -3058,8 +3195,7 @@ static void win32_die_context_menu(xxwidgets_widget *widget, HWND handle, LPARAM
         wchar_t *title = NULL;
         int disabled = i == 3 ? !length : i == 2 ? (read_only || !length) : i == 5 ? 0 : read_only;
         if (i == 2) AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
-        if (win32_wide(XXW_TR(widget->app, titles[i]), &title) == XXWIDGETS_OK)
-            AppendMenuW(menu, MF_STRING | (disabled ? MF_GRAYED : 0), (UINT_PTR)(i + 1), title);
+        if (win32_wide(XXW_TR(widget->app, titles[i]), &title) == XXWIDGETS_OK) AppendMenuW(menu, MF_STRING | (disabled ? MF_GRAYED : 0), (UINT_PTR)(i + 1), title);
         free(title);
     }
     if (position == (LPARAM)-1) {
@@ -3089,7 +3225,10 @@ static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPA
         return flags;
     }
     if (message == WM_ERASEBKGND) return 1;
-    if (message == WM_PAINT) { win32_die_paint(widget); return 0; }
+    if (message == WM_PAINT) {
+        win32_die_paint(widget);
+        return 0;
+    }
     if (message == WM_SIZE || message == WM_SETFONT) {
         LRESULT result = DefSubclassProc(handle, message, wp, lp);
         win32_die_sync(widget);
@@ -3100,16 +3239,25 @@ static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPA
         CreateCaret(handle, NULL, 1, native->die_cell_height > 0 ? native->die_cell_height : 16);
         /* Keep the system caret available for IME positioning; the viewport
          * draws its caret to avoid flicker during model-driven repaints. */
-        InvalidateRect(handle, NULL, FALSE); return 0;
+        InvalidateRect(handle, NULL, FALSE);
+        return 0;
     }
-    if (message == WM_KILLFOCUS) { native->die_surrogate = 0; DestroyCaret(); InvalidateRect(handle, NULL, FALSE); return 0; }
+    if (message == WM_KILLFOCUS) {
+        native->die_surrogate = 0;
+        DestroyCaret();
+        InvalidateRect(handle, NULL, FALSE);
+        return 0;
+    }
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && win32_die_key(widget, wp)) return 0;
     if ((message == WM_CHAR || message == WM_UNICHAR) && xxwidgets_focusable(widget) && !widget->app->syncing) {
         uint32_t cp = (uint32_t)wp;
         char utf8[5];
         if (message == WM_UNICHAR && cp == UNICODE_NOCHAR) return TRUE;
         if (message == WM_CHAR) {
-            if (cp >= 0xd800 && cp <= 0xdbff) { native->die_surrogate = cp; return 0; }
+            if (cp >= 0xd800 && cp <= 0xdbff) {
+                native->die_surrogate = cp;
+                return 0;
+            }
             if (cp >= 0xdc00 && cp <= 0xdfff) {
                 if (!native->die_surrogate) return 0;
                 cp = 0x10000 + ((native->die_surrogate - 0xd800) << 10) + cp - 0xdc00;
@@ -3123,18 +3271,29 @@ static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPA
         return 0;
     }
     if (message == WM_LBUTTONDOWN && xxwidgets_focusable(widget) && !widget->app->syncing) {
-        SetFocus(handle); SetCapture(handle); native->die_dragging = 1;
-        win32_die_hit(widget, (short)LOWORD(lp), (short)HIWORD(lp), GetKeyState(VK_SHIFT) < 0); return 0;
+        SetFocus(handle);
+        SetCapture(handle);
+        native->die_dragging = 1;
+        win32_die_hit(widget, (short)LOWORD(lp), (short)HIWORD(lp), GetKeyState(VK_SHIFT) < 0);
+        return 0;
     }
     if (message == WM_MOUSEMOVE && native->die_dragging) {
-        win32_die_hit(widget, (short)LOWORD(lp), (short)HIWORD(lp), 1); return 0;
+        win32_die_hit(widget, (short)LOWORD(lp), (short)HIWORD(lp), 1);
+        return 0;
     }
-    if (message == WM_LBUTTONUP && native->die_dragging) { native->die_dragging = 0; ReleaseCapture(); return 0; }
+    if (message == WM_LBUTTONUP && native->die_dragging) {
+        native->die_dragging = 0;
+        ReleaseCapture();
+        return 0;
+    }
     if (message == WM_CONTEXTMENU && xxwidgets_focusable(widget) && !widget->app->syncing && !native->die_dragging) {
         win32_die_context_menu(widget, handle, lp);
         return 0;
     }
-    if (message == WM_CAPTURECHANGED) { native->die_dragging = 0; return 0; }
+    if (message == WM_CAPTURECHANGED) {
+        native->die_dragging = 0;
+        return 0;
+    }
     if ((message == WM_VSCROLL || message == WM_HSCROLL) && !widget->app->syncing) {
         xxwidgets_die_edit_view view;
         SCROLLINFO info = {sizeof(info), SIF_TRACKPOS};
@@ -3150,11 +3309,13 @@ static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPA
             case SB_THUMBTRACK:
             case SB_THUMBPOSITION:
                 GetScrollInfo(handle, vertical ? SB_VERT : SB_HORZ, &info);
-                delta = info.nTrackPos - (int)(vertical ? view.first_line : view.first_column); break;
+                delta = info.nTrackPos - (int)(vertical ? view.first_line : view.first_column);
+                break;
             default: break;
         }
         xxwidgets_die_edit_scroll(widget, vertical ? delta : 0, vertical ? 0 : delta);
-        win32_die_sync(widget); return 0;
+        win32_die_sync(widget);
+        return 0;
     }
     if ((message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL) && xxwidgets_focusable(widget) && !widget->app->syncing) {
         int delta, horizontal = message == WM_MOUSEHWHEEL || (LOWORD(wp) & MK_SHIFT);
@@ -3163,7 +3324,8 @@ static LRESULT CALLBACK win32_die_proc(HWND handle, UINT message, WPARAM wp, LPA
         native->die_wheel_delta %= WHEEL_DELTA;
         if (message == WM_MOUSEWHEEL) delta = -delta;
         xxwidgets_die_edit_scroll(widget, horizontal ? 0 : delta * 3, horizontal ? delta * 3 : 0);
-        win32_die_sync(widget); return 0;
+        win32_die_sync(widget);
+        return 0;
     }
     if (message == WM_NCDESTROY) RemoveWindowSubclass(handle, win32_die_proc, 1);
     return DefSubclassProc(handle, message, wp, lp);
@@ -3180,8 +3342,7 @@ static LRESULT CALLBACK win32_edit_proc(HWND handle, UINT message, WPARAM wp, LP
         if (key->message == WM_KEYDOWN && key->wParam == VK_RETURN) return DefSubclassProc(handle, message, wp, lp) | DLGC_WANTMESSAGE;
     }
     if (message == WM_KEYDOWN && wp == VK_RETURN) {
-        if (!widget->app->syncing && xxwidgets_focusable(widget) && win32_read_text(widget) == XXWIDGETS_OK)
-            xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, 0);
+        if (!widget->app->syncing && xxwidgets_focusable(widget) && win32_read_text(widget) == XXWIDGETS_OK) xxwidgets_emit(widget, XXWIDGETS_EVENT_ACTIVATE, 0);
         return 0;
     }
     /* The character Enter also makes would only beep. */
@@ -3212,8 +3373,8 @@ static LRESULT CALLBACK win32_group_proc(HWND handle, UINT message, WPARAM wp, L
         RECT client;
         if (dc && GetClientRect(handle, &client)) {
             COLORREF face = GetSysColor(COLOR_BTNFACE), shadow = GetSysColor(COLOR_BTNSHADOW);
-            HBRUSH brush = CreateSolidBrush(RGB((GetRValue(face) + GetRValue(shadow)) / 2, (GetGValue(face) + GetGValue(shadow)) / 2,
-                                                (GetBValue(face) + GetBValue(shadow)) / 2));
+            HBRUSH brush =
+                CreateSolidBrush(RGB((GetRValue(face) + GetRValue(shadow)) / 2, (GetGValue(face) + GetGValue(shadow)) / 2, (GetBValue(face) + GetBValue(shadow)) / 2));
             FrameRect(dc, &client, brush ? brush : GetSysColorBrush(COLOR_BTNSHADOW));
             if (brush) DeleteObject(brush);
         }
@@ -3291,9 +3452,13 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
             break;
         case XXWIDGETS_CANVAS:
         case XXWIDGETS_SPLITTER:
-            class_name=L"STATIC";style|=SS_NOTIFY|WS_TABSTOP;break;
+            class_name = L"STATIC";
+            style |= SS_NOTIFY | WS_TABSTOP;
+            break;
         case XXWIDGETS_ENTROPY_PLOT:
-            class_name = L"STATIC"; style |= SS_NOTIFY; break;
+            class_name = L"STATIC";
+            style |= SS_NOTIFY;
+            break;
         case XXWIDGETS_PROGRESS:
             class_name = PROGRESS_CLASSW;
             style |= PBS_SMOOTH;
@@ -3361,9 +3526,21 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
         return XXWIDGETS_PLATFORM_ERROR;
     }
     widget->native = handle;
-    if((widget->kind==XXWIDGETS_CANVAS||widget->kind==XXWIDGETS_SPLITTER)&&!SetWindowSubclass(handle,win32_canvas_proc,1,(DWORD_PTR)widget)){DestroyWindow(handle);widget->native=NULL;free(native);widget->platform=NULL;--widget->app->syncing;return XXWIDGETS_PLATFORM_ERROR;}
+    if ((widget->kind == XXWIDGETS_CANVAS || widget->kind == XXWIDGETS_SPLITTER) && !SetWindowSubclass(handle, win32_canvas_proc, 1, (DWORD_PTR)widget)) {
+        DestroyWindow(handle);
+        widget->native = NULL;
+        free(native);
+        widget->platform = NULL;
+        --widget->app->syncing;
+        return XXWIDGETS_PLATFORM_ERROR;
+    }
     if (widget->kind == XXWIDGETS_ENTROPY_PLOT && !SetWindowSubclass(handle, win32_plot_proc, 1, (DWORD_PTR)widget)) {
-        DestroyWindow(handle); widget->native = NULL; free(native); widget->platform = NULL; --widget->app->syncing; return XXWIDGETS_PLATFORM_ERROR;
+        DestroyWindow(handle);
+        widget->native = NULL;
+        free(native);
+        widget->platform = NULL;
+        --widget->app->syncing;
+        return XXWIDGETS_PLATFORM_ERROR;
     }
     if (widget->kind != XXWIDGETS_WINDOW) SetWindowLongPtrW(handle, GWLP_USERDATA, (LONG_PTR)widget);
     SendMessageW(handle, WM_SETFONT, (WPARAM)state->role_fonts[xxwidgets_widget_font_role(widget)], FALSE);
@@ -3371,26 +3548,24 @@ static xxwidgets_status win32_create(xxwidgets_widget *widget)
     if (widget->kind == XXWIDGETS_EDIT) SendMessageW(handle, EM_SETLIMITTEXT, (WPARAM)INT_MAX - 1, 0);
     if (widget->kind == XXWIDGETS_TREEVIEW) SendMessageW(handle, CCM_SETUNICODEFORMAT, TRUE, 0);
     status = widget->kind == XXWIDGETS_ARCHIVEBROWSER ? win32_browser_create_children(widget) : XXWIDGETS_OK;
-    if (status == XXWIDGETS_OK && (xxwidgets_tabular_kind(widget)))
-        status = win32_scanresults_columns(widget);
+    if (status == XXWIDGETS_OK && (xxwidgets_tabular_kind(widget))) status = win32_scanresults_columns(widget);
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_TREEVIEW && !SetWindowSubclass(handle, win32_tree_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_HEXVIEW && !SetWindowSubclass(handle, win32_hexview_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
-    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_HEXVIEW)
-        status = win32_hexview_create_overview(widget, x, y, width, height);
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_HEXVIEW) status = win32_hexview_create_overview(widget, x, y, width, height);
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER && !SetWindowSubclass(handle, win32_systemprocessesviewer_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && xxwidgets_table_filterable(widget) && !SetWindowSubclass(handle, win32_table_filter_proc, 7, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
-    if (status == XXWIDGETS_OK && (xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) && !SetWindowSubclass(handle, win32_binaryviewer_proc, 1, (DWORD_PTR)widget))
+    if (status == XXWIDGETS_OK && (xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) &&
+        !SetWindowSubclass(handle, win32_binaryviewer_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_CHECKCOMBOBOX && !SetWindowSubclass(handle, win32_checkcombo_control_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT && !SetWindowSubclass(handle, win32_die_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
-    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_EDIT && !SetWindowSubclass(handle, win32_edit_proc, 1, (DWORD_PTR)widget))
-        status = XXWIDGETS_PLATFORM_ERROR;
+    if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_EDIT && !SetWindowSubclass(handle, win32_edit_proc, 1, (DWORD_PTR)widget)) status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_GROUP && !SetWindowSubclass(handle, win32_group_proc, 1, (DWORD_PTR)widget))
         status = XXWIDGETS_PLATFORM_ERROR;
     if (status == XXWIDGETS_OK && widget->kind == XXWIDGETS_VALUE) SendMessageW(handle, EM_SETLIMITTEXT, (WPARAM)INT_MAX - 1, 0);
@@ -3429,8 +3604,8 @@ static HWND win32_tooltip_tool(xxwidgets_widget *widget, TOOLINFOW *tool)
     if (!frame->tooltip) {
         INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_BAR_CLASSES};
         InitCommonControlsEx(&controls);
-        frame->tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, NULL, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT,
-                                         CW_USEDEFAULT, CW_USEDEFAULT, (HWND)window->native, NULL, GetModuleHandleW(NULL), NULL);
+        frame->tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, NULL, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                                         CW_USEDEFAULT, (HWND)window->native, NULL, GetModuleHandleW(NULL), NULL);
         /* Long tips wrap instead of running off the screen. */
         if (frame->tooltip) SendMessageW(frame->tooltip, TTM_SETMAXTIPWIDTH, 0, GetSystemMetrics(SM_CXSCREEN) / 2);
     }
@@ -3559,8 +3734,8 @@ static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LP
     }
     if (xxwidgets_treeview_mark_count(widget) && widget->platform) {
         xxwidgets_win32_widget *native = (xxwidgets_win32_widget *)widget->platform;
-        if ((message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK) && !widget->app->syncing && xxwidgets_focusable(widget) &&
-            native->tree_initialized && native->tree_content_revision == widget->tree_content_revision) {
+        if ((message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK) && !widget->app->syncing && xxwidgets_focusable(widget) && native->tree_initialized &&
+            native->tree_content_revision == widget->tree_content_revision) {
             TVHITTESTINFO hit;
             RECT bounds;
             size_t mark;
@@ -3575,8 +3750,7 @@ static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LP
                 memset(&item, 0, sizeof(item));
                 item.mask = TVIF_PARAM;
                 item.hItem = hit.hItem;
-                if (SendMessageW(handle, TVM_GETITEMW, 0, (LPARAM)&item) &&
-                    (xxwidgets_treeview_node_marks(widget, (size_t)item.lParam) >> mark & 1u)) {
+                if (SendMessageW(handle, TVM_GETITEMW, 0, (LPARAM)&item) && (xxwidgets_treeview_node_marks(widget, (size_t)item.lParam) >> mark & 1u)) {
                     /* A button, not the row: select it as feedback, then report the
                      * press once (the second press of a double click is eaten). */
                     SetFocus(handle);
@@ -3584,15 +3758,14 @@ static LRESULT CALLBACK win32_tree_proc(HWND handle, UINT message, WPARAM wp, LP
                         uint64_t revision = widget->tree_content_revision;
                         SendMessageW(handle, TVM_SELECTITEM, TVGN_CARET, (LPARAM)hit.hItem);
                         /* The SELECT callback may have replaced the nodes. */
-                        if (revision == widget->tree_content_revision)
-                            xxwidgets_treeview_mark_click(widget, (size_t)item.lParam, mark);
+                        if (revision == widget->tree_content_revision) xxwidgets_treeview_mark_click(widget, (size_t)item.lParam, mark);
                     }
                     return 0;
                 }
             }
         }
-        if (message == WM_CHAR && !widget->app->syncing && xxwidgets_focusable(widget) &&
-            win32_read_value(widget) == XXWIDGETS_OK && xxwidgets_treeview_mark_key(widget, (unsigned int)wp))
+        if (message == WM_CHAR && !widget->app->syncing && xxwidgets_focusable(widget) && win32_read_value(widget) == XXWIDGETS_OK &&
+            xxwidgets_treeview_mark_key(widget, (unsigned int)wp))
             return 0;
         if (message == WM_SIZE) InvalidateRect(handle, NULL, FALSE);
         if (message == WM_PAINT) {
@@ -3614,12 +3787,10 @@ static void win32_hex_menu(xxwidgets_widget *widget, unsigned int column, POINT 
     const char *last = "";
     UINT action;
     if (!menu || column > 3) {
-        if (menu)
-            DestroyMenu(menu);
+        if (menu) DestroyMenu(menu);
         return;
     }
-    if (column < 3)
-        xxwidgets_hexview_activate_column(widget, column);
+    if (column < 3) xxwidgets_hexview_activate_column(widget, column);
     for (size_t i = 0; i < xxwidgets_hexview_menu_count(column); ++i) {
         xxwidgets_hex_menu_item entry = xxwidgets_hexview_menu_item(widget, column, i);
         wchar_t *title = NULL;
@@ -3627,11 +3798,18 @@ static void win32_hex_menu(xxwidgets_widget *widget, unsigned int column, POINT 
             group = CreatePopupMenu();
             if (!group || win32_wide(entry.group, &title) != XXWIDGETS_OK) {
                 if (group) DestroyMenu(group);
-                DestroyMenu(menu); return;
+                DestroyMenu(menu);
+                return;
             }
-            AppendMenuW(menu, MF_POPUP, (UINT_PTR)group, title); free(title); title = NULL; last = entry.group;
+            AppendMenuW(menu, MF_POPUP, (UINT_PTR)group, title);
+            free(title);
+            title = NULL;
+            last = entry.group;
         }
-        if (win32_wide(entry.title, &title) != XXWIDGETS_OK) { DestroyMenu(menu); return; }
+        if (win32_wide(entry.title, &title) != XXWIDGETS_OK) {
+            DestroyMenu(menu);
+            return;
+        }
         AppendMenuW(group, MF_STRING | (entry.disabled ? MF_GRAYED : 0) | (entry.checked ? MF_CHECKED : MF_UNCHECKED), (UINT_PTR)i + 1, title);
         free(title);
     }
@@ -3647,8 +3825,7 @@ static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp,
     unsigned int key = 0, modifiers = 0;
     int handled = 0;
     (void)id;
-    if (message == WM_STYLECHANGING && (int)wp == GWL_STYLE && lp && native && native->hex_container)
-        ((STYLESTRUCT *)lp)->styleNew &= ~(DWORD)WS_VSCROLL;
+    if (message == WM_STYLECHANGING && (int)wp == GWL_STYLE && lp && native && native->hex_container) ((STYLESTRUCT *)lp)->styleNew &= ~(DWORD)WS_VSCROLL;
     if (message == WM_MOUSEWHEEL && native && native->hex_container && !widget->app->syncing && xxwidgets_focusable(widget)) {
         UINT lines = 3;
         int ticks, top = ListView_GetTopIndex(handle);
@@ -3664,10 +3841,8 @@ static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp,
     }
     if (message == WM_LBUTTONUP || message == WM_CAPTURECHANGED || message == WM_CANCELMODE) {
         widget->hex_dragging = 0;
-        if (GetCapture() == handle)
-            ReleaseCapture();
-        if (message == WM_LBUTTONUP)
-            return 0;
+        if (GetCapture() == handle) ReleaseCapture();
+        if (message == WM_LBUTTONUP) return 0;
     }
     if (!widget->app->syncing && xxwidgets_focusable(widget)) {
         /* LVM_GETHEADER re-enters this subclass: query it only for WM_NOTIFY,
@@ -3675,12 +3850,19 @@ static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp,
         if (message == WM_NOTIFY && lp && ((NMHDR *)lp)->hwndFrom == (HWND)SendMessageW(handle, LVM_GETHEADER, 0, 0)) {
             NMHDR *notification = (NMHDR *)lp;
             if (notification->code == HDN_ITEMCLICKW || notification->code == HDN_ITEMCLICKA) {
-                NMHEADERW *event = (NMHEADERW *)lp; POINT point; GetCursorPos(&point);
-                win32_hex_menu(widget, (unsigned)event->iItem, point); return 0;
+                NMHEADERW *event = (NMHEADERW *)lp;
+                POINT point;
+                GetCursorPos(&point);
+                win32_hex_menu(widget, (unsigned)event->iItem, point);
+                return 0;
             }
             if (notification->code == NM_RCLICK) {
-                POINT point; HDHITTESTINFO hit; GetCursorPos(&point);
-                memset(&hit, 0, sizeof(hit)); hit.pt = point; ScreenToClient(notification->hwndFrom, &hit.pt);
+                POINT point;
+                HDHITTESTINFO hit;
+                GetCursorPos(&point);
+                memset(&hit, 0, sizeof(hit));
+                hit.pt = point;
+                ScreenToClient(notification->hwndFrom, &hit.pt);
                 int index = (int)SendMessageW(notification->hwndFrom, HDM_HITTEST, 0, (LPARAM)&hit);
                 if (index >= 0 && index < 3) win32_hex_menu(widget, (unsigned)index, point);
                 return 0;
@@ -3718,8 +3900,7 @@ static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp,
                 int top = ListView_GetTopIndex(handle), rows = ListView_GetCountPerPage(handle);
                 size_t row = point.y < 24 ? (size_t)(top > 0 ? top - 1 : 0) : (size_t)(top + rows);
                 offset = row * widget->hex_columns + widget->hex_cursor % widget->hex_columns;
-                if (offset >= widget->hex_size)
-                    offset = widget->hex_size - 1;
+                if (offset >= widget->hex_size) offset = widget->hex_size - 1;
             }
             if (offset != SIZE_MAX) {
                 SetFocus(handle);
@@ -3731,8 +3912,7 @@ static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp,
             }
             return 0;
         }
-        if (message == WM_RBUTTONDOWN)
-            return 0;
+        if (message == WM_RBUTTONDOWN) return 0;
         if (message == WM_CONTEXTMENU || (message == WM_KEYDOWN && (wp == VK_F10 || wp == VK_APPS))) {
             POINT point;
             unsigned int column = message == WM_KEYDOWN && wp == VK_F10 && GetKeyState(VK_SHIFT) >= 0 ? widget->hex_header : 3;
@@ -3742,27 +3922,32 @@ static LRESULT CALLBACK win32_hexview_proc(HWND handle, UINT message, WPARAM wp,
                 POINT client = point;
                 ScreenToClient(handle, &client);
                 size_t bytes, offset = win32_hex_hit(widget, client, &bytes);
-                if (offset != SIZE_MAX && !xxwidgets_hexview_contains(widget, offset, bytes))
-                    (void)xxwidgets_hexview_pointer_span(widget, offset, bytes, 0);
+                if (offset != SIZE_MAX && !xxwidgets_hexview_contains(widget, offset, bytes)) (void)xxwidgets_hexview_pointer_span(widget, offset, bytes, 0);
             } else {
                 RECT rect = widget->value >= 0 ? win32_hex_rect(handle, widget->value, 1) : (RECT){0, 24, 0, 24};
                 point.x = rect.left;
                 point.y = rect.bottom;
                 ClientToScreen(handle, &point);
             }
-            win32_hex_menu(widget, column, point); return 0;
+            win32_hex_menu(widget, column, point);
+            return 0;
         }
-        if (message == WM_KEYDOWN && wp == VK_F6) { xxwidgets_hexview_activate_column(widget, (widget->hex_header + 1) % 3); return 0; }
+        if (message == WM_KEYDOWN && wp == VK_F6) {
+            xxwidgets_hexview_activate_column(widget, (widget->hex_header + 1) % 3);
+            return 0;
+        }
         if (message == WM_CHAR) {
             key = (unsigned int)wp;
-            if (key >= 0xd800 && key <= 0xdbff) { widget->hex_pending_surrogate = key; return 0; }
+            if (key >= 0xd800 && key <= 0xdbff) {
+                widget->hex_pending_surrogate = key;
+                return 0;
+            }
             if (key >= 0xdc00 && key <= 0xdfff) {
                 if (!widget->hex_pending_surrogate) return 0;
                 key = 0x10000 + ((widget->hex_pending_surrogate - 0xd800) << 10) + key - 0xdc00;
             }
             widget->hex_pending_surrogate = 0;
-        }
-        else if (message == WM_KEYDOWN) {
+        } else if (message == WM_KEYDOWN) {
             switch (wp) {
                 case VK_HOME: key = XXWIDGETS_KEY_HOME; break;
                 case VK_END: key = XXWIDGETS_KEY_END; break;
@@ -4039,8 +4224,8 @@ static xxwidgets_status win32_sync_list(xxwidgets_widget *widget)
         for (i = 0; i < widget->hex_sync_dirty_count; ++i)
             if (widget->hex_sync_dirty_rows[i] >= widget->item_count) incremental = 0;
     }
-    rebuild = !native->list_initialized || (size_t)old_count != native->list_count || (size_t)old_count > widget->item_count ||
-              (hexview && widget->hex_sync_full) || (revision_changed && !incremental);
+    rebuild = !native->list_initialized || (size_t)old_count != native->list_count || (size_t)old_count > widget->item_count || (hexview && widget->hex_sync_full) ||
+              (revision_changed && !incremental);
     first = rebuild ? 0 : (size_t)old_count;
     count = incremental ? widget->hex_sync_dirty_count : widget->item_count - first;
     if (count) {
@@ -4353,7 +4538,12 @@ static xxwidgets_status win32_scanresults_columns(xxwidgets_widget *widget)
         heading.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT | LVCF_SUBITEM;
         heading.pszText = title;
         heading.iSubItem = (int)column;
-        heading.cx = ((xxwidgets_entropy_table(widget) || widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER || xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget)) ? (int)xxwidgets_tabular_column_width(widget, column) : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[column] : data_widths[column]) * state->cell_width;
+        heading.cx = ((xxwidgets_entropy_table(widget) || widget->kind == XXWIDGETS_HEXVIEW || widget->kind == XXWIDGET_SYSTEMPROCESSESVIEWER ||
+                       xxwidgets_binaryviewer_kind(widget) || xxwidgets_debugger_table_kind(widget))
+                          ? (int)xxwidgets_tabular_column_width(widget, column)
+                      : widget->kind == XXWIDGETS_SCANRESULTS ? scan_widths[column]
+                                                              : data_widths[column]) *
+                     state->cell_width;
         heading.fmt = widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact && column < 3 ? LVCFMT_RIGHT : LVCFMT_LEFT;
         if (SendMessageW(handle, LVM_INSERTCOLUMNW, (WPARAM)column, (LPARAM)&heading) == -1) status = XXWIDGETS_PLATFORM_ERROR;
         free(title);
@@ -4427,9 +4617,9 @@ static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
     int rebuild = !native->list_initialized || native->scan_revision != revision;
     int redraw_disabled = 0;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (widget->kind == XXWIDGETS_MEMORY_MAP &&
-        (size_t)Header_GetItemCount((HWND)SendMessageW(handle, LVM_GETHEADER, 0, 0)) != columns) {
-        while (SendMessageW(handle, LVM_DELETECOLUMN, 0, 0)) {}
+    if (widget->kind == XXWIDGETS_MEMORY_MAP && (size_t)Header_GetItemCount((HWND)SendMessageW(handle, LVM_GETHEADER, 0, 0)) != columns) {
+        while (SendMessageW(handle, LVM_DELETECOLUMN, 0, 0)) {
+        }
         status = win32_scanresults_columns(widget);
         if (status != XXWIDGETS_OK) return status;
         rebuild = 1;
@@ -4437,12 +4627,16 @@ static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
     if (widget->kind == XXWIDGETS_HEXVIEW) {
         InvalidateRect(handle, NULL, FALSE);
         for (column = 0; column < 3; ++column) {
-            wchar_t *title = NULL; LVCOLUMNW heading;
+            wchar_t *title = NULL;
+            LVCOLUMNW heading;
             status = win32_wide(xxwidgets_hexview_title(widget, column), &title);
             if (status != XXWIDGETS_OK) return status;
-            memset(&heading, 0, sizeof(heading)); heading.mask = LVCF_TEXT | LVCF_WIDTH; heading.pszText = title;
+            memset(&heading, 0, sizeof(heading));
+            heading.mask = LVCF_TEXT | LVCF_WIDTH;
+            heading.pszText = title;
             heading.cx = (int)xxwidgets_hexview_column_width(widget, column) * win32_hex_cell_width(widget);
-            SendMessageW(handle, LVM_SETCOLUMNW, (WPARAM)column, (LPARAM)&heading); free(title);
+            SendMessageW(handle, LVM_SETCOLUMNW, (WPARAM)column, (LPARAM)&heading);
+            free(title);
         }
         if (rebuild && native->list_initialized && native->list_count == count && !widget->hex_sync_full) {
             wchar_t *dirty_cells[9] = {0};
@@ -4452,15 +4646,23 @@ static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
                 for (column = 0; column < 3 && status == XXWIDGETS_OK; ++column)
                     status = win32_wide(xxwidgets_hexview_cell(widget, widget->hex_sync_dirty_rows[row], column), &dirty_cells[row * 3 + column]);
             if (status == XXWIDGETS_OK) {
-                for (row = 0; row < dirty_count; ++row) for (column = 0; column < 3; ++column) {
-                    memset(&item, 0, sizeof(item)); item.mask = LVIF_TEXT;
-                    item.iItem = (int)widget->hex_sync_dirty_rows[row]; item.iSubItem = (int)column; item.pszText = dirty_cells[row * 3 + column];
-                    if (!SendMessageW(handle, LVM_SETITEMW, 0, (LPARAM)&item)) status = XXWIDGETS_PLATFORM_ERROR;
-                }
+                for (row = 0; row < dirty_count; ++row)
+                    for (column = 0; column < 3; ++column) {
+                        memset(&item, 0, sizeof(item));
+                        item.mask = LVIF_TEXT;
+                        item.iItem = (int)widget->hex_sync_dirty_rows[row];
+                        item.iSubItem = (int)column;
+                        item.pszText = dirty_cells[row * 3 + column];
+                        if (!SendMessageW(handle, LVM_SETITEMW, 0, (LPARAM)&item)) status = XXWIDGETS_PLATFORM_ERROR;
+                    }
             }
             for (row = 0; row < 9; ++row) free(dirty_cells[row]);
-            if (status != XXWIDGETS_OK) { native->list_initialized = 0; return status; }
-            native->scan_revision = revision; rebuild = 0;
+            if (status != XXWIDGETS_OK) {
+                native->list_initialized = 0;
+                return status;
+            }
+            native->scan_revision = revision;
+            rebuild = 0;
         }
     }
     if (rebuild && count) {
@@ -4519,12 +4721,17 @@ static xxwidgets_status win32_sync_scanresults(xxwidgets_widget *widget)
     if (widget->kind == XXWIDGETS_MEMORY_MAP && widget->memory_map_compact) {
         RECT client;
         int width;
-        if (!GetClientRect(handle, &client)) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+        if (!GetClientRect(handle, &client)) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto finish;
+        }
         width = client.right - client.left;
         for (column = 0; column < 3; ++column) width -= (int)SendMessageW(handle, LVM_GETCOLUMNWIDTH, (WPARAM)column, 0);
         if (width < 48) width = 48;
-        if (width != (int)SendMessageW(handle, LVM_GETCOLUMNWIDTH, 3, 0) &&
-            !SendMessageW(handle, LVM_SETCOLUMNWIDTH, 3, (LPARAM)width)) { status = XXWIDGETS_PLATFORM_ERROR; goto finish; }
+        if (width != (int)SendMessageW(handle, LVM_GETCOLUMNWIDTH, 3, 0) && !SendMessageW(handle, LVM_SETCOLUMNWIDTH, 3, (LPARAM)width)) {
+            status = XXWIDGETS_PLATFORM_ERROR;
+            goto finish;
+        }
     }
     {
         /* The selected model row, where the filters show it. */
@@ -4565,8 +4772,7 @@ static xxwidgets_status win32_tree_apply_delta(xxwidgets_widget *widget)
     const size_t *changed;
     HTREEITEM *items, after = NULL;
     xxwidgets_status status = XXWIDGETS_OK;
-    if (!native->tree_initialized ||
-        !xxwidgets_treeview_source_delta(widget, native->tree_content_revision, &first, &changed, &changed_count) ||
+    if (!native->tree_initialized || !xxwidgets_treeview_source_delta(widget, native->tree_content_revision, &first, &changed, &changed_count) ||
         first != native->tree_count || first > count)
         return XXWIDGETS_UNAVAILABLE;
     for (k = 0; k < changed_count; ++k)
@@ -4754,7 +4960,8 @@ static xxwidgets_status win32_sync(xxwidgets_widget *widget)
             /* Not shown if hidden (with its minimized owner, or by the program). */
             placement.showCmd = (GetWindowLongPtrW(handle, GWL_STYLE) & WS_VISIBLE) ? SW_SHOWMINNOACTIVE : SW_HIDE;
             if (!SetWindowPlacement(handle, &placement)) return XXWIDGETS_PLATFORM_ERROR;
-        } else if (!SetWindowPos(native->hex_container ? native->hex_container : handle, NULL, x, y, width, height, SWP_NOACTIVATE | SWP_NOZORDER)) return XXWIDGETS_PLATFORM_ERROR;
+        } else if (!SetWindowPos(native->hex_container ? native->hex_container : handle, NULL, x, y, width, height, SWP_NOACTIVATE | SWP_NOZORDER))
+            return XXWIDGETS_PLATFORM_ERROR;
         native->applied_rect = widget->rect;
     }
     if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT) {
@@ -4876,7 +5083,8 @@ static xxwidgets_status win32_read_text(xxwidgets_widget *widget)
     int length;
     xxwidgets_status status;
     /* List items and progress captions are maintained by the portable model. */
-    if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget) || widget->kind == XXWIDGETS_ARCHIVEBROWSER || widget->kind == XXWIDGETS_PROGRESS)
+    if (widget->kind == XXWIDGETS_DIE_SIGNATURE_EDIT || xxwidgets_list_kind(widget) || xxwidgets_combo_kind(widget) || widget->kind == XXWIDGETS_ARCHIVEBROWSER ||
+        widget->kind == XXWIDGETS_PROGRESS)
         return XXWIDGETS_OK;
     if (!widget->native) return XXWIDGETS_PLATFORM_ERROR;
     status = win32_window_text((HWND)widget->native, &wide);
@@ -5035,8 +5243,8 @@ static xxwidgets_status win32_poll(xxwidgets_app *app, int timeout_ms)
                 /* Escape and Enter close a dropped combo list (Enter keeping
                  * the highlighted item): they neither close the dialog, click
                  * its default button nor run a shortcut. */
-                if (focused && message.message == WM_KEYDOWN && (message.wParam == VK_ESCAPE || message.wParam == VK_RETURN) &&
-                    xxwidgets_combo_kind(focused) && SendMessageW(message.hwnd, CB_GETDROPPEDSTATE, 0, 0)) {
+                if (focused && message.message == WM_KEYDOWN && (message.wParam == VK_ESCAPE || message.wParam == VK_RETURN) && xxwidgets_combo_kind(focused) &&
+                    SendMessageW(message.hwnd, CB_GETDROPPEDSTATE, 0, 0)) {
                     if (focused->kind == XXWIDGETS_CHECKCOMBOBOX) SendMessageW(message.hwnd, CB_SHOWDROPDOWN, FALSE, 0);
                     else {
                         TranslateMessage(&message);
@@ -5118,8 +5326,14 @@ static xxwidgets_status win32_modal_owner(xxwidgets_widget *dialog, xxwidgets_wi
                 int most_width = monitor.rcWork.right - monitor.rcWork.left, most_height = monitor.rcWork.bottom - monitor.rcWork.top;
                 if (most_width < least_width) most_width = least_width;
                 if (most_height < least_height) most_height = least_height;
-                if (width > most_width) { width = most_width; resized = 1; }
-                if (height > most_height) { height = most_height; resized = 1; }
+                if (width > most_width) {
+                    width = most_width;
+                    resized = 1;
+                }
+                if (height > most_height) {
+                    height = most_height;
+                    resized = 1;
+                }
             }
         }
         x = area.left + ((area.right - area.left) - width) / 2;
@@ -5257,11 +5471,14 @@ static xxwidgets_status win32_paste_text(xxwidgets_widget *owner, char *text, si
         *required = (size_t)size;
         if (text || capacity) {
             if (capacity < (size_t)size) status = XXWIDGETS_BUFFER_TOO_SMALL;
-            else if (wide) { if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, text, size, NULL, NULL)) status = XXWIDGETS_PLATFORM_ERROR; }
-            else text[0] = 0;
+            else if (wide) {
+                if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, text, size, NULL, NULL)) status = XXWIDGETS_PLATFORM_ERROR;
+            } else text[0] = 0;
         }
     }
-    if (wide) GlobalUnlock(handle); CloseClipboard(); return status;
+    if (wide) GlobalUnlock(handle);
+    CloseClipboard();
+    return status;
 }
 
 static xxwidgets_status win32_copy_text(xxwidgets_widget *window, const char *text)
@@ -5306,8 +5523,7 @@ static xxwidgets_status win32_copy_text(xxwidgets_widget *window, const char *te
 
 static size_t win32_hexview_page_rows(const xxwidgets_widget *widget)
 {
-    if (!widget->native)
-        return (size_t)(widget->rect.height > 1 ? widget->rect.height - 1 : 1);
+    if (!widget->native) return (size_t)(widget->rect.height > 1 ? widget->rect.height - 1 : 1);
     int rows = ListView_GetCountPerPage((HWND)widget->native);
     return rows > 0 ? (size_t)rows : 1;
 }
@@ -5337,22 +5553,35 @@ static xxwidgets_status win32_window_menu(xxwidgets_widget *window)
                 group = CreatePopupMenu();
                 if (!group || !AppendMenuW(menu, MF_POPUP, (UINT_PTR)group, wide)) {
                     if (group) DestroyMenu(group);
-                    free(wide); status = XXWIDGETS_PLATFORM_ERROR; goto failure;
+                    free(wide);
+                    status = XXWIDGETS_PLATFORM_ERROR;
+                    goto failure;
                 }
-                free(wide); wide = NULL; last = entry->menu;
+                free(wide);
+                wide = NULL;
+                last = entry->menu;
             }
             if (!*entry->label) {
-                if (!AppendMenuW(group, MF_SEPARATOR, 0, NULL)) { status = XXWIDGETS_PLATFORM_ERROR; goto failure; }
+                if (!AppendMenuW(group, MF_SEPARATOR, 0, NULL)) {
+                    status = XXWIDGETS_PLATFORM_ERROR;
+                    goto failure;
+                }
             } else {
                 status = win32_wide(entry->label, &wide);
                 if (status != XXWIDGETS_OK) goto failure;
                 int added = AppendMenuW(group, MF_STRING | (entry->enabled ? MF_ENABLED : MF_GRAYED), (UINT_PTR)(0x1000 + i), wide);
                 free(wide);
-                if (!added) { status = XXWIDGETS_PLATFORM_ERROR; goto failure; }
+                if (!added) {
+                    status = XXWIDGETS_PLATFORM_ERROR;
+                    goto failure;
+                }
             }
         }
     }
-    if (!SetMenu(handle, menu)) { status = XXWIDGETS_PLATFORM_ERROR; goto failure; }
+    if (!SetMenu(handle, menu)) {
+        status = XXWIDGETS_PLATFORM_ERROR;
+        goto failure;
+    }
     if (state->menu) DestroyMenu(state->menu);
     state->menu = menu;
     DrawMenuBar(handle);
@@ -5407,8 +5636,7 @@ static void win32_about_activate(win32_about_view *view, HWND owner, const char 
         return;
     }
     /* Addresses that are not URLs (PayPal, BTC) are copied, as in DIE. */
-    if (win32_copy_text(view->window, link) == XXWIDGETS_OK &&
-        win32_wide(XXW_TR(view->window->app, "The value copied to clipboard"), &wide) == XXWIDGETS_OK) {
+    if (win32_copy_text(view->window, link) == XXWIDGETS_OK && win32_wide(XXW_TR(view->window->app, "The value copied to clipboard"), &wide) == XXWIDGETS_OK) {
         wchar_t *title = NULL;
         if (win32_wide(view->about->texts[XXWIDGETS_ABOUT_TITLE], &title) == XXWIDGETS_OK) {
             MessageBoxW(owner, wide, title, MB_OK | MB_ICONINFORMATION);
@@ -5478,8 +5706,7 @@ static void win32_about_paint_lines(win32_about_view *view, HWND handle, HDC dc)
         win32_about_text_out(dc, view->bold, GetSysColor(COLOR_WINDOWTEXT), x, y, item->text);
         if (!value) continue;
         x += caption + (caption ? space : 0);
-        win32_about_text_out(dc, item->link ? view->link : view->regular, item->link ? GetSysColor(COLOR_HOTLIGHT) : GetSysColor(COLOR_WINDOWTEXT), x, y,
-                             item->value);
+        win32_about_text_out(dc, item->link ? view->link : view->regular, item->link ? GetSysColor(COLOR_HOTLIGHT) : GetSysColor(COLOR_WINDOWTEXT), x, y, item->value);
         if (item->link && view->link_count < XXWIDGETS_ABOUT_ITEMS_MAX) {
             SetRect(&view->links[view->link_count], x, y, x + value, y + metrics.tmHeight);
             view->link_items[view->link_count++] = i;
@@ -5582,8 +5809,8 @@ static HWND win32_about_child(HWND parent, const wchar_t *class_name, const char
     wchar_t *wide = NULL;
     HWND child;
     if (text && win32_wide(text, &wide) != XXWIDGETS_OK) return NULL;
-    child = CreateWindowExW(0, class_name, wide ? wide : L"", WS_CHILD | WS_VISIBLE | style, x, y, width, height, parent, (HMENU)(INT_PTR)id,
-                            GetModuleHandleW(NULL), NULL);
+    child =
+        CreateWindowExW(0, class_name, wide ? wide : L"", WS_CHILD | WS_VISIBLE | style, x, y, width, height, parent, (HMENU)(INT_PTR)id, GetModuleHandleW(NULL), NULL);
     free(wide);
     if (child && font) SendMessageW(child, WM_SETFONT, (WPARAM)font, FALSE);
     return child;
@@ -5601,9 +5828,8 @@ static HWND win32_about_view_window(HWND parent, win32_about_view *template_view
     view->pages[0] = view->pages[1] = NULL;
     view->lines_top = 0;
     view->lines_bottom = bounds.bottom - bounds.top;
-    handle = CreateWindowExW(WS_EX_CONTROLPARENT, WIN32_ABOUT_CLASS, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
-                             bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top, parent, (HMENU)(INT_PTR)id,
-                             GetModuleHandleW(NULL), view);
+    handle = CreateWindowExW(WS_EX_CONTROLPARENT, WIN32_ABOUT_CLASS, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, bounds.left, bounds.top,
+                             bounds.right - bounds.left, bounds.bottom - bounds.top, parent, (HMENU)(INT_PTR)id, GetModuleHandleW(NULL), view);
     if (!handle) free(view);
     return handle;
 }
@@ -5733,8 +5959,8 @@ static xxwidgets_status win32_about_rich_content(xxwidgets_widget *window, const
         }
         native->about_bitmap = win32_about_scaled_image(about, image_width, height);
         if (!native->about_bitmap) return XXWIDGETS_PLATFORM_ERROR;
-        picture = CreateWindowExW(0, L"STATIC", L"About image", WS_CHILD | WS_VISIBLE | SS_BITMAP, margin, margin, image_width, height, handle,
-                                  (HMENU)(INT_PTR)0x7001, GetModuleHandleW(NULL), NULL);
+        picture = CreateWindowExW(0, L"STATIC", L"About image", WS_CHILD | WS_VISIBLE | SS_BITMAP, margin, margin, image_width, height, handle, (HMENU)(INT_PTR)0x7001,
+                                  GetModuleHandleW(NULL), NULL);
         if (!picture) return XXWIDGETS_PLATFORM_ERROR;
         SendMessageW(picture, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)native->about_bitmap);
         left = 2 * margin + image_width;
@@ -5742,8 +5968,7 @@ static xxwidgets_status win32_about_rich_content(xxwidgets_widget *window, const
     SetRect(&page, left, margin, client.right - margin, content_bottom);
     container = win32_about_view_window(handle, &base, 1, XXWIDGETS_ABOUT_ITEM_INFO, page, 0x7000);
     if (!container) return XXWIDGETS_PLATFORM_ERROR;
-    tab = win32_about_child(container, WC_TABCONTROLW, NULL, WS_CLIPSIBLINGS | WS_TABSTOP, 0, 0, page.right - page.left, page.bottom - page.top,
-                            WIN32_ABOUT_TAB, font);
+    tab = win32_about_child(container, WC_TABCONTROLW, NULL, WS_CLIPSIBLINGS | WS_TABSTOP, 0, 0, page.right - page.left, page.bottom - page.top, WIN32_ABOUT_TAB, font);
     if (!tab) return XXWIDGETS_PLATFORM_ERROR;
     memset(&tab_item, 0, sizeof(tab_item));
     tab_item.mask = TCIF_TEXT;
@@ -5769,15 +5994,15 @@ static xxwidgets_status win32_about_rich_content(xxwidgets_widget *window, const
         container_view->pages[1] = libraries;
         if (socials) {
             int gap = margin, label = app->cell_height, x, count = 0, button_width;
-            HWND group = win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Follow me"), BS_GROUPBOX, margin, top, width - 2 * margin,
-                                           label + button + margin, WIN32_ABOUT_FOLLOW, font);
+            HWND group = win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Follow me"), BS_GROUPBOX, margin, top, width - 2 * margin, label + button + margin,
+                                           WIN32_ABOUT_FOLLOW, font);
             if (!group) return XXWIDGETS_PLATFORM_ERROR;
             button_width = (width - 4 * margin - (int)(socials - 1) * gap) / (int)socials;
             x = 2 * margin;
             for (i = 0; i < about->item_count; ++i) {
                 if (about->items[i].kind != XXWIDGETS_ABOUT_ITEM_SOCIAL) continue;
-                if (!win32_about_child(info, L"BUTTON", about->items[i].text, WS_TABSTOP | BS_PUSHBUTTON, x + count * (button_width + gap),
-                                       top + label, button_width, button, WIN32_ABOUT_SOCIAL + (int)i, font))
+                if (!win32_about_child(info, L"BUTTON", about->items[i].text, WS_TABSTOP | BS_PUSHBUTTON, x + count * (button_width + gap), top + label, button_width,
+                                       button, WIN32_ABOUT_SOCIAL + (int)i, font))
                     return XXWIDGETS_PLATFORM_ERROR;
                 ++count;
             }
@@ -5790,14 +6015,14 @@ static xxwidgets_status win32_about_rich_content(xxwidgets_widget *window, const
             int updates_width = win32_about_text_width(dc, font, XXW_TR(window->app, "Check updates")) + 2 * margin;
             ReleaseDC(info, dc);
             if (about->texts[XXWIDGETS_ABOUT_THANKS_URL][0]) {
-                if (!win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Thanks"), WS_TABSTOP | BS_PUSHBUTTON, margin, y, thanks_width, button,
-                                       WIN32_ABOUT_THANKS, font))
+                if (!win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Thanks"), WS_TABSTOP | BS_PUSHBUTTON, margin, y, thanks_width, button, WIN32_ABOUT_THANKS,
+                                       font))
                     return XXWIDGETS_PLATFORM_ERROR;
                 thanks = thanks_width + margin;
             }
             if (about->texts[XXWIDGETS_ABOUT_UPDATES_URL][0]) {
-                if (!win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Check updates"), WS_TABSTOP | BS_PUSHBUTTON,
-                                       width - margin - updates_width, y, updates_width, button, WIN32_ABOUT_UPDATES, font))
+                if (!win32_about_child(info, L"BUTTON", XXW_TR(window->app, "Check updates"), WS_TABSTOP | BS_PUSHBUTTON, width - margin - updates_width, y,
+                                       updates_width, button, WIN32_ABOUT_UPDATES, font))
                     return XXWIDGETS_PLATFORM_ERROR;
                 updates = updates_width + margin;
             }
@@ -5893,8 +6118,8 @@ static xxwidgets_status win32_metrics(xxwidgets_app *app, xxwidgets_metrics *met
         if (GetTextMetricsW(dc, &text)) height = text.tmHeight;
         /* Edits share the row height H but may have their own, larger font
          * (XXWIDGETS_FONT_TEXT_EDITS): H must hold its line too. */
-        if (state->role_fonts[XXWIDGETS_FONT_TEXT_EDITS] && SelectObject(dc, state->role_fonts[XXWIDGETS_FONT_TEXT_EDITS]) &&
-            GetTextMetricsW(dc, &text)) edit_height = text.tmHeight + text.tmExternalLeading;
+        if (state->role_fonts[XXWIDGETS_FONT_TEXT_EDITS] && SelectObject(dc, state->role_fonts[XXWIDGETS_FONT_TEXT_EDITS]) && GetTextMetricsW(dc, &text))
+            edit_height = text.tmHeight + text.tmExternalLeading;
         if (previous && previous != HGDI_ERROR) SelectObject(dc, previous);
         ReleaseDC(NULL, dc);
     }
@@ -6053,8 +6278,7 @@ static xxwidgets_status win32_place(xxwidgets_widget *widget)
     }
     root = native->hex_container ? native->hex_container : handle;
     if (widget->kind == XXWIDGETS_GROUP)
-        return SetWindowPos(root, HWND_BOTTOM, frame.x, frame.y, frame.width, frame.height, SWP_NOACTIVATE | SWP_NOOWNERZORDER) ? XXWIDGETS_OK
-                                                                                                                                 : XXWIDGETS_PLATFORM_ERROR;
+        return SetWindowPos(root, HWND_BOTTOM, frame.x, frame.y, frame.width, frame.height, SWP_NOACTIVATE | SWP_NOOWNERZORDER) ? XXWIDGETS_OK : XXWIDGETS_PLATFORM_ERROR;
     /* A drop-down list's window also holds its open list. */
     if (!SetWindowPos(root, NULL, frame.x, frame.y, frame.width, frame.height + (widget->kind == XXWIDGETS_COMBOBOX ? 10 * state->cell_height : 0),
                       SWP_NOACTIVATE | SWP_NOZORDER))
@@ -6114,7 +6338,8 @@ static xxwidgets_status win32_set_minimum_frame(xxwidgets_widget *window)
     if (outer.right - outer.left >= width && outer.bottom - outer.top >= height) return XXWIDGETS_OK;
     width = outer.right - outer.left > width ? outer.right - outer.left : width;
     height = outer.bottom - outer.top > height ? outer.bottom - outer.top : height;
-    x = outer.left; y = outer.top;
+    x = outer.left;
+    y = outer.top;
     {
         MONITORINFO monitor = {sizeof(monitor), {0, 0, 0, 0}, {0, 0, 0, 0}, 0};
         if (GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor)) {
@@ -6124,8 +6349,7 @@ static xxwidgets_status win32_set_minimum_frame(xxwidgets_widget *window)
             if (y < monitor.rcWork.top) y = monitor.rcWork.top;
         }
     }
-    if (!SetWindowPos(handle, NULL, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE))
-        return XXWIDGETS_PLATFORM_ERROR;
+    if (!SetWindowPos(handle, NULL, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE)) return XXWIDGETS_PLATFORM_ERROR;
     win32_window_resized(window, handle, 0);
     /* Its program lays it out again on the RESIZE, as after any size change. */
     PostMessageW(handle, XXWIDGETS_WIN32_RESIZED, 0, 0);
@@ -6172,7 +6396,8 @@ static xxwidgets_status win32_set_icon(xxwidgets_widget *button)
             for (y = 0; y < height; ++y)
                 for (x = 0; x < width; ++x) {
                     /* The nearest source pixel: the icon follows the DPI. */
-                    const unsigned char *source = button->icon_rgba +
+                    const unsigned char *source =
+                        button->icon_rgba +
                         ((size_t)((unsigned)y * button->icon_height / (unsigned)height) * button->icon_width + (unsigned)x * button->icon_width / (unsigned)width) * 4u;
                     unsigned char *target = pixels + ((size_t)y * (size_t)width * 6u + (size_t)state * (size_t)width + (size_t)x) * 4u;
                     unsigned int r = source[0], g = source[1], b = source[2], a = source[3];
@@ -6266,7 +6491,10 @@ const xxwidgets_backend_ops xxwidgets_native_ops = {"WinAPI",
                                                     win32_choose_file,
                                                     win32_has_focus,
                                                     win32_accept_file_drops,
-                                                    win32_hexview_page_rows, win32_paste_text, win32_hexview_font, win32_window_menu,
+                                                    win32_hexview_page_rows,
+                                                    win32_paste_text,
+                                                    win32_hexview_font,
+                                                    win32_window_menu,
                                                     win32_about_rich_content,
                                                     NULL, /* translation_changed */
                                                     win32_set_tooltip,

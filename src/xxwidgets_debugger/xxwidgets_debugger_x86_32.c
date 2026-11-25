@@ -1,8 +1,7 @@
 /* Copyright (c) 2026 hors<horsicq@gmail.com>. SPDX-License-Identifier: MIT */
 #include "xxwidgets_debugger_arch_internal.h"
 
-xxwidgets_status xxwidgets_debugger_format_x86_32(
-    const xxwidgets_debugger_x86_state *state, xxwidgets_debugger_register_rows *rows)
+xxwidgets_status xxwidgets_debugger_format_x86_32(const xxwidgets_debugger_x86_state *state, xxwidgets_debugger_register_rows *rows)
 {
     static const char *const names[] = {"EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI"};
     static const char *const segments[] = {"ES", "CS", "SS", "DS", "FS", "GS"};

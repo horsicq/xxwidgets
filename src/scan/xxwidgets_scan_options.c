@@ -33,7 +33,9 @@ struct xxwidgets_scan_options_widget {
 /* The checkboxes: the six flags (check i is flag bit i), then Custom for the
  * CUSTOM bit. The deprecated Extra checkbox is not created; its control stays
  * NULL and the EXTRA bit is accepted and ignored. */
-enum { CHECK_COUNT = 7 };
+enum {
+    CHECK_COUNT = 7
+};
 
 static xxwidgets_scan_options_control_id check_control(size_t check)
 {
@@ -56,8 +58,7 @@ static void option_rects(xxwidgets_rect bounds, xxwidgets_rect *rects)
     size_t i;
     for (i = 0; i < 6; ++i) rects[i] = (xxwidgets_rect){bounds.x, bounds.y + 1 + (int)i * 2, first, 1};
     /* Custom takes the first database row; Extra (not created) shares it. */
-    rects[XXWIDGETS_SCAN_OPTIONS_DATABASE_EXTRA] = rects[XXWIDGETS_SCAN_OPTIONS_DATABASE_CUSTOM] =
-        (xxwidgets_rect){bounds.x + first + 2, bounds.y + 1, second, 1};
+    rects[XXWIDGETS_SCAN_OPTIONS_DATABASE_EXTRA] = rects[XXWIDGETS_SCAN_OPTIONS_DATABASE_CUSTOM] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 1, second, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_FLAGS_LABEL] = (xxwidgets_rect){bounds.x, bounds.y, first, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_DATABASES_LABEL] = (xxwidgets_rect){bounds.x + first + 2, bounds.y, second, 1};
     rects[XXWIDGETS_SCAN_OPTIONS_MAIN_DATABASE_LABEL] = (xxwidgets_rect){bounds.x + first + 2, bounds.y + 3, second, 2};
@@ -122,9 +123,17 @@ xxwidgets_status xxwidgets_scan_options_widget_set(xxwidgets_scan_options_widget
 
 xxwidgets_status xxwidgets_scan_options_widget_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_options_widget **out_widget)
 {
-    static const char *const labels[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT] = {
-        XXW_N_("Deep scan"),      XXW_N_("Heuristic scan"),  XXW_N_("Verbose results"), XXW_N_("Aggressive scan"), XXW_N_("Hide unknown results"),        XXW_N_("Format text report"),
-        "",                       XXW_N_("Custom database"), XXW_N_("Scan flags"),      XXW_N_("Databases"),       XXW_N_("Main database is always used")};
+    static const char *const labels[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT] = {XXW_N_("Deep scan"),
+                                                                             XXW_N_("Heuristic scan"),
+                                                                             XXW_N_("Verbose results"),
+                                                                             XXW_N_("Aggressive scan"),
+                                                                             XXW_N_("Hide unknown results"),
+                                                                             XXW_N_("Format text report"),
+                                                                             "",
+                                                                             XXW_N_("Custom database"),
+                                                                             XXW_N_("Scan flags"),
+                                                                             XXW_N_("Databases"),
+                                                                             XXW_N_("Main database is always used")};
     xxwidgets_scan_options_widget *widget;
     xxwidgets_scan_options defaults;
     xxwidgets_rect rects[XXWIDGETS_SCAN_OPTIONS_CONTROL_COUNT];
@@ -182,8 +191,10 @@ xxwidgets_status xxwidgets_scan_options_widget_set_rect(xxwidgets_scan_options_w
         status = xxwidgets_widget_set_rect(widget->controls[i], rects[i]);
         if (status != XXWIDGETS_OK) {
             size_t j;
-            for (j = 0; j < i; ++j) if (widget->controls[j]) widget->controls[j]->rect = previous[j];
-            for (j = 0; j < i; ++j) if (widget->controls[j]) recover_control(widget->controls[j]);
+            for (j = 0; j < i; ++j)
+                if (widget->controls[j]) widget->controls[j]->rect = previous[j];
+            for (j = 0; j < i; ++j)
+                if (widget->controls[j]) recover_control(widget->controls[j]);
             return status;
         }
     }

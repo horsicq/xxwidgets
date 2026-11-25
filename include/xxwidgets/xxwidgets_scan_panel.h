@@ -117,8 +117,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_databases(const xxwidget
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_available_tags(xxwidgets_scan_panel *panel, const char *tags);
 /* Checks the records named by the two semicolon-separated lists. Unknown
  * names are ignored; NULL is empty. Call after set_available_tags. */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_tag_filters(xxwidgets_scan_panel *panel, const char *include_tags,
-                                                                   const char *exclude_tags);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_tag_filters(xxwidgets_scan_panel *panel, const char *include_tags, const char *exclude_tags);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_include_tags(const xxwidgets_scan_panel *panel, char *buffer, size_t capacity, size_t *required);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_exclude_tags(const xxwidgets_scan_panel *panel, char *buffer, size_t capacity, size_t *required);
 
@@ -127,14 +126,14 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_get_exclude_tags(const xxwid
  * set_tree with explicit parent indexes; the full text report stays separate. */
 /* Uses xxfclib's XScanEngine color rules; accepts presentation heuristic prefixes. */
 XXWIDGETS_API xxwidgets_tree_color xxwidgets_scan_result_color(const char *type);
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_tree(xxwidgets_scan_panel *panel, const xxwidgets_tree_node *nodes,
-    const xxwidgets_tree_color *colors, size_t node_count, size_t detection_count, const char *report);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_tree(xxwidgets_scan_panel *panel, const xxwidgets_tree_node *nodes, const xxwidgets_tree_color *colors,
+                                                             size_t node_count, size_t detection_count, const char *report);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_results(xxwidgets_scan_panel *panel, const char *file_label, const xxwidgets_scan_result *results, size_t count,
                                                                 const char *report);
 /* What the format parser says about the scanned file, shown above the
  * results; NULL or "" leaves a field empty. Cleared with the results. */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_file_info(xxwidgets_scan_panel *panel, const char *endianness,
-    const char *mode, const char *architecture, const char *type);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_file_info(xxwidgets_scan_panel *panel, const char *endianness, const char *mode, const char *architecture,
+                                                                  const char *type);
 /* The last scan's duration, shown as "N msec"; a negative value clears it. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_set_elapsed(xxwidgets_scan_panel *panel, long long msec);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_panel_clear(xxwidgets_scan_panel *panel);

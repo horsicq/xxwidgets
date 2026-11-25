@@ -47,8 +47,7 @@ typedef struct xxwidgets_scan_directory_result {
  * task, path and options are borrowed only for the callback; user must outlive
  * the job. This follows ScanPanel's application-supplied engine model.
  */
-typedef xxwidgets_status (*xxwidgets_scan_directory_file_fn)(
-    xxwidgets_scan_directory_task *task, const char *path, const xxwidgets_scan_options *options, void *user);
+typedef xxwidgets_status (*xxwidgets_scan_directory_file_fn)(xxwidgets_scan_directory_task *task, const char *path, const xxwidgets_scan_options *options, void *user);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_emit(xxwidgets_scan_directory_task *task, const xxwidgets_scan_result *detection);
 XXWIDGETS_API int xxwidgets_scan_directory_cancelled(const xxwidgets_scan_directory_task *task);
 
@@ -58,16 +57,13 @@ XXWIDGETS_API int xxwidgets_scan_directory_cancelled(const xxwidgets_scan_direct
  * owner WINDOW. Destroy this object before its owner/app, never its children.
  * All functions except emit/cancelled are UI-thread-only.
  */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_create(
-    xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_directory **out);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_create(xxwidgets_widget *owner, xxwidgets_rect bounds, xxwidgets_scan_directory **out);
 /* Returns BUSY while the worker runs. Cancel then poll until no longer RUNNING
  * before destruction. Cancellation is cooperative; no worker is forcibly killed. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_destroy(xxwidgets_scan_directory *view);
-XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_directory_control(
-    const xxwidgets_scan_directory *view, xxwidgets_scan_directory_control_id id);
+XXWIDGETS_API xxwidgets_widget *xxwidgets_scan_directory_control(const xxwidgets_scan_directory *view, xxwidgets_scan_directory_control_id id);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_rect(xxwidgets_scan_directory *view, xxwidgets_rect bounds);
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_scanner(
-    xxwidgets_scan_directory *view, xxwidgets_scan_directory_file_fn scanner, void *user);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_scanner(xxwidgets_scan_directory *view, xxwidgets_scan_directory_file_fn scanner, void *user);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_set_path(xxwidgets_scan_directory *view, const char *path);
 /* The deprecated XXWIDGETS_SCAN_DATABASE_EXTRA bit is accepted and dropped:
  * get_options and the scanner callback never see it. */
@@ -85,8 +81,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_cancel(xxwidgets_scan_di
  * poll performs queued Scan/Options actions outside event dispatch. */
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_handle_event(xxwidgets_scan_directory *view, const xxwidgets_event *event);
 XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_poll(xxwidgets_scan_directory *view);
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_get_progress(
-    const xxwidgets_scan_directory *view, xxwidgets_scan_directory_progress *progress);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_get_progress(const xxwidgets_scan_directory *view, xxwidgets_scan_directory_progress *progress);
 XXWIDGETS_API size_t xxwidgets_scan_directory_result_count(const xxwidgets_scan_directory *view);
 /* Borrowed strings/detections survive polling; invalidated by start or destroy.
  * Rows include files with no detections and file/directory errors. */
@@ -94,10 +89,9 @@ XXWIDGETS_API size_t xxwidgets_scan_directory_result_count(const xxwidgets_scan_
  * Directory button opens it: path (may be NULL) and options preset, scanner
  * as above. Close or Escape stops a running scan, waits for it and returns.
  * Modal rules are those of xxwidgets_about_dialog_show. */
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_dialog(xxwidgets_widget *owner, const char *title, const char *path,
-    const xxwidgets_scan_options *options, xxwidgets_scan_directory_file_fn scanner, void *user);
-XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_get_result(
-    const xxwidgets_scan_directory *view, size_t index, xxwidgets_scan_directory_result *result);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_dialog(xxwidgets_widget *owner, const char *title, const char *path, const xxwidgets_scan_options *options,
+                                                               xxwidgets_scan_directory_file_fn scanner, void *user);
+XXWIDGETS_API xxwidgets_status xxwidgets_scan_directory_get_result(const xxwidgets_scan_directory *view, size_t index, xxwidgets_scan_directory_result *result);
 #ifdef __cplusplus
 }
 #endif

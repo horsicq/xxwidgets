@@ -13,10 +13,8 @@ extern "C" {
  * INVALID_ARGUMENT includes malformed PO/unsupported charset (line is optional).
  * No catalog means English. Input bytes and path are not retained.
  */
-XXWIDGETS_API xxwidgets_status xxwidgets_app_load_po(xxwidgets_app *app,
-    const void *data, size_t size, size_t *error_line);
-XXWIDGETS_API xxwidgets_status xxwidgets_app_load_po_file(xxwidgets_app *app,
-    const char *path, size_t *error_line);
+XXWIDGETS_API xxwidgets_status xxwidgets_app_load_po(xxwidgets_app *app, const void *data, size_t size, size_t *error_line);
+XXWIDGETS_API xxwidgets_status xxwidgets_app_load_po_file(xxwidgets_app *app, const char *path, size_t *error_line);
 XXWIDGETS_API xxwidgets_status xxwidgets_app_clear_translation(xxwidgets_app *app);
 /* Results are borrowed until successful catalog replacement, clear, or app
  * destruction. Missing/empty/fuzzy translations return the supplied English.
@@ -24,8 +22,7 @@ XXWIDGETS_API xxwidgets_status xxwidgets_app_clear_translation(xxwidgets_app *ap
  */
 XXWIDGETS_API const char *xxwidgets_app_gettext(const xxwidgets_app *app, const char *msgid);
 XXWIDGETS_API const char *xxwidgets_app_pgettext(const xxwidgets_app *app, const char *context, const char *msgid);
-XXWIDGETS_API const char *xxwidgets_app_ngettext(const xxwidgets_app *app,
-    const char *singular, const char *plural, uint64_t n);
+XXWIDGETS_API const char *xxwidgets_app_ngettext(const xxwidgets_app *app, const char *singular, const char *plural, uint64_t n);
 #ifdef __cplusplus
 }
 #endif

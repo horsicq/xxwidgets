@@ -72,13 +72,11 @@ xxwidgets_status xxwidgets_about_dialog_destroy(xxwidgets_about_dialog *dialog)
     return XXWIDGETS_OK;
 }
 
-xxwidgets_status xxwidgets_about_dialog_add_item(xxwidgets_about_dialog *dialog, xxwidgets_about_item_kind kind, const char *text,
-                                                 const char *value, const char *link)
+xxwidgets_status xxwidgets_about_dialog_add_item(xxwidgets_about_dialog *dialog, xxwidgets_about_item_kind kind, const char *text, const char *value, const char *link)
 {
     xxwidgets_about_item item = {kind, NULL, NULL, NULL};
-    if (!dialog || (kind != XXWIDGETS_ABOUT_ITEM_SOCIAL && kind != XXWIDGETS_ABOUT_ITEM_INFO && kind != XXWIDGETS_ABOUT_ITEM_LIBRARY) ||
-        !xxwidgets_valid_utf8(text) || (value && !xxwidgets_valid_utf8(value)) || (link && !xxwidgets_valid_utf8(link)) ||
-        (kind == XXWIDGETS_ABOUT_ITEM_SOCIAL && (!text[0] || !link || !link[0])))
+    if (!dialog || (kind != XXWIDGETS_ABOUT_ITEM_SOCIAL && kind != XXWIDGETS_ABOUT_ITEM_INFO && kind != XXWIDGETS_ABOUT_ITEM_LIBRARY) || !xxwidgets_valid_utf8(text) ||
+        (value && !xxwidgets_valid_utf8(value)) || (link && !xxwidgets_valid_utf8(link)) || (kind == XXWIDGETS_ABOUT_ITEM_SOCIAL && (!text[0] || !link || !link[0])))
         return XXWIDGETS_INVALID_ARGUMENT;
     if (dialog->showing) return XXWIDGETS_BUSY;
     if (dialog->item_count == XXWIDGETS_ABOUT_ITEMS_MAX) return XXWIDGETS_BUFFER_TOO_SMALL;
@@ -305,12 +303,14 @@ static xxwidgets_status show_content(xxwidgets_about_dialog *dialog, xxwidgets_w
     int create_hidden, rich;
     if (!dialog || !owner || owner->kind != XXWIDGETS_WINDOW) return XXWIDGETS_INVALID_ARGUMENT;
     app = owner->app;
-    if (dialog->showing || app->dispatch_depth || app->polling || app->syncing || (app->modal_window && !(copyable && app->modal_window == owner)) || app->quit) return XXWIDGETS_BUSY;
+    if (dialog->showing || app->dispatch_depth || app->polling || app->syncing || (app->modal_window && !(copyable && app->modal_window == owner)) || app->quit)
+        return XXWIDGETS_BUSY;
     body = about_body(dialog);
     if (!body) return XXWIDGETS_OUT_OF_MEMORY;
     state.body = body;
     dialog->showing = 1;
-    previous_modal = app->modal_window; previous_default = app->modal_default;
+    previous_modal = app->modal_window;
+    previous_default = app->modal_default;
     previous_event = app->on_event;
     previous_user = app->user_data;
     /* Focus goes back to the control that had it, else the first one. */

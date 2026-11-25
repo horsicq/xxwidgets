@@ -24,7 +24,7 @@ typedef struct xxwidgets_extractor_record {
     uint64_t offset, size, address;
     int has_address;
     const char *region, *method, *type, *info, *name;
-    uint64_t number; /* original zero-based scan ordinal, stable under filters */
+    uint64_t number;  /* original zero-based scan ordinal, stable under filters */
     int size_unknown; /* 1: the size is not known; shown as "?", "Dump selected" is disabled */
 } xxwidgets_extractor_record;
 typedef struct xxwidgets_extractor_source {
@@ -61,8 +61,8 @@ typedef struct xxwidgets_extractor_source {
      * Run on the disk dialog worker; report actual bytes and current filename
      * through reporter. Atomic publication and cancellation remain host-owned. */
     xxwidgets_status (*save_ex)(void *user, const char *path, xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter);
-    xxwidgets_status (*dump_ex)(void *user, const char *destination, int directory, const uint64_t *indices, size_t count,
-        xx_pd_struct *progress, xxwidgets_disk_write_reporter *reporter);
+    xxwidgets_status (*dump_ex)(void *user, const char *destination, int directory, const uint64_t *indices, size_t count, xx_pd_struct *progress,
+                                xxwidgets_disk_write_reporter *reporter);
     /* Optional: the host's own type selection, for more types than the 64-bit
      * mask holds (see xxwidgets_type_picker_dialog). When set, "Options..."
      * calls it on the UI thread instead of the built-in check box dialog;
