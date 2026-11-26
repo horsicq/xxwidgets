@@ -4269,6 +4269,13 @@ static xxwidgets_status win32_sync_list(xxwidgets_widget *widget)
         SendMessageW(handle, WM_SETREDRAW, FALSE, 0);
         redraw_disabled = 1;
         if (rebuild) SendMessageW(handle, LB_RESETCONTENT, 0, 0);
+        /* Reserve the rows and their text at once: a list of tens of thousands of rows otherwise grows
+         * its storage row by row. */
+        if (!incremental && count > 256U) {
+            size_t bytes = 0;
+            for (i = 0; i < count; ++i) bytes += (wcslen(items[i]) + 1U) * sizeof(wchar_t);
+            SendMessageW(handle, LB_INITSTORAGE, (WPARAM)count, (LPARAM)bytes);
+        }
     }
     for (i = 0; i < count; ++i) {
         size_t row = incremental ? widget->hex_sync_dirty_rows[i] : first + i;

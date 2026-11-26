@@ -335,6 +335,28 @@ xxwidgets_status xxwidgets_data_struct_view_set_rect(xxwidgets_data_struct_view 
     return XXWIDGETS_OK;
 }
 
+xxwidgets_status xxwidgets_data_struct_view_set_item_fields(xxwidgets_data_struct_view *view, size_t index, const xxwidgets_data_struct_field *fields,
+                                                           size_t count)
+{
+    xxwidgets_data_struct_item source, *copy = NULL;
+    size_t field;
+    xxwidgets_status status;
+    if (!view || index >= view->count) return XXWIDGETS_INVALID_ARGUMENT;
+    source = view->items[index];
+    source.fields = fields;
+    source.field_count = count;
+    status = copy_items(&source, 1, &copy);
+    if (status != XXWIDGETS_OK) return status;
+    if (view->items[index].fields)
+        for (field = 0; field < view->items[index].field_count; ++field) free_field((xxwidgets_data_struct_field *)view->items[index].fields + field);
+    free((void *)view->items[index].fields);
+    view->items[index].fields = copy->fields;
+    view->items[index].field_count = copy->field_count;
+    free((void *)copy->name);
+    free(copy);
+    return view->selection == index ? show_item(view, index) : XXWIDGETS_OK;
+}
+
 xxwidgets_status xxwidgets_data_struct_view_set_items(xxwidgets_data_struct_view *view, const xxwidgets_data_struct_item *items, size_t count)
 {
     xxwidgets_data_struct_item *copies = NULL, *previous;

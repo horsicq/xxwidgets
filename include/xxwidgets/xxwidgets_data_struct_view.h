@@ -66,6 +66,11 @@ XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_handle_event(xxwidgets
  * clear, or view destruction. */
 XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_set_items(xxwidgets_data_struct_view *view, const xxwidgets_data_struct_item *items, size_t count);
 XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_clear(xxwidgets_data_struct_view *view);
+/* Replaces the fields of item `index` (deep-copied, transactional) and shows
+ * them when that item is selected: an application can list the items first
+ * and decode each one's fields when it is selected. Emits no event. */
+XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_set_item_fields(xxwidgets_data_struct_view *view, size_t index, const xxwidgets_data_struct_field *fields,
+                                                                          size_t count);
 XXWIDGETS_API size_t xxwidgets_data_struct_view_count(const xxwidgets_data_struct_view *view);
 XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_select(xxwidgets_data_struct_view *view, size_t index);
 XXWIDGETS_API xxwidgets_status xxwidgets_data_struct_view_get_selection(const xxwidgets_data_struct_view *view, size_t *index, xxwidgets_data_struct_item *item);
