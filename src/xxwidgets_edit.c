@@ -1,3 +1,5 @@
+/* Copyright (c) 2026 hors<horsicq@gmail.com> */
+
 #include "xxwidgets_internal.h"
 
 #include <stdint.h>
